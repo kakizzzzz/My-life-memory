@@ -2237,6 +2237,25 @@ export default function App() {
       contentHtml: getReadableNoteHtml(note, homeCopy.noteImageAlt, homeCopy.removeImage),
     };
   }, [homeCopy.noteImageAlt, homeCopy.removeImage, homeCopy.untitledNote, readingNoteTarget, stars]);
+  const readerRecordKey = readerRecord ? `${readerRecord.star.id}-${readerRecord.note.id}` : null;
+
+  React.useLayoutEffect(() => {
+    if (activeView !== 'reader' || !readerRecord) return;
+    const titleEditor = readerTitleRef.current;
+    const contentEditor = readerContentRef.current;
+
+    if (titleEditor && titleEditor.innerHTML !== readerRecord.titleHtml) {
+      titleEditor.innerHTML = readerRecord.titleHtml;
+    }
+
+    if (contentEditor && contentEditor.innerHTML !== readerRecord.contentHtml) {
+      contentEditor.innerHTML = readerRecord.contentHtml;
+    }
+
+    readerSavedRangeRef.current = null;
+    readerPendingTitleStylesRef.current = {};
+    readerPendingContentStylesRef.current = {};
+  }, [activeView, readerRecordKey, readerRecord?.titleHtml, readerRecord?.contentHtml]);
 
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
     if (!readerRecord) return;
@@ -3688,7 +3707,6 @@ export default function App() {
                       onMouseUp={saveReaderSelection}
                       onPointerUp={saveReaderSelection}
                       onSelect={saveReaderSelection}
-                      dangerouslySetInnerHTML={{ __html: readerRecord.titleHtml }}
                     />
                     <div
                       ref={readerContentRef}
@@ -3704,7 +3722,6 @@ export default function App() {
                       onPointerUp={saveReaderSelection}
                       onSelect={saveReaderSelection}
                       onClick={handleReaderContentClick}
-                      dangerouslySetInnerHTML={{ __html: readerRecord.contentHtml }}
                     />
                   </article>
                 ) : (

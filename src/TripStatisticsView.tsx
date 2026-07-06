@@ -97,12 +97,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let dragStartClientY = 0;
       let clickBlooms = [];
       let bloomAnimationFrame = null;
-      const bloomPalettes = [
-        [248, 245, 238],
-        [215, 231, 238],
-        [232, 218, 232],
-        [237, 199, 39]
-      ];
+      const pressBloomColor = [38, 38, 38];
 
       if (typeof d3 === 'undefined' || typeof topojson === 'undefined') {
         loadingEl.innerText = window.MAP_COPY?.mapEngineError || 'Map engine failed to load. Please check the network and refresh.';
@@ -309,10 +304,11 @@ const mosaicMapHtml = `<!DOCTYPE html>
           const distance = Math.sqrt(dx * dx + dy * dy);
           const irregular = 0.9 + 0.18 * Math.sin(block.x * 0.09 + block.y * 0.13 + bloom.seed);
           const normalizedDistance = distance / (bloom.radius * irregular);
-          const front = progress * 1.12;
-          const frontStrength = Math.max(0, 1 - Math.abs(normalizedDistance - front) / 0.24);
-          const centerStrength = Math.max(0, 1 - normalizedDistance / Math.max(0.18, progress + 0.18)) * (1 - progress);
-          const strength = Math.min(0.82, Math.max(frontStrength, centerStrength * 0.7));
+          const front = 0.16 + progress * 0.72;
+          const ringStrength = Math.max(0, 1 - Math.abs(normalizedDistance - front) / 0.18);
+          const centerStrength = Math.max(0, 1 - normalizedDistance / 0.3);
+          const shimmer = 0.56 + 0.44 * Math.sin(age * 0.008 + bloom.seed);
+          const strength = Math.min(0.28, (ringStrength * 0.2 + centerStrength * 0.12) * shimmer);
 
           if (strength > 0.015) {
             color = blendRgb(color, bloom.color, strength);
@@ -355,10 +351,10 @@ const mosaicMapHtml = `<!DOCTYPE html>
         clickBlooms = [{
           x,
           y,
-          radius: (54 + Math.random() * 58) / scale,
-          color: bloomPalettes[Math.floor(Math.random() * bloomPalettes.length)],
+          radius: 78 / scale,
+          color: pressBloomColor,
           createdAt: performance.now(),
-          duration: 760,
+          duration: 920,
           seed: Math.random() * 1000
         }];
 
