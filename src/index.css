@@ -1,0 +1,227 @@
+@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&family=Noto+Serif+KR:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@theme {
+  --font-sans: "Afacad", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Afacad", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  font-family: "Afacad", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Make Leaflet attribution text smaller and less prominent */
+.leaflet-control-attribution {
+  font-size: 9px !important;
+  background-color: rgba(255, 255, 255, 0.4) !important;
+  opacity: 0.7;
+}
+.leaflet-control-attribution a {
+  color: #6b7280 !important; /* Tailwind gray-500 */
+}
+
+/* Custom night map filter to turn black/gray map into readable dark blue/gray map */
+.theme-dark .leaflet-tile-pane, .custom-dark-thumb {
+  filter: sepia(80%) hue-rotate(185deg) saturate(150%) brightness(190%) contrast(90%) !important;
+}
+
+/* Custom light map filter to make it purely grayscale like the reference */
+.theme-light .leaflet-tile-pane, .custom-light-thumb {
+  filter: grayscale(100%) !important;
+}
+
+.picker-popup .react-colorful {
+  width: 100%;
+  height: 46px;
+}
+.picker-popup .react-colorful__saturation {
+  border-radius: 8px 8px 0 0;
+}
+.picker-popup .react-colorful__hue {
+  height: 10px;
+  border-radius: 0 0 8px 8px;
+}
+.picker-popup .react-colorful__pointer {
+  width: 12px;
+  height: 12px;
+}
+
+.home-screen,
+.home-screen button,
+.home-screen input {
+  line-height: 1.28;
+}
+
+.home-screen .truncate {
+  padding-top: 1px;
+  padding-bottom: 2px;
+}
+
+.home-screen .text-\[26px\] {
+  font-size: calc(26px * var(--app-font-scale, 1));
+}
+
+.home-screen .text-\[18px\] {
+  font-size: calc(18px * var(--app-font-scale, 1));
+}
+
+.home-screen .text-\[17px\] {
+  font-size: calc(17px * var(--app-font-scale, 1));
+}
+
+.home-screen .text-\[16px\] {
+  font-size: calc(16px * var(--app-font-scale, 1));
+}
+
+.home-screen .text-\[15px\] {
+  font-size: calc(15px * var(--app-font-scale, 1));
+}
+
+.home-screen .text-\[14px\] {
+  font-size: calc(14px * var(--app-font-scale, 1));
+}
+
+.note-title-editor {
+  cursor: text;
+  line-height: 1.28;
+  min-height: 1.28em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.note-title-editor:empty::before,
+.note-title-editor[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: currentColor;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.note-title-editor span {
+  line-height: inherit;
+}
+
+.note-rich-editor:empty::before,
+.note-rich-editor[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: rgba(126, 159, 186, 0.38);
+  font-size: 18px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.note-rich-editor {
+  position: relative;
+  cursor: text;
+}
+
+.note-rich-editor p {
+  margin: 0 0 0.75rem;
+}
+
+.note-rich-editor p[data-note-tail="true"] {
+  min-height: 1.6em;
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+  cursor: text;
+}
+
+.note-rich-editor span {
+  line-height: inherit;
+}
+
+.note-inline-image {
+  position: relative;
+  display: block;
+  margin: 0.75rem 0;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.note-inline-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+.note-inline-image [data-remove-image="true"],
+.note-inline-image [data-preview-image="true"] {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(8px);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.note-inline-image [data-remove-image="true"] {
+  top: 8px;
+  right: 8px;
+}
+
+.note-inline-image [data-preview-image="true"] {
+  right: 8px;
+  bottom: 8px;
+}
+
+.note-inline-image [data-remove-image="true"]:hover,
+.note-inline-image [data-preview-image="true"]:hover {
+  background: rgba(0, 0, 0, 0.68);
+  transform: scale(1.04);
+}
+
+.note-inline-image button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.note-reader-title {
+  overflow-wrap: anywhere;
+}
+
+.note-reader-title * {
+  line-height: inherit;
+}
+
+.note-reader-content {
+  line-height: 1.16;
+  overflow-wrap: anywhere;
+}
+
+.note-reader-content p {
+  margin: 0 0 1rem;
+}
+
+.note-reader-content .note-inline-image {
+  margin: 1.75rem 0;
+  border-radius: 18px;
+}
+
+.note-reader-content [data-remove-image="true"],
+.note-reader-content [data-preview-image="true"],
+.note-reader-content button {
+  display: none !important;
+}
