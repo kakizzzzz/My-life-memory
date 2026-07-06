@@ -96,11 +96,12 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let dragStartClientX = 0;
       let dragStartClientY = 0;
       let clickBlooms = [];
+      let bloomAnimationFrame = null;
       const bloomPalettes = [
-        ['rgba(248, 245, 238, 0.72)', 'rgba(248, 245, 238, 0.22)', 'rgba(248, 245, 238, 0)'],
-        ['rgba(215, 231, 238, 0.62)', 'rgba(215, 231, 238, 0.2)', 'rgba(215, 231, 238, 0)'],
-        ['rgba(232, 218, 232, 0.62)', 'rgba(232, 218, 232, 0.2)', 'rgba(232, 218, 232, 0)'],
-        ['rgba(237, 199, 39, 0.42)', 'rgba(237, 199, 39, 0.16)', 'rgba(237, 199, 39, 0)']
+        [248, 245, 238],
+        [215, 231, 238],
+        [232, 218, 232],
+        [237, 199, 39]
       ];
 
       if (typeof d3 === 'undefined' || typeof topojson === 'undefined') {
@@ -253,7 +254,32 @@ const mosaicMapHtml = `<!DOCTYPE html>
         }, 50);
       }
 
-      function getBlockColor(block) {
+      function parseBlockColor(color) {
+        if (color.startsWith('#')) {
+          const value = color.replace('#', '');
+          return [
+            parseInt(value.slice(0, 2), 16),
+            parseInt(value.slice(2, 4), 16),
+            parseInt(value.slice(4, 6), 16)
+          ];
+        }
+
+        const match = color.match(/rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)/);
+        return match
+          ? [Number(match[1]), Number(match[2]), Number(match[3])]
+          : [92, 92, 92];
+      }
+
+      function blendRgb(base, target, amount) {
+        const ratio = Math.max(0, Math.min(1, amount));
+        return [
+          Math.round(base[0] + (target[0] - base[0]) * ratio),
+          Math.round(base[1] + (target[1] - base[1]) * ratio),
+          Math.round(base[2] + (target[2] - base[2]) * ratio)
+        ];
+      }
+
+      function getBaseBlockColor(block) {
         if (!block.activityWeight || maxBlockActivityWeight === 0) {
           return '#5C5C5C';
         }
@@ -266,6 +292,36 @@ const mosaicMapHtml = `<!DOCTYPE html>
         return 'rgb(' + r + ', ' + g + ', ' + b + ')';
       }
 
+      function getBlockColor(block, now) {
+        let color = parseBlockColor(getBaseBlockColor(block));
+        if (clickBlooms.length === 0) {
+          return 'rgb(' + color[0] + ', ' + color[1] + ', ' + color[2] + ')';
+        }
+
+        const centerX = block.x + config.blockSize / 2;
+        const centerY = block.y + config.blockSize / 2;
+
+        clickBlooms.forEach(bloom => {
+          const age = now - bloom.createdAt;
+          const progress = Math.max(0, Math.min(1, age / bloom.duration));
+          const dx = centerX - bloom.x;
+          const dy = centerY - bloom.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const irregular = 0.9 + 0.18 * Math.sin(block.x * 0.09 + block.y * 0.13 + bloom.seed);
+          const normalizedDistance = distance / (bloom.radius * irregular);
+          const front = progress * 1.12;
+          const frontStrength = Math.max(0, 1 - Math.abs(normalizedDistance - front) / 0.24);
+          const centerStrength = Math.max(0, 1 - normalizedDistance / Math.max(0.18, progress + 0.18)) * (1 - progress);
+          const strength = Math.min(0.82, Math.max(frontStrength, centerStrength * 0.7) * (1 - progress * 0.35));
+
+          if (strength > 0.015) {
+            color = blendRgb(color, bloom.color, strength);
+          }
+        });
+
+        return 'rgb(' + color[0] + ', ' + color[1] + ', ' + color[2] + ')';
+      }
+
       function roundRect(context, x, y, width, height, radius) {
         context.beginPath();
         context.moveTo(x + radius, y);
@@ -276,59 +332,39 @@ const mosaicMapHtml = `<!DOCTYPE html>
         context.closePath();
       }
 
+      function animateBlooms() {
+        bloomAnimationFrame = null;
+        draw();
+        if (clickBlooms.length > 0) {
+          bloomAnimationFrame = requestAnimationFrame(animateBlooms);
+        }
+      }
+
       function createBloom(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
         const x = (clientX - rect.left - offsetX) / scale;
         const y = (clientY - rect.top - offsetY) / scale;
         const radius = (54 + Math.random() * 58) / scale;
-        const points = [];
-        const count = 9 + Math.floor(Math.random() * 7);
-
-        for (let index = 0; index < count; index += 1) {
-          const angle = (Math.PI * 2 * index) / count + (Math.random() - 0.5) * 0.38;
-          points.push({
-            angle,
-            radius: radius * (0.68 + Math.random() * 0.48)
-          });
-        }
 
         clickBlooms.push({
           x,
           y,
           radius,
-          rotation: Math.random() * Math.PI * 2,
-          points,
-          palette: bloomPalettes[Math.floor(Math.random() * bloomPalettes.length)]
+          color: bloomPalettes[Math.floor(Math.random() * bloomPalettes.length)],
+          createdAt: performance.now(),
+          duration: 720,
+          seed: Math.random() * 1000
         });
 
         if (clickBlooms.length > 18) clickBlooms = clickBlooms.slice(-18);
-        draw();
-      }
-
-      function drawBloom(bloom) {
-        ctx.save();
-        ctx.translate(bloom.x, bloom.y);
-        ctx.rotate(bloom.rotation);
-
-        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, bloom.radius);
-        gradient.addColorStop(0, bloom.palette[0]);
-        gradient.addColorStop(0.46, bloom.palette[1]);
-        gradient.addColorStop(1, bloom.palette[2]);
-
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        bloom.points.forEach((point, index) => {
-          const x = Math.cos(point.angle) * point.radius;
-          const y = Math.sin(point.angle) * point.radius;
-          if (index === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
+        if (bloomAnimationFrame === null) {
+          bloomAnimationFrame = requestAnimationFrame(animateBlooms);
+        }
       }
 
       function draw() {
+        const now = performance.now();
+        clickBlooms = clickBlooms.filter(bloom => now - bloom.createdAt <= bloom.duration);
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -358,13 +394,11 @@ const mosaicMapHtml = `<!DOCTYPE html>
         ctx.scale(scale, scale);
 
         gridData.forEach(block => {
-          ctx.fillStyle = getBlockColor(block);
+          ctx.fillStyle = getBlockColor(block, now);
           const drawSize = config.blockSize - config.gap;
           roundRect(ctx, block.x, block.y, drawSize, drawSize, config.cornerRadius);
           ctx.fill();
         });
-
-        clickBlooms.forEach(drawBloom);
 
         ctx.restore();
       }

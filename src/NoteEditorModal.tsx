@@ -176,6 +176,27 @@ const localizeNoteImageControls = (html: string, copy: NoteEditorCopy) => {
   if (!html || typeof document === 'undefined') return html;
   const container = document.createElement('div');
   container.innerHTML = html;
+  container.querySelectorAll<HTMLElement>('.note-inline-image, [data-note-image="true"]').forEach(figure => {
+    figure.classList.add('note-inline-image');
+    figure.setAttribute('contenteditable', 'false');
+    figure.dataset.noteImage = 'true';
+
+    if (!figure.querySelector('[data-remove-image="true"]')) {
+      figure.insertAdjacentHTML('beforeend',
+        `<button type="button" data-remove-image="true" aria-label="${escapeHtml(copy.removeImage)}">` +
+          `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>` +
+        `</button>`
+      );
+    }
+
+    if (!figure.querySelector('[data-preview-image="true"]')) {
+      figure.insertAdjacentHTML('beforeend',
+        `<button type="button" data-preview-image="true" aria-label="${escapeHtml(copy.viewLargerImage)}">` +
+          `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>` +
+        `</button>`
+      );
+    }
+  });
   container.querySelectorAll<HTMLImageElement>('[data-note-image="true"] img').forEach(image => {
     image.alt = copy.noteAttachmentAlt;
   });
@@ -1320,8 +1341,8 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
       updatedAt: Date.now(),
       color: '#D2936D'
     };
-    setNotes([...notes, newNote]);
-    setCurrentIndex(notes.length);
+    setNotes([newNote, ...notes]);
+    setCurrentIndex(0);
   };
 
   const handleDeleteNote = () => {
@@ -1356,6 +1377,8 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     const savedNotes = editor ? notes.map((note, idx) => {
       if (idx !== currentIndex) return note;
       const clone = editor.cloneNode(true) as HTMLElement;
+      const noteIdTimestamp = Number(note.id);
+      const createdAt = note.createdAt || (Number.isFinite(noteIdTimestamp) && noteIdTimestamp > 0 ? noteIdTimestamp : savedAt);
       clone.querySelectorAll('[data-remove-image="true"]').forEach(button => button.remove());
       return {
         ...note,
@@ -1363,7 +1386,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
         titleHtml: titleEditor ? titleEditor.innerHTML : note.titleHtml,
         content: clone.innerText.trim(),
         contentHtml: editor.innerHTML,
-        createdAt: note.createdAt || savedAt,
+        createdAt,
         updatedAt: savedAt,
         imageUrl: undefined,
         imageUrls: undefined,

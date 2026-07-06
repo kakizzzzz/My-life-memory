@@ -10,20 +10,6 @@ import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
 import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
 
-const starSvgString = `<svg width="36" height="36" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="overflow: visible; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.15)) drop-shadow(0px 2px 4px rgba(0,0,0,0.12));">
-  <defs>
-    <linearGradient id="starGradDrag" x1="0" y1="0" x2="0" y2="24" gradientUnits="userSpaceOnUse">
-      <stop offset="15%" stop-color="#EDC727" />
-      <stop offset="100%" stop-color="#ffffff" />
-    </linearGradient>
-  </defs>
-  <polygon points="12 4 14.35 8.76 19.61 9.53 15.8 13.24 16.7 18.47 12 16 7.3 18.47 8.2 13.24 4.39 9.53 9.65 8.76" fill="#EDC727" stroke="#EDC727" stroke-width="5.5" stroke-linejoin="round"/>
-  <polygon points="12 4 14.35 8.76 19.61 9.53 15.8 13.24 16.7 18.47 12 16 7.3 18.47 8.2 13.24 4.39 9.53 9.65 8.76" fill="url(#starGradDrag)" stroke="url(#starGradDrag)" stroke-width="4.5" stroke-linejoin="round"/>
-</svg>`;
-
-const starDragImg = new Image();
-starDragImg.src = `data:image/svg+xml;utf8,${encodeURIComponent(starSvgString)}`;
-
 function createLocationIcon(mapStyle: string, iconColor = '#c3c3c3', heading = 0) {
   const isAerial = mapStyle === 'aerial';
   const color = isAerial ? '#ffffff' : iconColor;
@@ -352,6 +338,7 @@ const HOME_COPY = {
     back: 'Back',
     userName: 'User name',
     account: 'Account',
+    idUnique: 'Unique ID',
     loginPassword: 'Login password',
     accountAccess: 'Account access',
     loginTitle: 'Account login',
@@ -373,6 +360,7 @@ const HOME_COPY = {
     noRecords: 'No note records yet',
     calendar: 'Calendar',
     closeCalendar: 'Close calendar',
+    clearDateFilter: 'Clear date filter',
     previousCalendarPage: 'Previous calendar page',
     nextCalendarPage: 'Next calendar page',
     weekdays: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
@@ -398,6 +386,7 @@ const HOME_COPY = {
     untitledNote: 'Untitled note',
     noteLabel: 'Note',
     starLabel: 'Star',
+    addStar: 'Add star',
     noteImageAlt: 'Note attachment',
     userFallback: 'User',
     userAvatarAlt: 'User avatar',
@@ -417,6 +406,7 @@ const HOME_COPY = {
     back: '返回',
     userName: '用户姓名',
     account: '账号',
+    idUnique: 'ID唯一',
     loginPassword: '登录密码',
     accountAccess: '账号访问',
     loginTitle: '账号登录',
@@ -438,6 +428,7 @@ const HOME_COPY = {
     noRecords: '还没有笔记记录',
     calendar: '日历',
     closeCalendar: '关闭日历',
+    clearDateFilter: '取消筛选',
     previousCalendarPage: '上一页日历',
     nextCalendarPage: '下一页日历',
     weekdays: ['日', '一', '二', '三', '四', '五', '六'],
@@ -463,6 +454,7 @@ const HOME_COPY = {
     untitledNote: '未命名笔记',
     noteLabel: '笔记',
     starLabel: '星标',
+    addStar: '添加星标',
     noteImageAlt: '笔记图片',
     userFallback: '用户',
     userAvatarAlt: '用户头像',
@@ -482,6 +474,7 @@ const HOME_COPY = {
     back: '뒤로',
     userName: '사용자 이름',
     account: '계정',
+    idUnique: '고유 ID',
     loginPassword: '로그인 비밀번호',
     accountAccess: '계정 접근',
     loginTitle: '계정 로그인',
@@ -503,6 +496,7 @@ const HOME_COPY = {
     noRecords: '아직 노트 기록이 없습니다',
     calendar: '캘린더',
     closeCalendar: '캘린더 닫기',
+    clearDateFilter: '필터 해제',
     previousCalendarPage: '이전 캘린더 페이지',
     nextCalendarPage: '다음 캘린더 페이지',
     weekdays: ['일', '월', '화', '수', '목', '금', '토'],
@@ -528,6 +522,7 @@ const HOME_COPY = {
     untitledNote: '제목 없는 노트',
     noteLabel: '노트',
     starLabel: '별표',
+    addStar: '별표 추가',
     noteImageAlt: '노트 이미지',
     userFallback: '사용자',
     userAvatarAlt: '사용자 아바타',
@@ -717,7 +712,7 @@ const parseCoordinateSearch = (value: string): [number, number] | null => {
 };
 
 const getNoteTimestamp = (note: NoteData) => {
-  const candidate = note.updatedAt || note.createdAt || Number(note.id);
+  const candidate = note.createdAt || Number(note.id) || note.updatedAt;
   return Number.isFinite(candidate) && candidate > 0 ? candidate : Date.now();
 };
 
@@ -1023,13 +1018,26 @@ function createStarIcon(tagNumber?: number, isSelected?: boolean, colorHex?: str
   });
 }
 
-function MapEventHandlers({ onDrop, onMapClick }: { onDrop: (e: DragEvent, map: L.Map) => void, onMapClick: () => void }) {
+function MapEventHandlers({
+  onDrop,
+  onMapClick,
+  onMapReady,
+}: {
+  onDrop: (e: DragEvent, map: L.Map) => void;
+  onMapClick: () => void;
+  onMapReady: (map: L.Map | null) => void;
+}) {
   const map = useMap();
   
   const clickRef = React.useRef(onMapClick);
   useEffect(() => {
     clickRef.current = onMapClick;
   }, [onMapClick]);
+
+  useEffect(() => {
+    onMapReady(map);
+    return () => onMapReady(null);
+  }, [map, onMapReady]);
 
   useEffect(() => {
     const container = map.getContainer();
@@ -1127,7 +1135,6 @@ export default function App() {
   const readerSavedRangeRef = React.useRef<Range | null>(null);
   const readerPendingTitleStylesRef = React.useRef<Record<string, string>>({});
   const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
-  const readerDraftSaveTimerRef = React.useRef<number | null>(null);
   
   // Tag Mode State
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
@@ -1145,8 +1152,11 @@ export default function App() {
   ));
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [selectedTrackLatLng, setSelectedTrackLatLng] = useState<[number, number] | null>(null);
+  const [starDragPreview, setStarDragPreview] = useState<{ x: number; y: number } | null>(null);
 
   const isLocating = React.useRef(false);
+  const mapInstanceRef = React.useRef<L.Map | null>(null);
+  const starPlacementDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
   const gpsWatchIdRef = React.useRef<number | null>(null);
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
@@ -1524,11 +1534,96 @@ export default function App() {
     if (!requestUserLocation(true)) isLocating.current = false;
   };
 
+  const handleMapReady = React.useCallback((map: L.Map | null) => {
+    mapInstanceRef.current = map;
+  }, []);
+
+  const addStarAtLatLng = React.useCallback((lat: number, lng: number) => {
+    setStars(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), lat, lng }]);
+  }, []);
+
+  const addStarAtUserLocation = React.useCallback(() => {
+    addStarAtLatLng(userLocation[0], userLocation[1]);
+  }, [addStarAtLatLng, userLocation]);
+
+  const placeStarAtClientPoint = React.useCallback((clientX: number, clientY: number) => {
+    const map = mapInstanceRef.current;
+    if (!map) {
+      addStarAtUserLocation();
+      return;
+    }
+
+    const rect = map.getContainer().getBoundingClientRect();
+    const isInsideMap =
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom;
+
+    if (!isInsideMap) return;
+
+    const latlng = map.containerPointToLatLng(L.point(clientX - rect.left, clientY - rect.top));
+    addStarAtLatLng(latlng.lat, latlng.lng);
+  }, [addStarAtLatLng, addStarAtUserLocation]);
+
+  const handleStarPlacementPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    starPlacementDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false,
+    };
+  };
+
+  const handleStarPlacementPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const dragState = starPlacementDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    const distance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
+    if (distance > 6) {
+      dragState.dragging = true;
+      setStarDragPreview({ x: event.clientX, y: event.clientY });
+      event.preventDefault();
+    }
+  };
+
+  const finishStarPlacementPointer = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const dragState = starPlacementDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already be released.
+    }
+
+    if (dragState.dragging) {
+      placeStarAtClientPoint(event.clientX, event.clientY);
+      event.preventDefault();
+      event.stopPropagation();
+    } else {
+      addStarAtUserLocation();
+    }
+
+    starPlacementDragRef.current = null;
+    setStarDragPreview(null);
+  };
+
+  const cancelStarPlacementPointer = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const dragState = starPlacementDragRef.current;
+    if (dragState?.pointerId === event.pointerId) {
+      starPlacementDragRef.current = null;
+      setStarDragPreview(null);
+    }
+  };
+
   const handleMapDrop = (e: DragEvent, map: L.Map) => {
     const type = e.dataTransfer?.getData('text/plain');
     if (type === 'star') {
       const latlng = map.mouseEventToLatLng(e as unknown as MouseEvent);
-      setStars(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), lat: latlng.lat, lng: latlng.lng }]);
+      addStarAtLatLng(latlng.lat, latlng.lng);
     }
   };
 
@@ -1659,10 +1754,11 @@ export default function App() {
   };
 
   const closeHomePanel = React.useCallback(() => {
+    if (homeScrollRef.current) {
+      homeScrollRef.current.scrollTop = 0;
+      homeScrollRef.current.scrollLeft = 0;
+    }
     setActiveHomePanel(null);
-    requestAnimationFrame(() => {
-      homeScrollRef.current?.scrollTo({ top: 0, left: 0 });
-    });
   }, []);
 
   const openRecordsCalendarPanel = () => {
@@ -1816,7 +1912,12 @@ export default function App() {
       if (!groups.has(record.dateKey)) groups.set(record.dateKey, []);
       groups.get(record.dateKey)!.push(record);
     });
-    return Array.from(groups.entries()).map(([dateKey, records]) => ({ dateKey, records }));
+    return Array.from(groups.entries())
+      .map(([dateKey, records]) => ({
+        dateKey,
+        records: [...records].sort((a, b) => b.timestamp - a.timestamp),
+      }))
+      .sort((a, b) => (b.records[0]?.timestamp || 0) - (a.records[0]?.timestamp || 0));
   }, [noteRecords]);
 
   const recordDateSummaries = React.useMemo(() => {
@@ -1903,7 +2004,7 @@ export default function App() {
       .map((star, index) => ({
         name: String(index + 1),
         value: (star.notes || []).filter(hasMeaningfulNoteContent).length,
-        fill: star.color,
+        fill: star.color || '#EDC727',
       }))
       .filter(item => item.value > 0)
       .sort((a, b) => b.value - a.value)
@@ -2045,6 +2146,7 @@ export default function App() {
   const bottomNavTransition = { type: 'spring', stiffness: 420, damping: 34 };
 
   const btnClass = "w-12 h-12 rounded-full bg-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 transition-all shadow-sm";
+  const starPlacementButtonClass = `${btnClass} touch-none`;
   const readerToolButtonClass = "flex h-12 w-12 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-md transition-transform active:scale-95";
   const searchInputClass = (field: SearchField) => (
     `h-12 rounded-full px-5 text-[15px] font-medium text-black outline-none transition-colors placeholder:text-black/25 ${
@@ -2076,10 +2178,6 @@ export default function App() {
 
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
     if (!readerRecord) return;
-    if (readerDraftSaveTimerRef.current !== null) {
-      window.clearTimeout(readerDraftSaveTimerRef.current);
-      readerDraftSaveTimerRef.current = null;
-    }
     const titleHtml = readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml;
     const contentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
     const title = htmlToText(titleHtml);
@@ -2108,16 +2206,6 @@ export default function App() {
       };
     }));
   }, [readerRecord]);
-
-  const scheduleReaderDraftSave = React.useCallback(() => {
-    if (readerDraftSaveTimerRef.current !== null) {
-      window.clearTimeout(readerDraftSaveTimerRef.current);
-    }
-    readerDraftSaveTimerRef.current = window.setTimeout(() => {
-      readerDraftSaveTimerRef.current = null;
-      saveReaderDraft();
-    }, 220);
-  }, [saveReaderDraft]);
 
   const readerRangeIsInsideElement = React.useCallback((range: Range, element: HTMLElement | null) => (
     Boolean(element && element.contains(range.commonAncestorContainer))
@@ -2302,9 +2390,8 @@ export default function App() {
     newRange.setEndAfter(styledNodes[styledNodes.length - 1]);
     selection.addRange(newRange);
     readerSavedRangeRef.current = newRange.cloneRange();
-    saveReaderDraft();
     return true;
-  }, [getReaderElementForTarget, getReaderSelectionRange, readerActiveTextTarget, readerRangeIsInsideElement, restoreReaderRange, saveReaderDraft]);
+  }, [getReaderElementForTarget, getReaderSelectionRange, readerActiveTextTarget, readerRangeIsInsideElement, restoreReaderRange]);
 
   const openReaderFromRecord = React.useCallback((starId: string, noteId: string) => {
     setReadingNoteTarget({ starId, noteId });
@@ -2328,7 +2415,7 @@ export default function App() {
     setIsReaderToolsOpen(false);
   }, [readerRecord]);
 
-  const keepReaderSelectionMouseDown = React.useCallback((event: React.MouseEvent<HTMLElement>) => {
+  const keepReaderSelectionPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
     event.preventDefault();
     saveReaderSelection();
   }, [saveReaderSelection]);
@@ -2367,9 +2454,8 @@ export default function App() {
       selection.addRange(nextRange);
       readerSavedRangeRef.current = nextRange.cloneRange();
     }
-    scheduleReaderDraftSave();
     return true;
-  }, [readerRangeIsInsideElement, scheduleReaderDraftSave]);
+  }, [readerRangeIsInsideElement]);
 
   const handleReaderBeforeInput = React.useCallback((target: 'title' | 'content', event: React.FormEvent<HTMLElement>) => {
     const inputEvent = event.nativeEvent as InputEvent;
@@ -2384,8 +2470,8 @@ export default function App() {
   }, [getReaderElementForTarget, getReaderSelectionRange, insertStyledReaderText]);
 
   const handleReaderInput = React.useCallback(() => {
-    scheduleReaderDraftSave();
-  }, [scheduleReaderDraftSave]);
+    requestAnimationFrame(saveReaderSelection);
+  }, [saveReaderSelection]);
 
   const handleReaderContentClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -2393,11 +2479,10 @@ export default function App() {
     if (removeButton) {
       event.preventDefault();
       removeButton.closest('[data-note-image="true"]')?.remove();
-      saveReaderDraft();
       return;
     }
     saveReaderSelection();
-  }, [saveReaderDraft, saveReaderSelection]);
+  }, [saveReaderSelection]);
 
   const insertReaderImage = React.useCallback(async (file?: File) => {
     if (!file || !file.type.startsWith('image/')) return;
@@ -2405,8 +2490,7 @@ export default function App() {
     const editor = readerContentRef.current;
     if (!editor) return;
     editor.insertAdjacentHTML('beforeend', `${imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage)}${readerEditableTailHtml}`);
-    saveReaderDraft();
-  }, [homeCopy.noteImageAlt, homeCopy.removeImage, saveReaderDraft]);
+  }, [homeCopy.noteImageAlt, homeCopy.removeImage]);
 
   const handleReaderImageInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -2448,7 +2532,7 @@ export default function App() {
           <MapViewportSync location={userLocation} shouldFollow={isFollowingUserLocation || isTracking} />
           <FollowUserLocation location={userLocation} enabled={isFollowingUserLocation || isTracking} />
           
-          <MapEventHandlers onDrop={handleMapDrop} onMapClick={onMapClick} />
+          <MapEventHandlers onDrop={handleMapDrop} onMapClick={onMapClick} onMapReady={handleMapReady} />
           
           <StarNavigationOverlay activeTag={activeTag} stars={stars} onPrev={handlePrevTag} onNext={handleNextTag} />
           <StarActionOverlay
@@ -2560,6 +2644,15 @@ export default function App() {
           ))}
         </MapContainer>
       </div>
+
+      {starDragPreview && (
+        <div
+          className="pointer-events-none fixed z-[2400] flex h-11 w-11 items-center justify-center rounded-full text-[#EDC727] drop-shadow-lg"
+          style={{ left: starDragPreview.x, top: starDragPreview.y, transform: 'translate(-50%, -50%)' }}
+        >
+          <Star size={34} strokeWidth={2.4} fill="currentColor" />
+        </div>
+      )}
 
       {/* Top Right Menu */}
       {activeView === 'map' && !isTracking && (
@@ -2716,12 +2809,17 @@ export default function App() {
                 
                 {/* Star */}
                 <button 
-                  className={btnClass}
-                  onClick={() => setStars(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), lat: userLocation[0], lng: userLocation[1] }])}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', 'star');
-                    e.dataTransfer.setDragImage(starDragImg, 18, 18);
+                  className={starPlacementButtonClass}
+                  aria-label={homeCopy.addStar}
+                  onPointerDown={handleStarPlacementPointerDown}
+                  onPointerMove={handleStarPlacementPointerMove}
+                  onPointerUp={finishStarPlacementPointer}
+                  onPointerCancel={cancelStarPlacementPointer}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      addStarAtUserLocation();
+                    }
                   }}
                 >
                   <Star size={24} strokeWidth={2} fill="none" />
@@ -2897,6 +2995,14 @@ export default function App() {
                     {label}
                   </button>
                 ))}
+                {selectedRecordsDateKey && (
+                  <button
+                    onClick={() => setSelectedRecordsDateKey(null)}
+                    className="rounded-full bg-[var(--app-card)] px-5 py-2 text-sm font-medium text-black transition-colors hover:bg-[var(--app-soft-card)]"
+                  >
+                    {homeCopy.clearDateFilter}
+                  </button>
+                )}
               </div>
 
               <div className="relative mt-2">
@@ -3219,7 +3325,7 @@ export default function App() {
                     key="profile-panel"
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
+                    exit={{ opacity: 0, y: 0 }}
                     className="mt-4 rounded-[18px] bg-[var(--app-card)] p-4"
                   >
                     <div className="mb-3 flex items-center gap-2 text-[18px] font-medium text-black">
@@ -3249,15 +3355,16 @@ export default function App() {
                           placeholder={homeCopy.userName}
                         />
                       </label>
-                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-black/5 px-3 text-black/35">
                         <AtSign size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
                         <input
                           value={profile.account}
                           readOnly
                           aria-readonly="true"
-                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium text-black/35 outline-none placeholder:text-black/25"
                           placeholder={homeCopy.account}
                         />
+                        <span className="shrink-0 text-[12px] font-medium text-black/35">{homeCopy.idUnique}</span>
                       </label>
                       <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
                         <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
@@ -3532,7 +3639,8 @@ export default function App() {
                       onFocus={saveReaderSelection}
                       onKeyUp={saveReaderSelection}
                       onMouseUp={saveReaderSelection}
-                      onBlur={() => saveReaderDraft()}
+                      onPointerUp={saveReaderSelection}
+                      onSelect={saveReaderSelection}
                       dangerouslySetInnerHTML={{ __html: readerRecord.titleHtml }}
                     />
                     <div
@@ -3546,8 +3654,9 @@ export default function App() {
                       onFocus={saveReaderSelection}
                       onKeyUp={saveReaderSelection}
                       onMouseUp={saveReaderSelection}
+                      onPointerUp={saveReaderSelection}
+                      onSelect={saveReaderSelection}
                       onClick={handleReaderContentClick}
-                      onBlur={() => saveReaderDraft()}
                       dangerouslySetInnerHTML={{ __html: readerRecord.contentHtml }}
                     />
                   </article>
@@ -3569,14 +3678,19 @@ export default function App() {
                       exit={{ opacity: 0, y: 12, scale: 0.96 }}
                       className="flex flex-col items-center gap-3"
                     >
-                      <button className={readerToolButtonClass} onClick={() => saveReaderDraft()} aria-label={homeCopy.readerEdit}>
+                      <button className={readerToolButtonClass} onClick={() => {
+                        saveReaderDraft();
+                        setReaderActivePanel(null);
+                      }} aria-label={homeCopy.readerEdit}>
                         <Save size={24} strokeWidth={2.4} />
                       </button>
                       <div className="relative">
                         <button
                           className={readerToolButtonClass}
-                          onMouseDown={keepReaderSelectionMouseDown}
-                          onClick={() => handleReaderPanelToggle('font')}
+                          onPointerDown={event => {
+                            keepReaderSelectionPointerDown(event);
+                            handleReaderPanelToggle('font');
+                          }}
                           aria-label={homeCopy.readerReadingSize}
                         >
                           <span className="text-[28px] font-semibold leading-none">A</span>
@@ -3586,8 +3700,10 @@ export default function App() {
                             {READER_FONT_SIZES.map(size => (
                               <button
                                 key={size}
-                                onMouseDown={keepReaderSelectionMouseDown}
-                                onClick={() => handleReaderFontSize(size)}
+                                onPointerDown={event => {
+                                  keepReaderSelectionPointerDown(event);
+                                  handleReaderFontSize(size);
+                                }}
                                 className={`h-7 rounded-full text-[12px] font-medium transition-colors ${readerSelectedFontSize === size ? 'bg-white text-black' : 'text-white hover:bg-white/15'}`}
                               >
                                 {size}
@@ -3605,8 +3721,10 @@ export default function App() {
                       <div className="relative">
                         <button
                           className={readerToolButtonClass}
-                          onMouseDown={keepReaderSelectionMouseDown}
-                          onClick={() => handleReaderPanelToggle('color')}
+                          onPointerDown={event => {
+                            keepReaderSelectionPointerDown(event);
+                            handleReaderPanelToggle('color');
+                          }}
                           aria-label={homeCopy.readerEditColor}
                         >
                           <Palette size={24} strokeWidth={2.4} />
@@ -3618,8 +3736,10 @@ export default function App() {
                                 {READER_TEXT_COLORS.map(color => (
                                   <button
                                     key={color}
-                                    onMouseDown={keepReaderSelectionMouseDown}
-                                    onClick={() => handleReaderTextColor(color)}
+                                    onPointerDown={event => {
+                                      keepReaderSelectionPointerDown(event);
+                                      handleReaderTextColor(color);
+                                    }}
                                     className="h-[20px] w-[20px] rounded-full"
                                     style={{
                                       backgroundColor: color,
@@ -3628,8 +3748,10 @@ export default function App() {
                                   />
                                 ))}
                                 <button
-                                  onMouseDown={keepReaderSelectionMouseDown}
-                                  onClick={() => setReaderShowCustomPicker(!readerShowCustomPicker)}
+                                  onPointerDown={event => {
+                                    keepReaderSelectionPointerDown(event);
+                                    setReaderShowCustomPicker(!readerShowCustomPicker);
+                                  }}
                                   className="relative h-[20px] w-[20px] overflow-hidden rounded-[6px]"
                                   style={{ boxShadow: readerShowCustomPicker || !READER_TEXT_COLORS.includes(readerSelectedColor) ? '0 0 0 1.5px white' : 'none' }}
                                 >
