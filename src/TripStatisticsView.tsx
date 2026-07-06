@@ -96,8 +96,8 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let dragStartClientX = 0;
       let dragStartClientY = 0;
       let clickBlooms = [];
-      let bloomAnimationFrame = null;
-      const pressBloomColor = [38, 38, 38];
+      let drawFrame = null;
+      const pressBloomColor = [42, 42, 42];
 
       if (typeof d3 === 'undefined' || typeof topojson === 'undefined') {
         loadingEl.innerText = window.MAP_COPY?.mapEngineError || 'Map engine failed to load. Please check the network and refresh.';
@@ -210,6 +210,8 @@ const mosaicMapHtml = `<!DOCTYPE html>
                     gridData.push({
                       x,
                       y,
+                      centerX,
+                      centerY,
                       activityWeight: getBlockHeat(centerX, centerY)
                     });
                   }
@@ -219,6 +221,14 @@ const mosaicMapHtml = `<!DOCTYPE html>
           }
 
           maxBlockActivityWeight = Math.max(0, ...gridData.map(block => block.activityWeight || 0));
+          gridData = gridData.map(block => {
+            const baseRgb = getBaseBlockRgb(block);
+            return {
+              ...block,
+              baseRgb,
+              baseColor: 'rgb(' + baseRgb[0] + ', ' + baseRgb[1] + ', ' + baseRgb[2] + ')'
+            };
+          });
 
           if (gridData.length > 0) {
             mapBounds = {
@@ -249,22 +259,6 @@ const mosaicMapHtml = `<!DOCTYPE html>
         }, 50);
       }
 
-      function parseBlockColor(color) {
-        if (color.startsWith('#')) {
-          const value = color.replace('#', '');
-          return [
-            parseInt(value.slice(0, 2), 16),
-            parseInt(value.slice(2, 4), 16),
-            parseInt(value.slice(4, 6), 16)
-          ];
-        }
-
-        const match = color.match(/rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)/);
-        return match
-          ? [Number(match[1]), Number(match[2]), Number(match[3])]
-          : [92, 92, 92];
-      }
-
       function blendRgb(base, target, amount) {
         const ratio = Math.max(0, Math.min(1, amount));
         return [
@@ -274,9 +268,9 @@ const mosaicMapHtml = `<!DOCTYPE html>
         ];
       }
 
-      function getBaseBlockColor(block) {
+      function getBaseBlockRgb(block) {
         if (!block.activityWeight || maxBlockActivityWeight === 0) {
-          return '#5C5C5C';
+          return [92, 92, 92];
         }
 
         const ratio = block.activityWeight / maxBlockActivityWeight;
@@ -284,31 +278,27 @@ const mosaicMapHtml = `<!DOCTYPE html>
         const g = Math.round(92 + (195 - 92) * ratio);
         const b = Math.round(92 + (195 - 92) * ratio);
 
-        return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+        return [r, g, b];
       }
 
-      function getBlockColor(block, now) {
-        let color = parseBlockColor(getBaseBlockColor(block));
+      function getBlockColor(block) {
+        let color = block.baseRgb || [92, 92, 92];
         if (clickBlooms.length === 0) {
-          return 'rgb(' + color[0] + ', ' + color[1] + ', ' + color[2] + ')';
+          return block.baseColor || 'rgb(' + color[0] + ', ' + color[1] + ', ' + color[2] + ')';
         }
 
-        const centerX = block.x + config.blockSize / 2;
-        const centerY = block.y + config.blockSize / 2;
-
         clickBlooms.forEach(bloom => {
-          const age = Math.max(0, now - bloom.createdAt);
-          const progress = (age % bloom.duration) / bloom.duration;
-          const dx = centerX - bloom.x;
-          const dy = centerY - bloom.y;
+          const dx = block.centerX - bloom.x;
+          const dy = block.centerY - bloom.y;
+          const maxDistance = bloom.radius * 1.14;
+          if (Math.abs(dx) > maxDistance || Math.abs(dy) > maxDistance) return;
           const distance = Math.sqrt(dx * dx + dy * dy);
           const irregular = 0.9 + 0.18 * Math.sin(block.x * 0.09 + block.y * 0.13 + bloom.seed);
           const normalizedDistance = distance / (bloom.radius * irregular);
-          const front = 0.16 + progress * 0.72;
-          const ringStrength = Math.max(0, 1 - Math.abs(normalizedDistance - front) / 0.18);
-          const centerStrength = Math.max(0, 1 - normalizedDistance / 0.3);
-          const shimmer = 0.56 + 0.44 * Math.sin(age * 0.008 + bloom.seed);
-          const strength = Math.min(0.28, (ringStrength * 0.2 + centerStrength * 0.12) * shimmer);
+          const centerStrength = Math.max(0, 1 - normalizedDistance / 0.34);
+          const ringStrength = Math.max(0, 1 - Math.abs(normalizedDistance - 0.58) / 0.18);
+          const texture = 0.72 + 0.28 * Math.sin(block.x * 0.17 + block.y * 0.11 + bloom.seed);
+          const strength = Math.min(0.5, (centerStrength * 0.34 + ringStrength * 0.28) * texture);
 
           if (strength > 0.015) {
             color = blendRgb(color, bloom.color, strength);
@@ -328,12 +318,12 @@ const mosaicMapHtml = `<!DOCTYPE html>
         context.closePath();
       }
 
-      function animateBlooms() {
-        bloomAnimationFrame = null;
-        draw();
-        if (clickBlooms.length > 0) {
-          bloomAnimationFrame = requestAnimationFrame(animateBlooms);
-        }
+      function requestDraw() {
+        if (drawFrame !== null) return;
+        drawFrame = requestAnimationFrame(() => {
+          drawFrame = null;
+          draw();
+        });
       }
 
       function setPressBloom(clientX, clientY) {
@@ -345,6 +335,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
         if (existing) {
           existing.x = x;
           existing.y = y;
+          requestDraw();
           return;
         }
 
@@ -353,27 +344,18 @@ const mosaicMapHtml = `<!DOCTYPE html>
           y,
           radius: 78 / scale,
           color: pressBloomColor,
-          createdAt: performance.now(),
-          duration: 920,
           seed: Math.random() * 1000
         }];
 
-        if (bloomAnimationFrame === null) {
-          bloomAnimationFrame = requestAnimationFrame(animateBlooms);
-        }
+        requestDraw();
       }
 
       function clearPressBloom() {
         clickBlooms = [];
-        if (bloomAnimationFrame !== null) {
-          cancelAnimationFrame(bloomAnimationFrame);
-          bloomAnimationFrame = null;
-        }
-        draw();
+        requestDraw();
       }
 
       function draw() {
-        const now = performance.now();
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -403,7 +385,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
         ctx.scale(scale, scale);
 
         gridData.forEach(block => {
-          ctx.fillStyle = getBlockColor(block, now);
+          ctx.fillStyle = getBlockColor(block);
           const drawSize = config.blockSize - config.gap;
           roundRect(ctx, block.x, block.y, drawSize, drawSize, config.cornerRadius);
           ctx.fill();
@@ -434,7 +416,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
         if (!hasMoved) return;
         offsetX = event.clientX - dragStartX;
         offsetY = event.clientY - dragStartY;
-        draw();
+        requestDraw();
         event.preventDefault?.();
       }
 
@@ -582,6 +564,8 @@ const formatChartValue = (value: number) => {
 
 export function TripStatisticsView({ activityPoints = [], activityCount = 0, textRankings = [], language = 'en' }: TripStatisticsViewProps) {
   const [rankingPage, setRankingPage] = React.useState(0);
+  const [expandedMapKey, setExpandedMapKey] = React.useState(0);
+  const mapSessionKey = React.useMemo(() => Date.now(), []);
   const copy = TRIP_COPY[language as keyof typeof TRIP_COPY] || TRIP_COPY.en;
   const mosaicHtml = React.useMemo(
     () => createMosaicMapHtml(activityPoints, false, copy),
@@ -615,6 +599,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
 
         <div className="relative mb-6 h-[345px] w-[320px] shrink-0 overflow-hidden rounded-[24px] bg-[#1A1A1A] shadow-md">
           <iframe
+            key={`mosaic-${mapSessionKey}`}
             srcDoc={mosaicHtml}
             className="h-full w-full border-none"
             sandbox="allow-scripts allow-same-origin"
@@ -631,6 +616,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
           <button
             popoverTarget="trip-map-fullscreen"
             popoverTargetAction="show"
+            onClick={() => setExpandedMapKey(key => key + 1)}
             className="absolute bottom-6 right-6 z-10 rounded-full bg-[var(--app-page)] px-5 py-2 text-sm font-bold text-black shadow-lg transition-all hover:brightness-105"
           >
             {copy.expand}
@@ -683,6 +669,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
         className="fixed inset-0 m-0 h-[100dvh] max-h-none w-[100dvw] max-w-none overflow-hidden border-0 bg-[#1A1A1A] p-0"
       >
         <iframe
+          key={`mosaic-fullscreen-${mapSessionKey}-${expandedMapKey}`}
           srcDoc={fullscreenMapHtml}
           className="h-full w-full border-none"
           sandbox="allow-scripts allow-same-origin"
