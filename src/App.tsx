@@ -749,6 +749,7 @@ function FlyToTarget({ target }: { target: [number, number] | null }) {
   
   useEffect(() => {
     if (target) {
+      map.invalidateSize({ pan: false, debounceMoveend: true });
       const currentCenter = map.getCenter();
       const targetLatLng = L.latLng(target);
       const distance = currentCenter.distanceTo(targetLatLng);
@@ -770,11 +771,78 @@ function FollowUserLocation({ location, enabled }: { location: [number, number];
 
   useEffect(() => {
     if (!enabled) return;
+    map.invalidateSize({ pan: false, debounceMoveend: true });
     const target = L.latLng(location);
     const distance = map.getCenter().distanceTo(target);
     if (distance < 2) return;
     map.panTo(location, { animate: true, duration: 0.45 });
   }, [enabled, location, map]);
+
+  return null;
+}
+
+function MapViewportSync({ location, shouldFollow }: { location: [number, number]; shouldFollow: boolean }) {
+  const map = useMap();
+  const locationRef = React.useRef(location);
+  const shouldFollowRef = React.useRef(shouldFollow);
+
+  useEffect(() => {
+    locationRef.current = location;
+    shouldFollowRef.current = shouldFollow;
+  }, [location, shouldFollow]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const frameIds: number[] = [];
+    const timeoutIds: number[] = [];
+
+    const recenterIfNeeded = () => {
+      if (!shouldFollowRef.current) return;
+      map.panTo(locationRef.current, { animate: false });
+    };
+
+    const syncMapSize = () => {
+      const run = () => {
+        map.invalidateSize({ pan: false, debounceMoveend: true });
+        recenterIfNeeded();
+      };
+
+      frameIds.push(window.requestAnimationFrame(run));
+    };
+
+    const scheduleViewportSync = () => {
+      syncMapSize();
+      [120, 360, 900].forEach(delay => {
+        timeoutIds.push(window.setTimeout(syncMapSize, delay));
+      });
+    };
+
+    scheduleViewportSync();
+
+    window.addEventListener('resize', scheduleViewportSync);
+    window.addEventListener('orientationchange', scheduleViewportSync);
+    window.addEventListener('pageshow', scheduleViewportSync);
+    window.visualViewport?.addEventListener('resize', scheduleViewportSync);
+    window.visualViewport?.addEventListener('scroll', scheduleViewportSync);
+
+    return () => {
+      frameIds.forEach(frameId => window.cancelAnimationFrame(frameId));
+      timeoutIds.forEach(timeoutId => window.clearTimeout(timeoutId));
+      window.removeEventListener('resize', scheduleViewportSync);
+      window.removeEventListener('orientationchange', scheduleViewportSync);
+      window.removeEventListener('pageshow', scheduleViewportSync);
+      window.visualViewport?.removeEventListener('resize', scheduleViewportSync);
+      window.visualViewport?.removeEventListener('scroll', scheduleViewportSync);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    map.invalidateSize({ pan: false, debounceMoveend: true });
+    if (shouldFollow) {
+      map.panTo(location, { animate: true, duration: 0.35 });
+    }
+  }, [location, map, shouldFollow]);
 
   return null;
 }
@@ -1877,6 +1945,7 @@ export default function App() {
             interactive={false}
           />
           <FlyToTarget target={flyTarget} />
+          <MapViewportSync location={userLocation} shouldFollow={isFollowingUserLocation || isTracking} />
           <FollowUserLocation location={userLocation} enabled={isFollowingUserLocation || isTracking} />
           
           <MapEventHandlers onDrop={handleMapDrop} onMapClick={onMapClick} />
