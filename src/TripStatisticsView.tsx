@@ -97,7 +97,10 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let dragStartClientY = 0;
       let clickBlooms = [];
       let drawFrame = null;
-      const pressBloomColor = [42, 42, 42];
+      let flowFrame = null;
+      let lastFlowDrawAt = 0;
+      const flowDrawInterval = 110;
+      const pressBloomColor = [74, 74, 74];
 
       if (typeof d3 === 'undefined' || typeof topojson === 'undefined') {
         loadingEl.innerText = window.MAP_COPY?.mapEngineError || 'Map engine failed to load. Please check the network and refresh.';
@@ -281,13 +284,15 @@ const mosaicMapHtml = `<!DOCTYPE html>
         return [r, g, b];
       }
 
-      function getBlockColor(block) {
+      function getBlockColor(block, now) {
         let color = block.baseRgb || [92, 92, 92];
         if (clickBlooms.length === 0) {
           return block.baseColor || 'rgb(' + color[0] + ', ' + color[1] + ', ' + color[2] + ')';
         }
 
         clickBlooms.forEach(bloom => {
+          const age = Math.max(0, now - bloom.startedAt);
+          const progress = (age % bloom.duration) / bloom.duration;
           const dx = block.centerX - bloom.x;
           const dy = block.centerY - bloom.y;
           const maxDistance = bloom.radius * 1.14;
@@ -295,10 +300,13 @@ const mosaicMapHtml = `<!DOCTYPE html>
           const distance = Math.sqrt(dx * dx + dy * dy);
           const irregular = 0.9 + 0.18 * Math.sin(block.x * 0.09 + block.y * 0.13 + bloom.seed);
           const normalizedDistance = distance / (bloom.radius * irregular);
-          const centerStrength = Math.max(0, 1 - normalizedDistance / 0.34);
-          const ringStrength = Math.max(0, 1 - Math.abs(normalizedDistance - 0.58) / 0.18);
-          const texture = 0.72 + 0.28 * Math.sin(block.x * 0.17 + block.y * 0.11 + bloom.seed);
-          const strength = Math.min(0.5, (centerStrength * 0.34 + ringStrength * 0.28) * texture);
+          const firstWave = 0.14 + progress * 0.78;
+          const secondWave = 0.14 + ((progress + 0.48) % 1) * 0.78;
+          const firstStrength = Math.max(0, 1 - Math.abs(normalizedDistance - firstWave) / 0.2);
+          const secondStrength = Math.max(0, 1 - Math.abs(normalizedDistance - secondWave) / 0.24) * 0.54;
+          const centerStrength = Math.max(0, 1 - normalizedDistance / 0.38) * 0.18;
+          const texture = 0.78 + 0.22 * Math.sin(block.x * 0.17 + block.y * 0.11 + bloom.seed);
+          const strength = Math.min(0.42, (firstStrength * 0.34 + secondStrength * 0.22 + centerStrength) * texture);
 
           if (strength > 0.015) {
             color = blendRgb(color, bloom.color, strength);
@@ -322,8 +330,26 @@ const mosaicMapHtml = `<!DOCTYPE html>
         if (drawFrame !== null) return;
         drawFrame = requestAnimationFrame(() => {
           drawFrame = null;
-          draw();
+          draw(performance.now());
         });
+      }
+
+      function animatePressFlow(timestamp) {
+        flowFrame = null;
+        if (clickBlooms.length === 0) return;
+
+        if (timestamp - lastFlowDrawAt >= flowDrawInterval) {
+          lastFlowDrawAt = timestamp;
+          draw(timestamp);
+        }
+
+        flowFrame = requestAnimationFrame(animatePressFlow);
+      }
+
+      function startPressFlow() {
+        if (flowFrame !== null) return;
+        lastFlowDrawAt = 0;
+        flowFrame = requestAnimationFrame(animatePressFlow);
       }
 
       function setPressBloom(clientX, clientY) {
@@ -342,20 +368,27 @@ const mosaicMapHtml = `<!DOCTYPE html>
         clickBlooms = [{
           x,
           y,
-          radius: 78 / scale,
+          radius: 102 / scale,
           color: pressBloomColor,
+          startedAt: performance.now(),
+          duration: 3400,
           seed: Math.random() * 1000
         }];
 
         requestDraw();
+        startPressFlow();
       }
 
       function clearPressBloom() {
         clickBlooms = [];
+        if (flowFrame !== null) {
+          cancelAnimationFrame(flowFrame);
+          flowFrame = null;
+        }
         requestDraw();
       }
 
-      function draw() {
+      function draw(now = performance.now()) {
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -385,7 +418,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
         ctx.scale(scale, scale);
 
         gridData.forEach(block => {
-          ctx.fillStyle = getBlockColor(block);
+          ctx.fillStyle = getBlockColor(block, now);
           const drawSize = config.blockSize - config.gap;
           roundRect(ctx, block.x, block.y, drawSize, drawSize, config.cornerRadius);
           ctx.fill();
