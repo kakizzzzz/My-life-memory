@@ -202,6 +202,11 @@ html, body {
   overflow-wrap: anywhere;
 }
 
+.note-reader-title:focus,
+.note-reader-content:focus {
+  outline: none;
+}
+
 .note-reader-title * {
   line-height: inherit;
 }

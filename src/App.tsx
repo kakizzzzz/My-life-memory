@@ -165,6 +165,10 @@ const THEME_PICKER_COLORS = [
   '#D7E7EE', '#74A3B7', '#E8DAE8', '#FAF4F0', '#28292B'
 ];
 
+const READER_NOTE_COLORS = [
+  '#D2936D', '#B6A5B9', '#EDC727', '#88AA9A', '#80AACD', '#5C5C5C'
+];
+
 const UPLOAD_IMAGE_MAX_BYTES = 100 * 1024;
 const SAMPLE_NOTE_IMAGE_URL = `${import.meta.env.BASE_URL}note-sample.jpg`;
 const SAMPLE_NOTE_TEXT = 'Today was simple and quiet. I walked for a while, took one photo, and saved this small note.';
@@ -361,10 +365,10 @@ const HOME_COPY = {
     runSearch: 'Run search',
     backToRecords: 'Back to records',
     readerMissing: 'This record is no longer available',
-    readerEdit: 'Edit record',
+    readerEdit: 'Save record',
     readerReadingSize: 'Change reading size',
     readerAddPhoto: 'Add photo',
-    readerJumpImage: 'Jump to image',
+    readerJumpImage: 'Add image',
     readerEditColor: 'Edit color',
     readerCollapseTools: 'Collapse reading tools',
     readerExpandTools: 'Expand reading tools',
@@ -425,10 +429,10 @@ const HOME_COPY = {
     runSearch: '执行搜索',
     backToRecords: '返回记录',
     readerMissing: '这条记录已不可用',
-    readerEdit: '编辑记录',
+    readerEdit: '保存记录',
     readerReadingSize: '调整阅读字号',
     readerAddPhoto: '添加照片',
-    readerJumpImage: '跳转到图片',
+    readerJumpImage: '添加图片',
     readerEditColor: '编辑颜色',
     readerCollapseTools: '收起阅读工具',
     readerExpandTools: '展开阅读工具',
@@ -489,10 +493,10 @@ const HOME_COPY = {
     runSearch: '검색 실행',
     backToRecords: '기록으로 돌아가기',
     readerMissing: '이 기록은 더 이상 사용할 수 없습니다',
-    readerEdit: '기록 편집',
+    readerEdit: '기록 저장',
     readerReadingSize: '읽기 글자 크기 변경',
     readerAddPhoto: '사진 추가',
-    readerJumpImage: '이미지로 이동',
+    readerJumpImage: '이미지 추가',
     readerEditColor: '색상 편집',
     readerCollapseTools: '읽기 도구 접기',
     readerExpandTools: '읽기 도구 펼치기',
@@ -631,8 +635,10 @@ const getLegacyNoteImages = (note?: NoteData) => {
 };
 
 const imageToReaderHtml = (src: string, altText = 'Note attachment') => (
-  `<figure class="note-inline-image"><img src="${escapeHtml(src)}" alt="${escapeHtml(altText)}" /></figure>`
+  `<figure class="note-inline-image" contenteditable="false" data-note-image="true"><img src="${escapeHtml(src)}" alt="${escapeHtml(altText)}" /></figure>`
 );
+
+const readerEditableTailHtml = '<p data-note-tail="true"><br></p>';
 
 const cleanReaderHtml = (html: string, imageAltText?: string) => {
   if (!html || typeof document === 'undefined') return html;
@@ -1060,7 +1066,10 @@ export default function App() {
   const [readingNoteTarget, setReadingNoteTarget] = useState<ReadingNoteTarget | null>(null);
   const [isReaderToolsOpen, setIsReaderToolsOpen] = useState(false);
   const [readerFontScaleIndex, setReaderFontScaleIndex] = useState(1);
+  const readerTitleRef = React.useRef<HTMLHeadingElement>(null);
   const readerContentRef = React.useRef<HTMLDivElement>(null);
+  const readerCameraInputRef = React.useRef<HTMLInputElement>(null);
+  const readerImageInputRef = React.useRef<HTMLInputElement>(null);
   
   // Tag Mode State
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
@@ -1961,6 +1970,37 @@ export default function App() {
   }, [homeCopy.noteImageAlt, homeCopy.untitledNote, readingNoteTarget, stars]);
   const readerFontScale = [0.94, 1, 1.08][readerFontScaleIndex] || 1;
 
+  const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
+    if (!readerRecord) return;
+    const titleHtml = readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml;
+    const contentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
+    const title = htmlToText(titleHtml);
+    const content = htmlToText(contentHtml);
+    const timestamp = Date.now();
+
+    setStars(prev => prev.map(star => {
+      if (star.id !== readerRecord.star.id) return star;
+      return {
+        ...star,
+        notes: (star.notes || []).map(note => (
+          note.id === readerRecord.note.id
+            ? {
+                ...note,
+                title,
+                titleHtml,
+                content,
+                contentHtml,
+                imageUrl: undefined,
+                imageUrls: undefined,
+                updatedAt: timestamp,
+                ...updates,
+              }
+            : note
+        )),
+      };
+    }));
+  }, [readerRecord]);
+
   const openReaderFromRecord = React.useCallback((starId: string, noteId: string) => {
     setReadingNoteTarget({ starId, noteId });
     setActiveView('reader');
@@ -1981,21 +2021,35 @@ export default function App() {
     setIsReaderToolsOpen(false);
   }, [readerRecord]);
 
-  const openReaderEditor = React.useCallback(() => {
-    if (!readingNoteTarget) return;
-    setEditingNoteTarget(readingNoteTarget);
-    setIsReaderToolsOpen(false);
-  }, [readingNoteTarget]);
-
   const cycleReaderFontScale = React.useCallback(() => {
     setReaderFontScaleIndex(index => (index + 1) % 3);
   }, []);
 
-  const scrollReaderToImage = React.useCallback(() => {
-    const image = readerContentRef.current?.querySelector('img');
-    image?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setIsReaderToolsOpen(false);
-  }, []);
+  const insertReaderImage = React.useCallback(async (file?: File) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const imageUrl = await compressImageFileToDataUrl(file);
+    const editor = readerContentRef.current;
+    if (!editor) return;
+    editor.insertAdjacentHTML('beforeend', `${imageToReaderHtml(imageUrl, homeCopy.noteImageAlt)}${readerEditableTailHtml}`);
+    saveReaderDraft();
+  }, [homeCopy.noteImageAlt, saveReaderDraft]);
+
+  const handleReaderImageInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    await insertReaderImage(file);
+    event.target.value = '';
+  }, [insertReaderImage]);
+
+  const applyReaderColor = React.useCallback(() => {
+    if (!readerRecord) return;
+    const currentColor = readerRecord.note.color || READER_NOTE_COLORS[0];
+    const currentIndex = READER_NOTE_COLORS.findIndex(color => color.toLowerCase() === currentColor.toLowerCase());
+    const nextColor = READER_NOTE_COLORS[(currentIndex + 1) % READER_NOTE_COLORS.length];
+    if (readerTitleRef.current) {
+      readerTitleRef.current.style.color = nextColor;
+    }
+    saveReaderDraft({ color: nextColor });
+  }, [readerRecord, saveReaderDraft]);
 
   return (
     <div className="relative w-[100dvw] h-[100dvh] overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
@@ -3043,11 +3097,27 @@ export default function App() {
             exit={{ opacity: 0, y: 18 }}
             className="absolute inset-0 z-[950] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
           >
+            <input
+              ref={readerCameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleReaderImageInput}
+            />
+            <input
+              ref={readerImageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleReaderImageInput}
+            />
             <div className="flex-1 overflow-y-auto px-8 pb-32 pt-16">
               <div className="mx-auto w-full max-w-[430px]">
                 <div className="mb-12 flex items-start justify-between">
                   <button
                     onClick={() => {
+                      saveReaderDraft();
                       setActiveView('records');
                       setReadingNoteTarget(null);
                       setIsReaderToolsOpen(false);
@@ -3073,14 +3143,21 @@ export default function App() {
                 {readerRecord ? (
                   <article className="pr-4">
                     <h1
+                      ref={readerTitleRef}
+                      contentEditable
+                      suppressContentEditableWarning
                       className="note-reader-title mb-7 text-[36px] font-medium leading-tight"
                       style={{ color: readerRecord.note.color || '#D2936D' }}
+                      onBlur={() => saveReaderDraft()}
                       dangerouslySetInnerHTML={{ __html: readerRecord.titleHtml }}
                     />
                     <div
                       ref={readerContentRef}
+                      contentEditable
+                      suppressContentEditableWarning
                       className="note-reader-content pb-10 text-[#7E9FBA]"
                       style={{ fontSize: `${20 * readerFontScale}px` }}
+                      onBlur={() => saveReaderDraft()}
                       dangerouslySetInnerHTML={{ __html: readerRecord.contentHtml }}
                     />
                   </article>
@@ -3102,19 +3179,19 @@ export default function App() {
                       exit={{ opacity: 0, y: 12, scale: 0.96 }}
                       className="flex flex-col items-center gap-3"
                     >
-                      <button className={readerToolButtonClass} onClick={openReaderEditor} aria-label={homeCopy.readerEdit}>
+                      <button className={readerToolButtonClass} onClick={() => saveReaderDraft()} aria-label={homeCopy.readerEdit}>
                         <Save size={24} strokeWidth={2.4} />
                       </button>
                       <button className={readerToolButtonClass} onClick={cycleReaderFontScale} aria-label={homeCopy.readerReadingSize}>
                         <span className="text-[28px] font-semibold leading-none">A</span>
                       </button>
-                      <button className={readerToolButtonClass} onClick={openReaderEditor} aria-label={homeCopy.readerAddPhoto}>
+                      <button className={readerToolButtonClass} onClick={() => readerCameraInputRef.current?.click()} aria-label={homeCopy.readerAddPhoto}>
                         <Camera size={24} strokeWidth={2.4} />
                       </button>
-                      <button className={readerToolButtonClass} onClick={scrollReaderToImage} aria-label={homeCopy.readerJumpImage}>
+                      <button className={readerToolButtonClass} onClick={() => readerImageInputRef.current?.click()} aria-label={homeCopy.readerJumpImage}>
                         <ImageIcon size={24} strokeWidth={2.4} />
                       </button>
-                      <button className={readerToolButtonClass} onClick={openReaderEditor} aria-label={homeCopy.readerEditColor}>
+                      <button className={readerToolButtonClass} onClick={applyReaderColor} aria-label={homeCopy.readerEditColor}>
                         <Palette size={24} strokeWidth={2.4} />
                       </button>
                       <button className={readerToolButtonClass} onClick={() => setIsReaderToolsOpen(false)} aria-label={homeCopy.readerCollapseTools}>
