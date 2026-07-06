@@ -114,6 +114,7 @@ type PersistedAppState = {
   mapStyle?: MapStyle;
   systemTheme?: Partial<SystemTheme>;
   profile?: Partial<UserProfile>;
+  isSignedIn?: boolean;
   language?: string;
   stars?: StarData[];
   savedTracks?: TrackData[];
@@ -148,13 +149,6 @@ const DEFAULT_SYSTEM_THEME: SystemTheme = {
 const DEFAULT_PROFILE: UserProfile = {
   name: 'yujun',
   account: '15466',
-  password: '',
-  avatarUrl: '',
-};
-
-const SIGNED_OUT_PROFILE: UserProfile = {
-  name: '',
-  account: '',
   password: '',
   avatarUrl: '',
 };
@@ -252,6 +246,10 @@ const isLanguage = (value: unknown): value is string => (
   typeof value === 'string' && LANGUAGE_OPTIONS.some(option => option.value === value)
 );
 
+const hasLoginAccount = (profile: UserProfile) => (
+  profile.account.trim().length > 0
+);
+
 const readPersistedAppState = (): PersistedAppState | null => {
   if (typeof window === 'undefined') return null;
 
@@ -334,6 +332,11 @@ const HOME_COPY = {
     userName: 'User name',
     account: 'Account',
     loginPassword: 'Login password',
+    accountAccess: 'Account access',
+    loginTitle: 'Account login',
+    loginHint: 'Sign in to enter',
+    login: 'Log in',
+    loginError: 'Account or password is incorrect',
     noImages: 'No uploaded images yet',
     language: 'Language',
     exit: 'Exit Account',
@@ -393,6 +396,11 @@ const HOME_COPY = {
     userName: '用户姓名',
     account: '账号',
     loginPassword: '登录密码',
+    accountAccess: '账号访问',
+    loginTitle: '账号登录',
+    loginHint: '登录后进入',
+    login: '登录',
+    loginError: '账号或密码不正确',
     noImages: '还没有上传过图片',
     language: '语言',
     exit: '退出账号',
@@ -452,6 +460,11 @@ const HOME_COPY = {
     userName: '사용자 이름',
     account: '계정',
     loginPassword: '로그인 비밀번호',
+    accountAccess: '계정 접근',
+    loginTitle: '계정 로그인',
+    loginHint: '로그인 후 입장',
+    login: '로그인',
+    loginError: '계정 또는 비밀번호가 올바르지 않습니다',
     noImages: '업로드한 이미지가 없습니다',
     language: '언어',
     exit: '로그아웃',
@@ -683,6 +696,14 @@ const getCalendarDateKey = (date: Date) => (
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 );
 
+const dateFromCalendarDateKey = (dateKey: string | null) => {
+  if (!dateKey) return null;
+  const [year, month, day] = dateKey.split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const date = new Date(year, month - 1, day);
+  return getCalendarDateKey(date) === dateKey ? date : null;
+};
+
 const getMonthTitle = (date: Date, locale = 'en-US') => (
   new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(date)
 );
@@ -737,11 +758,6 @@ const hasMeaningfulNoteContent = (note: NoteData) => {
     images.length > 0 ||
     (title && title !== 'New Note' && title !== 'Untitled note')
   );
-};
-
-const getNoteTextAmount = (note: NoteData) => {
-  const content = (htmlToText(note.contentHtml) || note.content || '').replace(/\s+/g, '');
-  return content.length;
 };
 
 function FlyToTarget({ target }: { target: [number, number] | null }) {
@@ -991,12 +1007,17 @@ function MapEventHandlers({ onDrop, onMapClick }: { onDrop: (e: DragEvent, map: 
 
 export default function App() {
   const [persistedAppState] = useState<PersistedAppState | null>(() => readPersistedAppState());
+  const initialProfile: UserProfile = {
+    ...DEFAULT_PROFILE,
+    ...(persistedAppState?.profile || {}),
+  };
+  const initialSignedIn = persistedAppState?.isSignedIn === true && hasLoginAccount(initialProfile);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyle>(() => (
     isMapStyle(persistedAppState?.mapStyle) ? persistedAppState.mapStyle : 'light'
   ));
   const [isMapStyleMenuOpen, setIsMapStyleMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<AppView>('map');
+  const [activeView, setActiveView] = useState<AppView>(() => initialSignedIn ? 'map' : 'home');
   const [activeHomePanel, setActiveHomePanel] = useState<HomePanel>(null);
   const [recordsFilter, setRecordsFilter] = useState<RecordsFilter>('all');
   const [selectedRecordsDateKey, setSelectedRecordsDateKey] = useState<string | null>(null);
@@ -1015,10 +1036,11 @@ export default function App() {
   const [activeThemeColorKey, setActiveThemeColorKey] = useState<keyof SystemTheme | null>(null);
   const [showThemeCustomPicker, setShowThemeCustomPicker] = useState(false);
   const [galleryPreviewImage, setGalleryPreviewImage] = useState<UploadedImage | null>(null);
-  const [profile, setProfile] = useState<UserProfile>(() => ({
-    ...DEFAULT_PROFILE,
-    ...(persistedAppState?.profile || {}),
-  }));
+  const [profile, setProfile] = useState<UserProfile>(() => initialProfile);
+  const [isSignedIn, setIsSignedIn] = useState(initialSignedIn);
+  const [loginAccount, setLoginAccount] = useState(() => initialProfile.account);
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [language, setLanguage] = useState(() => (
     isLanguage(persistedAppState?.language) ? persistedAppState.language : 'en'
   ));
@@ -1242,6 +1264,20 @@ export default function App() {
   }, [activeView]);
 
   useEffect(() => {
+    if (isSignedIn) return;
+    setActiveView('home');
+    setActiveHomePanel(null);
+    setIsMenuOpen(false);
+    setIsMapStyleMenuOpen(false);
+    setTagMenuOpen(false);
+    setIsSearchOpen(false);
+    setIsRecordsMenuOpen(false);
+    setIsRecordsCalendarOpen(false);
+    setReadingNoteTarget(null);
+    setEditingNoteTarget(null);
+  }, [isSignedIn]);
+
+  useEffect(() => {
     void startHeadingWatch(false);
   }, [startHeadingWatch]);
 
@@ -1281,11 +1317,12 @@ export default function App() {
       mapStyle,
       systemTheme,
       profile,
+      isSignedIn,
       language,
       stars,
       savedTracks,
     });
-  }, [language, mapStyle, profile, savedTracks, stars, systemTheme]);
+  }, [isSignedIn, language, mapStyle, profile, savedTracks, stars, systemTheme]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1480,6 +1517,48 @@ export default function App() {
     }
   };
 
+  const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const enteredAccount = loginAccount.trim();
+    const storedAccount = profile.account.trim();
+    const accountMatches = storedAccount ? enteredAccount === storedAccount : enteredAccount.length > 0;
+    const passwordMatches = profile.password ? loginPassword === profile.password : true;
+
+    if (!accountMatches || !passwordMatches) {
+      setLoginError(homeCopy.loginError);
+      return;
+    }
+
+    if (!storedAccount) {
+      setProfile(prev => ({
+        ...prev,
+        name: prev.name || DEFAULT_PROFILE.name,
+        account: enteredAccount,
+        password: loginPassword,
+      }));
+    }
+
+    setIsSignedIn(true);
+    setLoginError('');
+    setLoginPassword('');
+    setActiveView('map');
+  };
+
+  const handleSignOut = () => {
+    setIsSignedIn(false);
+    setLoginAccount(profile.account);
+    setLoginPassword('');
+    setLoginError('');
+  };
+
+  const openRecordsCalendarPanel = () => {
+    setRecordsCalendarDate(dateFromCalendarDateKey(selectedRecordsDateKey) || new Date());
+    setRecordsCalendarMode('month');
+    setIsRecordsCalendarOpen(true);
+    setIsRecordsMenuOpen(false);
+    setIsSearchOpen(false);
+  };
+
   const tagPolylines = React.useMemo(() => {
     const groups = new Map<number, StarData[]>();
     stars.filter(s => s.tagOrder !== undefined && s.tagGroupId !== undefined).forEach(s => {
@@ -1657,19 +1736,16 @@ export default function App() {
 
   const mapActivity = React.useMemo(() => {
     const points: MapActivityPoint[] = [];
-    let count = 0;
 
-    const addPoint = (lat: number, lng: number, weight: number, countAsMark = true) => {
+    const addPoint = (lat: number, lng: number, weight: number) => {
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || weight <= 0) return;
       points.push({ lat, lng, weight });
-      if (countAsMark) count += 1;
     };
 
     stars.forEach(star => {
       addPoint(star.lat, star.lng, 1);
-      (star.notes || []).forEach(note => {
-        if (hasMeaningfulNoteContent(note)) addPoint(star.lat, star.lng, 1);
-      });
+      const meaningfulNoteCount = (star.notes || []).filter(hasMeaningfulNoteContent).length;
+      if (meaningfulNoteCount > 0) addPoint(star.lat, star.lng, meaningfulNoteCount);
     });
 
     const taggedGroups = new Map<number, StarData[]>();
@@ -1692,8 +1768,7 @@ export default function App() {
     const addTrackPath = (path: [number, number][], weight: number) => {
       if (path.length < 2) return;
       const sampledPoints = getPointsEveryXMeters(path, 500);
-      sampledPoints.forEach(([lat, lng]) => addPoint(lat, lng, weight, false));
-      count += 1;
+      sampledPoints.forEach(([lat, lng]) => addPoint(lat, lng, weight));
     };
 
     savedTracks.forEach(track => {
@@ -1704,14 +1779,16 @@ export default function App() {
       trackPaths.forEach(path => addTrackPath(path, 0.25));
     }
 
-    return { points, count };
+    return { points };
   }, [stars, savedTracks, isTracking, trackPaths]);
 
-  const starTextRankings = React.useMemo<TextRankingItem[]>(() => (
+  const markedLocationCount = React.useMemo(() => stars.length, [stars]);
+
+  const starRecordRankings = React.useMemo<TextRankingItem[]>(() => (
     stars
       .map((star, index) => ({
         name: String(index + 1),
-        value: (star.notes || []).reduce((sum, note) => sum + getNoteTextAmount(note), 0),
+        value: (star.notes || []).filter(hasMeaningfulNoteContent).length,
         fill: star.color,
       }))
       .filter(item => item.value > 0)
@@ -2320,7 +2397,7 @@ export default function App() {
       )}
 
       <AnimatePresence>
-        {activeView === 'records' && (
+        {isSignedIn && activeView === 'records' && (
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
@@ -2350,11 +2427,7 @@ export default function App() {
                         className="absolute left-0 top-[56px] z-10 flex flex-col gap-2"
                       >
                         <button
-                          onClick={() => {
-                            setIsRecordsCalendarOpen(true);
-                            setIsRecordsMenuOpen(false);
-                            setIsSearchOpen(false);
-                          }}
+                          onClick={openRecordsCalendarPanel}
                           className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm"
                           aria-label={homeCopy.calendar}
                         >
@@ -2602,7 +2675,60 @@ export default function App() {
             />
 
             <div className="relative h-full w-full max-w-[430px] overflow-y-auto px-10 pb-28 pt-[clamp(3.5rem,8dvh,5.75rem)]">
-              {!activeHomePanel && (
+              {!isSignedIn ? (
+                <form
+                  onSubmit={handleLogin}
+                  className="flex min-h-full flex-col justify-center"
+                >
+                  <div className="rounded-[18px] bg-[var(--app-card)] p-4">
+                    <div className="mb-4 flex items-center gap-2 text-[18px] font-medium text-black">
+                      <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                      {homeCopy.loginTitle}
+                    </div>
+                    <div className="mb-4 text-[15px] font-medium leading-tight text-black/45">
+                      {homeCopy.loginHint}
+                    </div>
+                    <div className="space-y-3">
+                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                        <AtSign size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                        <input
+                          value={loginAccount}
+                          onChange={event => {
+                            setLoginAccount(event.target.value);
+                            setLoginError('');
+                          }}
+                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                          placeholder={homeCopy.account}
+                        />
+                      </label>
+                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                        <input
+                          value={loginPassword}
+                          onChange={event => {
+                            setLoginPassword(event.target.value);
+                            setLoginError('');
+                          }}
+                          type="password"
+                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                          placeholder={homeCopy.loginPassword}
+                        />
+                      </label>
+                    </div>
+                    {loginError && (
+                      <div className="mt-3 text-[13px] font-medium text-black/45">
+                        {loginError}
+                      </div>
+                    )}
+                    <button
+                      type="submit"
+                      className="mt-5 h-[48px] w-full rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98]"
+                    >
+                      {homeCopy.login}
+                    </button>
+                  </div>
+                </form>
+              ) : !activeHomePanel && (
                 <>
               <div className="flex items-center gap-8">
                 <button
@@ -2642,22 +2768,10 @@ export default function App() {
                   </button>
                 ))}
               </div>
-
-              <div className="mt-8 flex justify-center">
-                <button
-                  onClick={() => {
-                    setProfile(SIGNED_OUT_PROFILE);
-                    setActiveHomePanel(null);
-                  }}
-                  className="h-[54px] rounded-full bg-[var(--app-card)] px-9 text-[17px] font-medium text-black transition-transform active:scale-[0.98]"
-                >
-                  {homeCopy.exit}
-                </button>
-              </div>
                 </>
               )}
 
-              {activeHomePanel && (
+              {isSignedIn && activeHomePanel && (
                 <button
                   onClick={() => setActiveHomePanel(null)}
                   className="mb-5 flex h-11 items-center gap-2 rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black"
@@ -2900,6 +3014,18 @@ export default function App() {
                         ))}
                       </div>
                     </div>
+                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                        {homeCopy.accountAccess}
+                      </div>
+                      <button
+                        onClick={handleSignOut}
+                        className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
+                      >
+                        {homeCopy.exit}
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -2910,7 +3036,7 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {activeView === 'reader' && (
+        {isSignedIn && activeView === 'reader' && (
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
@@ -3014,7 +3140,7 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {activeView === 'stats' && (
+        {isSignedIn && activeView === 'stats' && (
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
@@ -3023,8 +3149,8 @@ export default function App() {
           >
             <TripStatisticsView
               activityPoints={mapActivity.points}
-              activityCount={mapActivity.count}
-              textRankings={starTextRankings}
+              activityCount={markedLocationCount}
+              textRankings={starRecordRankings}
               language={language}
             />
           </motion.div>
@@ -3095,7 +3221,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Bottom Navigation Bar */}
-      {activeView !== 'reader' && (
+      {isSignedIn && activeView !== 'reader' && (
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000]">
         <div className="bg-[var(--app-nav-surface)] backdrop-blur-lg rounded-[2rem] px-2.5 py-2 flex items-center gap-2.5 shadow-sm border border-[var(--app-icon)] transition-all duration-300 ease-out">
           <motion.button
