@@ -1051,6 +1051,7 @@ export default function App() {
     isLanguage(persistedAppState?.language) ? persistedAppState.language : 'en'
   ));
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
+  const homeScrollRef = React.useRef<HTMLDivElement>(null);
 
   const position: [number, number] = DEFAULT_USER_LOCATION;
   
@@ -1559,6 +1560,13 @@ export default function App() {
     setLoginPassword('');
     setLoginError('');
   };
+
+  const closeHomePanel = React.useCallback(() => {
+    setActiveHomePanel(null);
+    requestAnimationFrame(() => {
+      homeScrollRef.current?.scrollTo({ top: 0, left: 0 });
+    });
+  }, []);
 
   const openRecordsCalendarPanel = () => {
     setRecordsCalendarDate(dateFromCalendarDateKey(selectedRecordsDateKey) || new Date());
@@ -2728,7 +2736,7 @@ export default function App() {
               onChange={handleAvatarInput}
             />
 
-            <div className="relative h-full w-full max-w-[430px] overflow-y-auto px-10 pb-28 pt-[clamp(3.5rem,8dvh,5.75rem)]">
+            <div ref={homeScrollRef} className="relative h-full w-full max-w-[430px] overflow-y-auto px-10 pb-28 pt-[clamp(3.5rem,8dvh,5.75rem)]">
               {!isSignedIn ? (
                 <form
                   onSubmit={handleLogin}
@@ -2827,7 +2835,7 @@ export default function App() {
 
               {isSignedIn && activeHomePanel && (
                 <button
-                  onClick={() => setActiveHomePanel(null)}
+                  onClick={closeHomePanel}
                   className="mb-5 flex h-11 items-center gap-2 rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black"
                   aria-label={homeCopy.back}
                 >
@@ -2876,7 +2884,8 @@ export default function App() {
                         <AtSign size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
                         <input
                           value={profile.account}
-                          onChange={event => setProfile(prev => ({ ...prev, account: event.target.value }))}
+                          readOnly
+                          aria-readonly="true"
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
                           placeholder={homeCopy.account}
                         />
