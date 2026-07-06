@@ -302,8 +302,8 @@ const mosaicMapHtml = `<!DOCTYPE html>
         const centerY = block.y + config.blockSize / 2;
 
         clickBlooms.forEach(bloom => {
-          const age = now - bloom.createdAt;
-          const progress = Math.max(0, Math.min(1, age / bloom.duration));
+          const age = Math.max(0, now - bloom.createdAt);
+          const progress = (age % bloom.duration) / bloom.duration;
           const dx = centerX - bloom.x;
           const dy = centerY - bloom.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
@@ -312,7 +312,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
           const front = progress * 1.12;
           const frontStrength = Math.max(0, 1 - Math.abs(normalizedDistance - front) / 0.24);
           const centerStrength = Math.max(0, 1 - normalizedDistance / Math.max(0.18, progress + 0.18)) * (1 - progress);
-          const strength = Math.min(0.82, Math.max(frontStrength, centerStrength * 0.7) * (1 - progress * 0.35));
+          const strength = Math.min(0.82, Math.max(frontStrength, centerStrength * 0.7));
 
           if (strength > 0.015) {
             color = blendRgb(color, bloom.color, strength);
@@ -340,31 +340,44 @@ const mosaicMapHtml = `<!DOCTYPE html>
         }
       }
 
-      function createBloom(clientX, clientY) {
+      function setPressBloom(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
         const x = (clientX - rect.left - offsetX) / scale;
         const y = (clientY - rect.top - offsetY) / scale;
-        const radius = (54 + Math.random() * 58) / scale;
+        const existing = clickBlooms[0];
 
-        clickBlooms.push({
+        if (existing) {
+          existing.x = x;
+          existing.y = y;
+          return;
+        }
+
+        clickBlooms = [{
           x,
           y,
-          radius,
+          radius: (54 + Math.random() * 58) / scale,
           color: bloomPalettes[Math.floor(Math.random() * bloomPalettes.length)],
           createdAt: performance.now(),
-          duration: 720,
+          duration: 760,
           seed: Math.random() * 1000
-        });
+        }];
 
-        if (clickBlooms.length > 18) clickBlooms = clickBlooms.slice(-18);
         if (bloomAnimationFrame === null) {
           bloomAnimationFrame = requestAnimationFrame(animateBlooms);
         }
       }
 
+      function clearPressBloom() {
+        clickBlooms = [];
+        if (bloomAnimationFrame !== null) {
+          cancelAnimationFrame(bloomAnimationFrame);
+          bloomAnimationFrame = null;
+        }
+        draw();
+      }
+
       function draw() {
         const now = performance.now();
-        clickBlooms = clickBlooms.filter(bloom => now - bloom.createdAt <= bloom.duration);
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -413,11 +426,13 @@ const mosaicMapHtml = `<!DOCTYPE html>
         if (event.pointerId !== undefined && canvas.setPointerCapture) {
           canvas.setPointerCapture(event.pointerId);
         }
+        setPressBloom(event.clientX, event.clientY);
         event.preventDefault?.();
       }
 
       function moveDrag(event) {
         if (!isDragging) return;
+        setPressBloom(event.clientX, event.clientY);
         const moveDistance = Math.hypot(event.clientX - dragStartClientX, event.clientY - dragStartClientY);
         if (moveDistance > 4) hasMoved = true;
         if (!hasMoved) return;
@@ -428,7 +443,6 @@ const mosaicMapHtml = `<!DOCTYPE html>
       }
 
       function endDrag(event) {
-        const shouldCreateBloom = isDragging && !hasMoved && Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY);
         isDragging = false;
         if (event?.pointerId !== undefined && canvas.releasePointerCapture) {
           try {
@@ -437,7 +451,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
             // Pointer capture may already be released by the browser.
           }
         }
-        if (shouldCreateBloom) createBloom(event.clientX, event.clientY);
+        clearPressBloom();
       }
 
       if (window.PointerEvent) {

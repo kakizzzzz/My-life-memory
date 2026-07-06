@@ -1018,6 +1018,64 @@ function createStarIcon(tagNumber?: number, isSelected?: boolean, colorHex?: str
   });
 }
 
+function DraggableStarMarker({
+  star,
+  isSelected,
+  mapStyle,
+  badgeColor,
+  onSelect,
+  onMove,
+}: {
+  star: StarData;
+  isSelected: boolean;
+  mapStyle: MapStyle;
+  badgeColor: string;
+  onSelect: (id: string, event: L.LeafletMouseEvent) => void;
+  onMove: (id: string, lat: number, lng: number) => void;
+}) {
+  const [markerPosition, setMarkerPosition] = React.useState<[number, number]>([star.lat, star.lng]);
+  const isDraggingRef = React.useRef(false);
+
+  useEffect(() => {
+    if (!isDraggingRef.current) setMarkerPosition([star.lat, star.lng]);
+  }, [star.lat, star.lng]);
+
+  const icon = React.useMemo(
+    () => createStarIcon(star.tagOrder, isSelected, star.color, mapStyle === 'aerial', badgeColor),
+    [badgeColor, isSelected, mapStyle, star.color, star.tagOrder]
+  );
+
+  const eventHandlers = React.useMemo(() => ({
+    click: (event: L.LeafletMouseEvent) => {
+      onSelect(star.id, event);
+    },
+    dragstart: () => {
+      isDraggingRef.current = true;
+    },
+    drag: (event: L.LeafletEvent) => {
+      const marker = event.target as L.Marker;
+      const position = marker.getLatLng();
+      setMarkerPosition([position.lat, position.lng]);
+    },
+    dragend: (event: L.LeafletEvent) => {
+      const marker = event.target as L.Marker;
+      const position = marker.getLatLng();
+      setMarkerPosition([position.lat, position.lng]);
+      isDraggingRef.current = false;
+      onMove(star.id, position.lat, position.lng);
+    },
+  }), [onMove, onSelect, star.id]);
+
+  return (
+    <Marker
+      position={markerPosition}
+      icon={icon}
+      draggable
+      eventHandlers={eventHandlers}
+    />
+  );
+}
+
 function MapEventHandlers({
   onDrop,
   onMapClick,
@@ -1665,6 +1723,10 @@ export default function App() {
   const onUpdateStar = (id: string, updates: Partial<StarData>) => {
     setStars(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
   };
+
+  const onMoveStar = React.useCallback((id: string, lat: number, lng: number) => {
+    setStars(prev => prev.map(star => star.id === id ? { ...star, lat, lng } : star));
+  }, []);
 
   const onDeleteStar = (id: string) => {
     setStars(prev => {
@@ -2626,21 +2688,17 @@ export default function App() {
             })
           )}
 
-          {stars.map((star) => (
-            <Marker 
-              key={star.id} 
-              position={[star.lat, star.lng]} 
-              icon={createStarIcon(star.tagOrder, selectedStarId === star.id, star.color, mapStyle === 'aerial', systemTheme.icon)} 
-              draggable={true}
-              eventHandlers={{
-                click: (e) => onStarClick(star.id, e),
-                dragend: (e) => {
-                  const marker = e.target;
-                  const newPos = marker.getLatLng();
-                  setStars(prev => prev.map(s => s.id === star.id ? { ...s, lat: newPos.lat, lng: newPos.lng } : s));
-                }
-              }}
-            />
+          {stars.map(star => (
+            <React.Fragment key={star.id}>
+              <DraggableStarMarker
+                star={star}
+                isSelected={selectedStarId === star.id}
+                mapStyle={mapStyle}
+                badgeColor={systemTheme.icon}
+                onSelect={onStarClick}
+                onMove={onMoveStar}
+              />
+            </React.Fragment>
           ))}
         </MapContainer>
       </div>
@@ -3354,17 +3412,6 @@ export default function App() {
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
                           placeholder={homeCopy.userName}
                         />
-                      </label>
-                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-black/5 px-3 text-black/35">
-                        <AtSign size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                        <input
-                          value={profile.account}
-                          readOnly
-                          aria-readonly="true"
-                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium text-black/35 outline-none placeholder:text-black/25"
-                          placeholder={homeCopy.account}
-                        />
-                        <span className="shrink-0 text-[12px] font-medium text-black/35">{homeCopy.idUnique}</span>
                       </label>
                       <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
                         <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />

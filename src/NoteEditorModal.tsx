@@ -297,6 +297,7 @@ const hasMeaningfulContent = (node: Node) => {
 const appendEditableTail = (element: HTMLElement) => {
   const tail = document.createElement('p');
   tail.dataset.noteTail = 'true';
+  tail.appendChild(document.createElement('br'));
   element.appendChild(tail);
   return tail;
 };
@@ -306,7 +307,7 @@ const normalizeEditableTailMarkers = (element: HTMLElement) => {
     if (hasMeaningfulContent(tail)) {
       delete tail.dataset.noteTail;
     } else {
-      tail.replaceChildren();
+      tail.replaceChildren(document.createElement('br'));
     }
   });
 };
@@ -1280,17 +1281,11 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     }
   };
 
-  const handleEditorMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleEditorMouseDown = () => {
     const editor = editorRef.current;
-    const target = e.target as HTMLElement;
     if (!editor) return;
 
     clearPendingEditorStyles();
-    const tailTarget = target.closest<HTMLElement>('[data-note-tail="true"]');
-    if (tailTarget && !hasMeaningfulContent(tailTarget)) {
-      e.preventDefault();
-      moveCaretToEditorEnd();
-    }
   };
 
   const handleEditorClick = (e: React.MouseEvent<HTMLDivElement>) => {
