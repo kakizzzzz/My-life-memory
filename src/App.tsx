@@ -1140,6 +1140,7 @@ export default function App() {
   const [isMapStyleMenuOpen, setIsMapStyleMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<AppView>(() => initialSignedIn ? 'map' : 'home');
   const [activeHomePanel, setActiveHomePanel] = useState<HomePanel>(null);
+  const [isHomePanelReturning, setIsHomePanelReturning] = useState(false);
   const [recordsFilter, setRecordsFilter] = useState<RecordsFilter>('all');
   const [selectedRecordsDateKey, setSelectedRecordsDateKey] = useState<string | null>(null);
   const [isRecordsMenuOpen, setIsRecordsMenuOpen] = useState(false);
@@ -1820,6 +1821,7 @@ export default function App() {
       homeScrollRef.current.scrollTop = 0;
       homeScrollRef.current.scrollLeft = 0;
     }
+    setIsHomePanelReturning(true);
     setActiveHomePanel(null);
   }, []);
 
@@ -2207,6 +2209,7 @@ export default function App() {
   );
   const bottomNavTransition = { type: 'spring', stiffness: 420, damping: 34 };
 
+  const screenTopPaddingClass = 'pt-16';
   const btnClass = "w-12 h-12 rounded-full bg-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 transition-all shadow-sm";
   const starPlacementButtonClass = `${btnClass} touch-none`;
   const readerToolButtonClass = "flex h-12 w-12 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-md transition-transform active:scale-95";
@@ -3010,7 +3013,7 @@ export default function App() {
             exit={{ opacity: 0, y: 18 }}
             className="absolute inset-0 z-[900] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
           >
-            <div className="flex-1 overflow-y-auto px-6 pb-32 pt-16">
+            <div className={`flex-1 overflow-y-auto px-6 pb-32 ${screenTopPaddingClass}`}>
               <div className="mb-4 flex items-start justify-between">
                 <h1 className="mt-1 text-4xl font-bold tracking-tight text-black">{homeCopy.recordsTitle}</h1>
                 <div className="relative flex flex-col gap-2">
@@ -3139,7 +3142,7 @@ export default function App() {
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                   className="absolute inset-0 z-[1000] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
                 >
-                  <div className="flex flex-1 flex-col items-center overflow-y-auto px-6 pb-32 pt-16">
+                  <div className={`flex flex-1 flex-col items-center overflow-y-auto px-6 pb-32 ${screenTopPaddingClass}`}>
                     <div className="w-full max-w-[360px]">
                       <div className="mb-6 flex items-start justify-between">
                         <h1 className="mt-1 text-[32px] font-bold tracking-tight text-black">{homeCopy.calendar}</h1>
@@ -3288,7 +3291,7 @@ export default function App() {
               onChange={handleAvatarInput}
             />
 
-            <div ref={homeScrollRef} className="relative h-full w-full max-w-[430px] overflow-y-auto px-10 pb-28 pt-[clamp(3.5rem,8dvh,5.75rem)]">
+            <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto px-10 pb-28 ${screenTopPaddingClass}`}>
               {!isSignedIn ? (
                 <form
                   onSubmit={handleLogin}
@@ -3342,7 +3345,7 @@ export default function App() {
                     </button>
                   </div>
                 </form>
-              ) : !activeHomePanel && (
+              ) : !activeHomePanel && !isHomePanelReturning && (
                 <>
               <div className="flex items-center gap-8">
                 <button
@@ -3396,7 +3399,7 @@ export default function App() {
                 </button>
               )}
 
-              <AnimatePresence mode="wait">
+              <AnimatePresence mode="wait" onExitComplete={() => setIsHomePanelReturning(false)}>
                 {activeHomePanel === 'profile' && (
                   <motion.div
                     key="profile-panel"
@@ -3663,7 +3666,7 @@ export default function App() {
               className="hidden"
               onChange={handleReaderImageInput}
             />
-            <div className="flex-1 overflow-y-auto px-8 pb-32 pt-16">
+            <div className={`flex-1 overflow-y-auto px-8 pb-32 ${screenTopPaddingClass}`}>
               <div className="mx-auto w-full max-w-[430px]">
                 <div className="mb-12 flex items-start justify-between">
                   <button

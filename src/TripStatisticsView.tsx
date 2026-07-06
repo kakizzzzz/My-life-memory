@@ -98,9 +98,10 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let clickBlooms = [];
       let drawFrame = null;
       let flowFrame = null;
+      let releaseTimer = null;
       let lastFlowDrawAt = 0;
       const flowDrawInterval = 110;
-      const pressBloomColor = [74, 74, 74];
+      const pressBloomColor = [116, 116, 116];
 
       if (typeof d3 === 'undefined' || typeof topojson === 'undefined') {
         loadingEl.innerText = window.MAP_COPY?.mapEngineError || 'Map engine failed to load. Please check the network and refresh.';
@@ -295,18 +296,18 @@ const mosaicMapHtml = `<!DOCTYPE html>
           const progress = (age % bloom.duration) / bloom.duration;
           const dx = block.centerX - bloom.x;
           const dy = block.centerY - bloom.y;
-          const maxDistance = bloom.radius * 1.14;
+          const maxDistance = bloom.radius * 1.22;
           if (Math.abs(dx) > maxDistance || Math.abs(dy) > maxDistance) return;
           const distance = Math.sqrt(dx * dx + dy * dy);
           const irregular = 0.9 + 0.18 * Math.sin(block.x * 0.09 + block.y * 0.13 + bloom.seed);
           const normalizedDistance = distance / (bloom.radius * irregular);
           const firstWave = 0.14 + progress * 0.78;
           const secondWave = 0.14 + ((progress + 0.48) % 1) * 0.78;
-          const firstStrength = Math.max(0, 1 - Math.abs(normalizedDistance - firstWave) / 0.2);
-          const secondStrength = Math.max(0, 1 - Math.abs(normalizedDistance - secondWave) / 0.24) * 0.54;
-          const centerStrength = Math.max(0, 1 - normalizedDistance / 0.38) * 0.18;
+          const firstStrength = Math.max(0, 1 - Math.abs(normalizedDistance - firstWave) / 0.24);
+          const secondStrength = Math.max(0, 1 - Math.abs(normalizedDistance - secondWave) / 0.28) * 0.62;
+          const centerStrength = Math.max(0, 1 - normalizedDistance / 0.44) * 0.22;
           const texture = 0.78 + 0.22 * Math.sin(block.x * 0.17 + block.y * 0.11 + bloom.seed);
-          const strength = Math.min(0.42, (firstStrength * 0.34 + secondStrength * 0.22 + centerStrength) * texture);
+          const strength = Math.min(0.68, (firstStrength * 0.46 + secondStrength * 0.32 + centerStrength) * texture);
 
           if (strength > 0.015) {
             color = blendRgb(color, bloom.color, strength);
@@ -357,35 +358,43 @@ const mosaicMapHtml = `<!DOCTYPE html>
         const x = (clientX - rect.left - offsetX) / scale;
         const y = (clientY - rect.top - offsetY) / scale;
         const existing = clickBlooms[0];
+        if (releaseTimer !== null) {
+          clearTimeout(releaseTimer);
+          releaseTimer = null;
+        }
 
         if (existing) {
           existing.x = x;
           existing.y = y;
-          requestDraw();
+          draw(performance.now());
           return;
         }
 
         clickBlooms = [{
           x,
           y,
-          radius: 102 / scale,
+          radius: 118 / scale,
           color: pressBloomColor,
           startedAt: performance.now(),
           duration: 3400,
           seed: Math.random() * 1000
         }];
 
-        requestDraw();
+        draw(performance.now());
         startPressFlow();
       }
 
       function clearPressBloom() {
-        clickBlooms = [];
         if (flowFrame !== null) {
           cancelAnimationFrame(flowFrame);
           flowFrame = null;
         }
-        requestDraw();
+        if (releaseTimer !== null) clearTimeout(releaseTimer);
+        releaseTimer = setTimeout(() => {
+          clickBlooms = [];
+          releaseTimer = null;
+          requestDraw();
+        }, 140);
       }
 
       function draw(now = performance.now()) {
@@ -625,7 +634,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     <div className="absolute inset-0 z-[900] flex flex-col overflow-x-hidden overflow-y-auto bg-[var(--app-page)] pb-32 font-sans pointer-events-auto">
       <div className="flex flex-col items-center pb-6 pt-16">
         <div className="mb-6 w-[320px]">
-          <h1 className="text-[36px] font-extrabold tracking-tight text-black">
+          <h1 className="mt-1 text-[36px] font-extrabold tracking-tight text-black">
             {copy.title}
           </h1>
         </div>
