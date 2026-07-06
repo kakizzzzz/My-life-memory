@@ -18,6 +18,12 @@ const DEFAULT_COLORS = [
   '#CBE0E8', '#80AACD', '#D3CCE3', '#F0EBE1', '#28292B'
 ];
 
+const formatDistanceDisplay = (distanceKm = 0) => {
+  const safeDistanceKm = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
+  if (safeDistanceKm < 1) return `${Math.round(safeDistanceKm * 1000)}m`;
+  return `${safeDistanceKm.toFixed(1)}km`;
+};
+
 const TRACK_OVERLAY_COPY = {
   en: {
     showDetails: 'Show route details',
@@ -171,7 +177,7 @@ export function TrackActionOverlay({
       {/* Popups specific to active tab */}
       {activeTab === 'eye' && (
         <div className="bg-[var(--app-active-surface)] rounded-[16px] px-3 py-1.5 flex items-center gap-2 shadow-lg border border-[var(--app-card)]">
-           <div className="font-sans font-medium text-[13px] text-black/90 whitespace-nowrap">{track.distance?.toFixed(1) || '0.0'}km</div>
+           <div className="font-sans font-medium text-[13px] text-black/90 whitespace-nowrap">{formatDistanceDisplay(track.distance)}</div>
            <div className="w-[1px] h-3 bg-gray-300"></div>
            <div className="font-sans font-medium text-[13px] text-black/90 whitespace-nowrap">{formatTime(track.time || 0)}</div>
         </div>

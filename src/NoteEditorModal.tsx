@@ -1578,24 +1578,24 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
         </div>
 
         {isCameraOpen && (
-          <div className="absolute inset-x-0 top-12 z-[80] mx-4 rounded-[18px] bg-[#1f1f1f] p-2 shadow-2xl">
+          <div className="fixed inset-0 z-[2200] flex flex-col bg-[#1f1f1f] p-4">
             <video
               ref={videoRef}
               playsInline
               muted
-              className="aspect-[4/3] w-full rounded-[14px] bg-black object-cover"
+              className="min-h-0 flex-1 rounded-[18px] bg-black object-cover"
             />
-            <div className="mt-2 flex items-center justify-center gap-2">
+            <div className="flex shrink-0 items-center justify-center gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
               <button
                 onClick={stopCamera}
-                className="h-9 px-4 rounded-full bg-white/15 text-white text-[13px] font-medium hover:bg-white/20"
+                className="h-11 px-5 rounded-full bg-white/15 text-white text-[14px] font-medium hover:bg-white/20"
               >
                 {copy.cancel}
               </button>
               <button
                 onClick={capturePhoto}
                 disabled={isProcessingImage}
-                className="h-9 px-5 rounded-full bg-white text-black text-[13px] font-semibold disabled:opacity-50"
+                className="h-11 px-6 rounded-full bg-white text-black text-[14px] font-semibold disabled:opacity-50"
               >
                 {copy.capture}
               </button>

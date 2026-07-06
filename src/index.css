@@ -225,8 +225,6 @@ html, body {
   border-radius: 18px;
 }
 
-.note-reader-content [data-remove-image="true"],
-.note-reader-content [data-preview-image="true"],
-.note-reader-content button {
+.note-reader-content [data-preview-image="true"] {
   display: none !important;
 }

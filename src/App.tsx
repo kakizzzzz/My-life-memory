@@ -165,9 +165,22 @@ const THEME_PICKER_COLORS = [
   '#D7E7EE', '#74A3B7', '#E8DAE8', '#FAF4F0', '#28292B'
 ];
 
-const READER_NOTE_COLORS = [
-  '#D2936D', '#B6A5B9', '#EDC727', '#88AA9A', '#80AACD', '#5C5C5C'
+const READER_TEXT_COLORS = [
+  '#D2936D', '#B6A5B9', '#EDC727', '#88AA9A', '#C4D4C5', '#D0D5C1',
+  '#CBE0E8', '#80AACD', '#D3CCE3', '#F0EBE1', '#28292B'
 ];
+const READER_FONT_SIZES = [12, 14, 16, 18, 22, 26];
+
+const cssColorToHex = (color: string, fallback = '#D2936D') => {
+  if (!color) return fallback;
+  if (color.startsWith('#')) return color;
+  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (!match) return fallback;
+  return `#${[match[1], match[2], match[3]]
+    .map(channel => Math.max(0, Math.min(255, Number(channel))).toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()}`;
+};
 
 const UPLOAD_IMAGE_MAX_BYTES = 100 * 1024;
 const SAMPLE_NOTE_IMAGE_URL = `${import.meta.env.BASE_URL}note-sample.jpg`;
@@ -206,9 +219,13 @@ const LEGACY_RECORD_STAR_LOCATION: [number, number] = [36.36705, 127.34425];
 const APP_STORAGE_KEY = 'campus-map-app-state-v1';
 const GEOLOCATION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
-  maximumAge: 10000,
+  maximumAge: 0,
   timeout: 15000,
 };
+const TRACK_MAX_ACCURACY_METERS = 45;
+const TRACK_MIN_DISTANCE_METERS = 4;
+const TRACK_MAX_SPEED_MPS = 8;
+const TRACK_MIN_POINT_INTERVAL_MS = 1000;
 
 const createDefaultRecordStar = (): StarData => {
   const timestamp = Date.now();
@@ -373,6 +390,7 @@ const HOME_COPY = {
     readerCollapseTools: 'Collapse reading tools',
     readerExpandTools: 'Expand reading tools',
     readerLocate: 'Locate record on map',
+    removeImage: 'Remove image',
     bottomMap: 'Map',
     bottomStats: 'Stats',
     bottomNotes: 'Notes',
@@ -437,6 +455,7 @@ const HOME_COPY = {
     readerCollapseTools: '收起阅读工具',
     readerExpandTools: '展开阅读工具',
     readerLocate: '定位到地图记录',
+    removeImage: '移除图片',
     bottomMap: '地图',
     bottomStats: '统计',
     bottomNotes: '记录',
@@ -501,6 +520,7 @@ const HOME_COPY = {
     readerCollapseTools: '읽기 도구 접기',
     readerExpandTools: '읽기 도구 펼치기',
     readerLocate: '지도에서 기록 위치 찾기',
+    removeImage: '이미지 제거',
     bottomMap: '지도',
     bottomStats: '통계',
     bottomNotes: '기록',
@@ -634,13 +654,22 @@ const getLegacyNoteImages = (note?: NoteData) => {
   return [...imageUrls, ...legacyImageUrl];
 };
 
-const imageToReaderHtml = (src: string, altText = 'Note attachment') => (
-  `<figure class="note-inline-image" contenteditable="false" data-note-image="true"><img src="${escapeHtml(src)}" alt="${escapeHtml(altText)}" /></figure>`
+const readerRemoveImageButtonHtml = (label = 'Remove image') => (
+  `<button type="button" data-remove-image="true" aria-label="${escapeHtml(label)}">` +
+    `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>` +
+  `</button>`
+);
+
+const imageToReaderHtml = (src: string, altText = 'Note attachment', removeImageText = 'Remove image') => (
+  `<figure class="note-inline-image" contenteditable="false" data-note-image="true">` +
+    `<img src="${escapeHtml(src)}" alt="${escapeHtml(altText)}" />` +
+    readerRemoveImageButtonHtml(removeImageText) +
+  `</figure>`
 );
 
 const readerEditableTailHtml = '<p data-note-tail="true"><br></p>';
 
-const cleanReaderHtml = (html: string, imageAltText?: string) => {
+const cleanReaderHtml = (html: string, imageAltText?: string, removeImageText?: string) => {
   if (!html || typeof document === 'undefined') return html;
   const container = document.createElement('div');
   container.innerHTML = html;
@@ -648,6 +677,12 @@ const cleanReaderHtml = (html: string, imageAltText?: string) => {
     .querySelectorAll('[data-remove-image="true"], [data-preview-image="true"], button')
     .forEach(element => element.remove());
   container.querySelectorAll('[contenteditable]').forEach(element => element.removeAttribute('contenteditable'));
+  container.querySelectorAll<HTMLElement>('.note-inline-image, [data-note-image="true"]').forEach(figure => {
+    figure.classList.add('note-inline-image');
+    figure.setAttribute('contenteditable', 'false');
+    figure.dataset.noteImage = 'true';
+    figure.insertAdjacentHTML('beforeend', readerRemoveImageButtonHtml(removeImageText));
+  });
   container.querySelectorAll('[data-note-tail="true"]').forEach(element => {
     if (!element.textContent?.trim() && !element.querySelector('img')) element.remove();
   });
@@ -659,12 +694,12 @@ const cleanReaderHtml = (html: string, imageAltText?: string) => {
   return container.innerHTML;
 };
 
-const getReadableNoteHtml = (note?: NoteData, imageAltText = 'Note attachment') => {
+const getReadableNoteHtml = (note?: NoteData, imageAltText = 'Note attachment', removeImageText = 'Remove image') => {
   if (!note) return '';
   const legacyImages = getLegacyNoteImages(note);
-  const legacyImageHtml = legacyImages.map(src => imageToReaderHtml(src, imageAltText)).join('');
+  const legacyImageHtml = legacyImages.map(src => imageToReaderHtml(src, imageAltText, removeImageText)).join('');
   const html = note.contentHtml ?? `${textToParagraphHtml(note.content || '')}${legacyImageHtml}`;
-  return cleanReaderHtml(html, imageAltText);
+  return cleanReaderHtml(html, imageAltText, removeImageText);
 };
 
 const getReadableTitleHtml = (note?: NoteData, fallbackTitle = 'Untitled note') => (
@@ -697,6 +732,20 @@ const formatRecordTime = (timestamp: number, locale = 'en-US') => (
 const formatRecordMonth = (timestamp: number) => (
   `${new Date(timestamp).getFullYear()}/${String(new Date(timestamp).getMonth() + 1).padStart(2, '0')}`
 );
+
+const formatDistanceDisplay = (distanceKm = 0) => {
+  const safeDistanceKm = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
+  if (safeDistanceKm < 1) {
+    return {
+      value: String(Math.round(safeDistanceKm * 1000)),
+      unit: 'm',
+    };
+  }
+  return {
+    value: safeDistanceKm.toFixed(1),
+    unit: 'km',
+  };
+};
 
 const getCalendarDateKey = (date: Date) => (
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -1066,11 +1115,19 @@ export default function App() {
   const [editingNoteTarget, setEditingNoteTarget] = useState<EditingNoteTarget | null>(null);
   const [readingNoteTarget, setReadingNoteTarget] = useState<ReadingNoteTarget | null>(null);
   const [isReaderToolsOpen, setIsReaderToolsOpen] = useState(false);
-  const [readerFontScaleIndex, setReaderFontScaleIndex] = useState(1);
+  const [readerActivePanel, setReaderActivePanel] = useState<'font' | 'color' | null>(null);
+  const [readerActiveTextTarget, setReaderActiveTextTarget] = useState<'title' | 'content'>('content');
+  const [readerSelectedFontSize, setReaderSelectedFontSize] = useState(18);
+  const [readerSelectedColor, setReaderSelectedColor] = useState('#D2936D');
+  const [readerShowCustomPicker, setReaderShowCustomPicker] = useState(false);
   const readerTitleRef = React.useRef<HTMLHeadingElement>(null);
   const readerContentRef = React.useRef<HTMLDivElement>(null);
   const readerCameraInputRef = React.useRef<HTMLInputElement>(null);
   const readerImageInputRef = React.useRef<HTMLInputElement>(null);
+  const readerSavedRangeRef = React.useRef<Range | null>(null);
+  const readerPendingTitleStylesRef = React.useRef<Record<string, string>>({});
+  const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
+  const readerDraftSaveTimerRef = React.useRef<number | null>(null);
   
   // Tag Mode State
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
@@ -1093,6 +1150,7 @@ export default function App() {
   const gpsWatchIdRef = React.useRef<number | null>(null);
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
+  const lastTrackPointRef = React.useRef<{ location: [number, number]; timestamp: number; accuracy?: number } | null>(null);
   const lastCompassHeadingAtRef = React.useRef(0);
   const isRequestingHeadingPermissionRef = React.useRef(false);
   const hasRequestedInitialLocationRef = React.useRef(false);
@@ -1105,7 +1163,38 @@ export default function App() {
     trackingStateRef.current = { isTracking, isPaused };
   }, [isTracking, isPaused]);
 
-  const appendTrackPoint = React.useCallback((newLoc: [number, number]) => {
+  const appendTrackPoint = React.useCallback((
+    newLoc: [number, number],
+    metadata: { accuracy?: number; timestamp?: number; speed?: number | null } = {}
+  ) => {
+    const accuracy = Number.isFinite(metadata.accuracy) ? metadata.accuracy : undefined;
+    const timestamp = Number.isFinite(metadata.timestamp) ? metadata.timestamp as number : Date.now();
+    const previousAcceptedPoint = lastTrackPointRef.current;
+
+    if (accuracy !== undefined && accuracy > TRACK_MAX_ACCURACY_METERS) return;
+
+    if (previousAcceptedPoint) {
+      const distanceMeters = L.latLng(previousAcceptedPoint.location).distanceTo(L.latLng(newLoc));
+      const elapsedMs = Math.max(0, timestamp - previousAcceptedPoint.timestamp);
+      const elapsedSeconds = elapsedMs / 1000;
+      const accuracyAwareMinimum = Math.max(
+        TRACK_MIN_DISTANCE_METERS,
+        Math.min(15, Math.max(accuracy || 0, previousAcceptedPoint.accuracy || 0) * 0.55)
+      );
+
+      if (elapsedMs < TRACK_MIN_POINT_INTERVAL_MS && distanceMeters < 15) return;
+      if (distanceMeters < accuracyAwareMinimum) return;
+      if (elapsedSeconds > 0 && distanceMeters / elapsedSeconds > TRACK_MAX_SPEED_MPS) return;
+      if (
+        typeof metadata.speed === 'number' &&
+        Number.isFinite(metadata.speed) &&
+        metadata.speed > TRACK_MAX_SPEED_MPS &&
+        distanceMeters > TRACK_MIN_DISTANCE_METERS
+      ) {
+        return;
+      }
+    }
+
     setTrackPaths(prev => {
       if (prev.length === 0) return [[newLoc]];
 
@@ -1122,6 +1211,7 @@ export default function App() {
       newPaths[lastIndex] = currentSegment;
       return newPaths;
     });
+    lastTrackPointRef.current = { location: newLoc, timestamp, accuracy };
   }, []);
 
   const syncDefaultStarNearUser = React.useCallback((newLoc: [number, number]) => {
@@ -1160,10 +1250,7 @@ export default function App() {
     lastGpsLocationRef.current = newLoc;
     if (shouldFly) setFlyTarget(newLoc);
 
-    if (trackingStateRef.current.isTracking && !trackingStateRef.current.isPaused) {
-      appendTrackPoint(newLoc);
-    }
-  }, [appendTrackPoint]);
+  }, []);
 
   const applyGpsPosition = React.useCallback((position: GeolocationPosition, shouldFly = false) => {
     const newLoc: [number, number] = [position.coords.latitude, position.coords.longitude];
@@ -1179,7 +1266,14 @@ export default function App() {
       shouldFly,
       gpsHeading
     );
-  }, [applyLocationPoint, syncDefaultStarNearUser]);
+    if (trackingStateRef.current.isTracking && !trackingStateRef.current.isPaused) {
+      appendTrackPoint(newLoc, {
+        accuracy: position.coords.accuracy,
+        timestamp: position.timestamp,
+        speed: position.coords.speed,
+      });
+    }
+  }, [appendTrackPoint, applyLocationPoint, syncDefaultStarNearUser]);
 
   const stopGpsWatch = React.useCallback(() => {
     if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
@@ -1270,6 +1364,8 @@ export default function App() {
     }
     if (activeView !== 'reader') {
       setIsReaderToolsOpen(false);
+      setReaderActivePanel(null);
+      setReaderShowCustomPicker(false);
     }
   }, [activeView]);
 
@@ -1406,6 +1502,7 @@ export default function App() {
     });
     return dist / 1000;
   }, [trackPaths]);
+  const activeTrackDistanceDisplay = formatDistanceDisplay(trackDistanceKm);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -1973,13 +2070,16 @@ export default function App() {
       note,
       timestamp: getNoteTimestamp(note),
       titleHtml: getReadableTitleHtml(note, homeCopy.untitledNote),
-      contentHtml: getReadableNoteHtml(note, homeCopy.noteImageAlt),
+      contentHtml: getReadableNoteHtml(note, homeCopy.noteImageAlt, homeCopy.removeImage),
     };
-  }, [homeCopy.noteImageAlt, homeCopy.untitledNote, readingNoteTarget, stars]);
-  const readerFontScale = [0.94, 1, 1.08][readerFontScaleIndex] || 1;
+  }, [homeCopy.noteImageAlt, homeCopy.removeImage, homeCopy.untitledNote, readingNoteTarget, stars]);
 
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
     if (!readerRecord) return;
+    if (readerDraftSaveTimerRef.current !== null) {
+      window.clearTimeout(readerDraftSaveTimerRef.current);
+      readerDraftSaveTimerRef.current = null;
+    }
     const titleHtml = readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml;
     const contentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
     const title = htmlToText(titleHtml);
@@ -2009,6 +2109,203 @@ export default function App() {
     }));
   }, [readerRecord]);
 
+  const scheduleReaderDraftSave = React.useCallback(() => {
+    if (readerDraftSaveTimerRef.current !== null) {
+      window.clearTimeout(readerDraftSaveTimerRef.current);
+    }
+    readerDraftSaveTimerRef.current = window.setTimeout(() => {
+      readerDraftSaveTimerRef.current = null;
+      saveReaderDraft();
+    }, 220);
+  }, [saveReaderDraft]);
+
+  const readerRangeIsInsideElement = React.useCallback((range: Range, element: HTMLElement | null) => (
+    Boolean(element && element.contains(range.commonAncestorContainer))
+  ), []);
+
+  const getReaderElementForTarget = React.useCallback((target: 'title' | 'content') => (
+    target === 'title' ? readerTitleRef.current : readerContentRef.current
+  ), []);
+
+  const getReaderTargetFromRange = React.useCallback((range: Range): 'title' | 'content' | null => {
+    if (readerRangeIsInsideElement(range, readerTitleRef.current)) return 'title';
+    if (readerRangeIsInsideElement(range, readerContentRef.current)) return 'content';
+    return null;
+  }, [readerRangeIsInsideElement]);
+
+  const normalizeReaderFontSize = (fontSize: number) => {
+    const roundedSize = Math.round(fontSize);
+    return READER_FONT_SIZES.find(size => Math.abs(size - roundedSize) <= 1) || roundedSize;
+  };
+
+  const getReaderTextNodeInRange = React.useCallback((range: Range, element: HTMLElement) => {
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: node => {
+          if (!node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
+          const parentElement = node.parentElement;
+          if (parentElement?.closest('[contenteditable="false"], [data-note-image="true"], button')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return range.intersectsNode(node)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        },
+      }
+    );
+    return walker.nextNode();
+  }, []);
+
+  const getReaderComputedElement = (node: Node | null, element: HTMLElement) => {
+    if (!node) return element;
+    const candidate = node.nodeType === Node.ELEMENT_NODE
+      ? node as Element
+      : node.parentElement;
+    return candidate instanceof HTMLElement && element.contains(candidate) ? candidate : element;
+  };
+
+  const syncReaderToolbarFromRange = React.useCallback((range: Range) => {
+    const target = getReaderTargetFromRange(range);
+    if (!target) return;
+    const element = getReaderElementForTarget(target);
+    if (!element) return;
+    const textNode = range.collapsed ? range.startContainer : getReaderTextNodeInRange(range, element);
+    const computedElement = getReaderComputedElement(textNode, element);
+    const computedStyle = window.getComputedStyle(computedElement);
+    const fontSize = Number.parseFloat(computedStyle.fontSize);
+    setReaderActiveTextTarget(target);
+    setReaderSelectedFontSize(Number.isFinite(fontSize) ? normalizeReaderFontSize(fontSize) : 18);
+    setReaderSelectedColor(cssColorToHex(computedStyle.color, readerRecord?.note.color || '#D2936D'));
+  }, [getReaderElementForTarget, getReaderTargetFromRange, getReaderTextNodeInRange, readerRecord?.note.color]);
+
+  const saveReaderSelection = React.useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const target = getReaderTargetFromRange(range);
+    if (!target) return;
+    readerSavedRangeRef.current = range.cloneRange();
+    syncReaderToolbarFromRange(range);
+  }, [getReaderTargetFromRange, syncReaderToolbarFromRange]);
+
+  const restoreReaderRange = React.useCallback((element: HTMLElement, range: Range) => {
+    const selection = window.getSelection();
+    if (!selection || !readerRangeIsInsideElement(range, element)) return false;
+    element.focus();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    readerSavedRangeRef.current = range.cloneRange();
+    return true;
+  }, [readerRangeIsInsideElement]);
+
+  const getReaderSelectionRange = React.useCallback((target = readerActiveTextTarget) => {
+    const element = getReaderElementForTarget(target);
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      if (readerRangeIsInsideElement(range, element)) return range.cloneRange();
+    }
+    const savedRange = readerSavedRangeRef.current;
+    if (savedRange && readerRangeIsInsideElement(savedRange, element)) return savedRange.cloneRange();
+    return null;
+  }, [getReaderElementForTarget, readerActiveTextTarget, readerRangeIsInsideElement]);
+
+  const splitReaderRangeTextBoundaries = (range: Range) => {
+    if (
+      range.startContainer === range.endContainer &&
+      range.startContainer.nodeType === Node.TEXT_NODE
+    ) {
+      const textNode = range.startContainer as Text;
+      const startOffset = range.startOffset;
+      const endOffset = range.endOffset;
+      textNode.splitText(endOffset);
+      const selectedText = textNode.splitText(startOffset);
+      range.setStart(selectedText, 0);
+      range.setEnd(selectedText, selectedText.length);
+      return;
+    }
+
+    if (
+      range.endContainer.nodeType === Node.TEXT_NODE &&
+      range.endOffset > 0 &&
+      range.endOffset < (range.endContainer.textContent?.length || 0)
+    ) {
+      (range.endContainer as Text).splitText(range.endOffset);
+    }
+
+    if (
+      range.startContainer.nodeType === Node.TEXT_NODE &&
+      range.startOffset > 0 &&
+      range.startOffset < (range.startContainer.textContent?.length || 0)
+    ) {
+      const selectedStart = (range.startContainer as Text).splitText(range.startOffset);
+      range.setStart(selectedStart, 0);
+    }
+  };
+
+  const applyReaderStyleToSelection = React.useCallback((styles: Record<string, string>) => {
+    const target = readerActiveTextTarget;
+    const element = getReaderElementForTarget(target);
+    const range = getReaderSelectionRange(target);
+    const selection = window.getSelection();
+    if (!element || !range || !selection || !readerRangeIsInsideElement(range, element)) return false;
+
+    if (range.collapsed) {
+      const pendingRef = target === 'title' ? readerPendingTitleStylesRef : readerPendingContentStylesRef;
+      pendingRef.current = { ...pendingRef.current, ...styles };
+      restoreReaderRange(element, range);
+      return true;
+    }
+
+    const workingRange = range.cloneRange();
+    splitReaderRangeTextBoundaries(workingRange);
+
+    const selectedTextNodes: Text[] = [];
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: node => {
+          if (!node.textContent) return NodeFilter.FILTER_REJECT;
+          const parentElement = node.parentElement;
+          if (parentElement?.closest('[contenteditable="false"], [data-note-image="true"], button')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return workingRange.intersectsNode(node)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        },
+      }
+    );
+
+    while (walker.nextNode()) {
+      selectedTextNodes.push(walker.currentNode as Text);
+    }
+
+    if (selectedTextNodes.length === 0) return false;
+    const styledNodes = selectedTextNodes.map(textNode => {
+      const span = document.createElement('span');
+      Object.entries(styles).forEach(([property, value]) => {
+        span.style.setProperty(property, value);
+      });
+      textNode.replaceWith(span);
+      span.appendChild(textNode);
+      return span;
+    });
+
+    element.focus();
+    selection.removeAllRanges();
+    const newRange = document.createRange();
+    newRange.setStartBefore(styledNodes[0]);
+    newRange.setEndAfter(styledNodes[styledNodes.length - 1]);
+    selection.addRange(newRange);
+    readerSavedRangeRef.current = newRange.cloneRange();
+    saveReaderDraft();
+    return true;
+  }, [getReaderElementForTarget, getReaderSelectionRange, readerActiveTextTarget, readerRangeIsInsideElement, restoreReaderRange, saveReaderDraft]);
+
   const openReaderFromRecord = React.useCallback((starId: string, noteId: string) => {
     setReadingNoteTarget({ starId, noteId });
     setActiveView('reader');
@@ -2017,6 +2314,8 @@ export default function App() {
     setIsRecordsCalendarOpen(false);
     setIsSearchOpen(false);
     setIsReaderToolsOpen(false);
+    setReaderActivePanel(null);
+    setReaderShowCustomPicker(false);
   }, []);
 
   const locateReaderRecord = React.useCallback(() => {
@@ -2029,18 +2328,85 @@ export default function App() {
     setIsReaderToolsOpen(false);
   }, [readerRecord]);
 
-  const cycleReaderFontScale = React.useCallback(() => {
-    setReaderFontScaleIndex(index => (index + 1) % 3);
-  }, []);
+  const keepReaderSelectionMouseDown = React.useCallback((event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    saveReaderSelection();
+  }, [saveReaderSelection]);
+
+  const handleReaderFontSize = React.useCallback((size: number) => {
+    setReaderSelectedFontSize(size);
+    applyReaderStyleToSelection({ 'font-size': `${size}px` });
+    setReaderActivePanel(null);
+  }, [applyReaderStyleToSelection]);
+
+  const handleReaderTextColor = React.useCallback((color: string) => {
+    setReaderSelectedColor(color);
+    applyReaderStyleToSelection({ color });
+  }, [applyReaderStyleToSelection]);
+
+  const insertStyledReaderText = React.useCallback((
+    element: HTMLElement,
+    range: Range | null,
+    text: string,
+    styles: Record<string, string>
+  ) => {
+    if (!range || !range.collapsed || !readerRangeIsInsideElement(range, element)) return false;
+    const span = document.createElement('span');
+    Object.entries(styles).forEach(([property, value]) => {
+      span.style.setProperty(property, value);
+    });
+    span.textContent = text;
+    range.deleteContents();
+    range.insertNode(span);
+    const selection = window.getSelection();
+    if (selection) {
+      const nextRange = document.createRange();
+      nextRange.setStartAfter(span);
+      nextRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(nextRange);
+      readerSavedRangeRef.current = nextRange.cloneRange();
+    }
+    scheduleReaderDraftSave();
+    return true;
+  }, [readerRangeIsInsideElement, scheduleReaderDraftSave]);
+
+  const handleReaderBeforeInput = React.useCallback((target: 'title' | 'content', event: React.FormEvent<HTMLElement>) => {
+    const inputEvent = event.nativeEvent as InputEvent;
+    if (inputEvent.inputType !== 'insertText' || !inputEvent.data) return;
+    const pendingRef = target === 'title' ? readerPendingTitleStylesRef : readerPendingContentStylesRef;
+    const pendingStyles = pendingRef.current;
+    if (Object.keys(pendingStyles).length === 0) return;
+    const element = getReaderElementForTarget(target);
+    if (element && insertStyledReaderText(element, getReaderSelectionRange(target), inputEvent.data, pendingStyles)) {
+      event.preventDefault();
+    }
+  }, [getReaderElementForTarget, getReaderSelectionRange, insertStyledReaderText]);
+
+  const handleReaderInput = React.useCallback(() => {
+    scheduleReaderDraftSave();
+  }, [scheduleReaderDraftSave]);
+
+  const handleReaderContentClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const removeButton = target.closest('[data-remove-image="true"]');
+    if (removeButton) {
+      event.preventDefault();
+      removeButton.closest('[data-note-image="true"]')?.remove();
+      saveReaderDraft();
+      return;
+    }
+    saveReaderSelection();
+  }, [saveReaderDraft, saveReaderSelection]);
 
   const insertReaderImage = React.useCallback(async (file?: File) => {
     if (!file || !file.type.startsWith('image/')) return;
     const imageUrl = await compressImageFileToDataUrl(file);
     const editor = readerContentRef.current;
     if (!editor) return;
-    editor.insertAdjacentHTML('beforeend', `${imageToReaderHtml(imageUrl, homeCopy.noteImageAlt)}${readerEditableTailHtml}`);
+    editor.insertAdjacentHTML('beforeend', `${imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage)}${readerEditableTailHtml}`);
     saveReaderDraft();
-  }, [homeCopy.noteImageAlt, saveReaderDraft]);
+  }, [homeCopy.noteImageAlt, homeCopy.removeImage, saveReaderDraft]);
 
   const handleReaderImageInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -2048,16 +2414,11 @@ export default function App() {
     event.target.value = '';
   }, [insertReaderImage]);
 
-  const applyReaderColor = React.useCallback(() => {
-    if (!readerRecord) return;
-    const currentColor = readerRecord.note.color || READER_NOTE_COLORS[0];
-    const currentIndex = READER_NOTE_COLORS.findIndex(color => color.toLowerCase() === currentColor.toLowerCase());
-    const nextColor = READER_NOTE_COLORS[(currentIndex + 1) % READER_NOTE_COLORS.length];
-    if (readerTitleRef.current) {
-      readerTitleRef.current.style.color = nextColor;
-    }
-    saveReaderDraft({ color: nextColor });
-  }, [readerRecord, saveReaderDraft]);
+  const handleReaderPanelToggle = React.useCallback((panel: 'font' | 'color') => {
+    saveReaderSelection();
+    setReaderShowCustomPicker(false);
+    setReaderActivePanel(currentPanel => currentPanel === panel ? null : panel);
+  }, [saveReaderSelection]);
 
   return (
     <div className="relative w-[100dvw] h-[100dvh] overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
@@ -2338,10 +2699,15 @@ export default function App() {
                 {/* Route */}
                 <button className={btnClass} onClick={() => {
                   void startHeadingWatch();
-                  const didRequestGps = requestUserLocation(true);
+                  lastTrackPointRef.current = null;
+                  trackingStateRef.current = { isTracking: true, isPaused: false };
                   setIsTracking(true);
                   setIsPaused(false);
+                  const didRequestGps = requestUserLocation(true);
                   setTrackPaths(didRequestGps ? [] : [[userLocation]]);
+                  if (!didRequestGps) {
+                    lastTrackPointRef.current = { location: userLocation, timestamp: Date.now() };
+                  }
                   setTrackTime(0);
                   setIsMenuOpen(false);
                 }}>
@@ -2377,7 +2743,7 @@ export default function App() {
             
             <div className="w-full h-[3px] bg-gray-200 mt-2 mb-3 rounded-full"></div>
             <div className="text-[40px] leading-none font-bold text-black tracking-tight text-left">
-              {trackDistanceKm.toFixed(1)}<span className="text-[28px] font-bold ml-1.5">km</span>
+              {activeTrackDistanceDisplay.value}<span className="text-[28px] font-bold ml-1.5">{activeTrackDistanceDisplay.unit}</span>
             </div>
             <div className="w-full h-[3px] bg-gray-200 my-3 rounded-full"></div>
             <div className="text-[24px] leading-none font-semibold text-black text-left mb-1">
@@ -2394,6 +2760,7 @@ export default function App() {
                 setIsPaused(!isPaused);
                 if (isPaused) {
                   // Resuming: start a new path segment
+                  lastTrackPointRef.current = null;
                   setTrackPaths(prev => [...prev, []]);
                 }
               }}
@@ -2407,6 +2774,7 @@ export default function App() {
             <button 
               className={btnClass}
               onClick={() => {
+                lastTrackPointRef.current = null;
                 setIsTracking(false);
                 setTrackPaths([]);
                 setTrackTime(0);
@@ -2427,6 +2795,7 @@ export default function App() {
                     distance: trackDistanceKm
                   }]);
                 }
+                lastTrackPointRef.current = null;
                 setIsTracking(false);
                 setTrackPaths([]);
                 setTrackTime(0);
@@ -3130,6 +3499,7 @@ export default function App() {
                       setActiveView('records');
                       setReadingNoteTarget(null);
                       setIsReaderToolsOpen(false);
+                      setReaderActivePanel(null);
                     }}
                     className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm transition-transform active:scale-95"
                     aria-label={homeCopy.backToRecords}
@@ -3157,6 +3527,11 @@ export default function App() {
                       suppressContentEditableWarning
                       className="note-reader-title mb-7 text-[36px] font-medium leading-tight"
                       style={{ color: readerRecord.note.color || '#D2936D' }}
+                      onBeforeInput={event => handleReaderBeforeInput('title', event)}
+                      onInput={handleReaderInput}
+                      onFocus={saveReaderSelection}
+                      onKeyUp={saveReaderSelection}
+                      onMouseUp={saveReaderSelection}
                       onBlur={() => saveReaderDraft()}
                       dangerouslySetInnerHTML={{ __html: readerRecord.titleHtml }}
                     />
@@ -3165,7 +3540,13 @@ export default function App() {
                       contentEditable
                       suppressContentEditableWarning
                       className="note-reader-content pb-10 text-[#7E9FBA]"
-                      style={{ fontSize: `${20 * readerFontScale}px` }}
+                      style={{ fontSize: `${readerRecord.note.fontSize || 20}px` }}
+                      onBeforeInput={event => handleReaderBeforeInput('content', event)}
+                      onInput={handleReaderInput}
+                      onFocus={saveReaderSelection}
+                      onKeyUp={saveReaderSelection}
+                      onMouseUp={saveReaderSelection}
+                      onClick={handleReaderContentClick}
                       onBlur={() => saveReaderDraft()}
                       dangerouslySetInnerHTML={{ __html: readerRecord.contentHtml }}
                     />
@@ -3191,19 +3572,92 @@ export default function App() {
                       <button className={readerToolButtonClass} onClick={() => saveReaderDraft()} aria-label={homeCopy.readerEdit}>
                         <Save size={24} strokeWidth={2.4} />
                       </button>
-                      <button className={readerToolButtonClass} onClick={cycleReaderFontScale} aria-label={homeCopy.readerReadingSize}>
-                        <span className="text-[28px] font-semibold leading-none">A</span>
-                      </button>
+                      <div className="relative">
+                        <button
+                          className={readerToolButtonClass}
+                          onMouseDown={keepReaderSelectionMouseDown}
+                          onClick={() => handleReaderPanelToggle('font')}
+                          aria-label={homeCopy.readerReadingSize}
+                        >
+                          <span className="text-[28px] font-semibold leading-none">A</span>
+                        </button>
+                        {readerActivePanel === 'font' && (
+                          <div className="absolute right-[calc(100%+10px)] top-1/2 z-[1030] flex w-[72px] -translate-y-1/2 flex-col gap-1 rounded-[14px] bg-[var(--app-dark)] p-1.5 shadow-xl">
+                            {READER_FONT_SIZES.map(size => (
+                              <button
+                                key={size}
+                                onMouseDown={keepReaderSelectionMouseDown}
+                                onClick={() => handleReaderFontSize(size)}
+                                className={`h-7 rounded-full text-[12px] font-medium transition-colors ${readerSelectedFontSize === size ? 'bg-white text-black' : 'text-white hover:bg-white/15'}`}
+                              >
+                                {size}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <button className={readerToolButtonClass} onClick={() => readerCameraInputRef.current?.click()} aria-label={homeCopy.readerAddPhoto}>
                         <Camera size={24} strokeWidth={2.4} />
                       </button>
                       <button className={readerToolButtonClass} onClick={() => readerImageInputRef.current?.click()} aria-label={homeCopy.readerJumpImage}>
                         <ImageIcon size={24} strokeWidth={2.4} />
                       </button>
-                      <button className={readerToolButtonClass} onClick={applyReaderColor} aria-label={homeCopy.readerEditColor}>
-                        <Palette size={24} strokeWidth={2.4} />
-                      </button>
-                      <button className={readerToolButtonClass} onClick={() => setIsReaderToolsOpen(false)} aria-label={homeCopy.readerCollapseTools}>
+                      <div className="relative">
+                        <button
+                          className={readerToolButtonClass}
+                          onMouseDown={keepReaderSelectionMouseDown}
+                          onClick={() => handleReaderPanelToggle('color')}
+                          aria-label={homeCopy.readerEditColor}
+                        >
+                          <Palette size={24} strokeWidth={2.4} />
+                        </button>
+                        {readerActivePanel === 'color' && (
+                          <div className="absolute right-[calc(100%+10px)] top-1/2 z-[1030] flex -translate-y-1/2 flex-col items-center">
+                            <div className="relative box-border w-[124px] rounded-[20px] bg-[var(--app-dark)] p-2.5 shadow-lg">
+                              <div className="grid grid-cols-4 gap-2">
+                                {READER_TEXT_COLORS.map(color => (
+                                  <button
+                                    key={color}
+                                    onMouseDown={keepReaderSelectionMouseDown}
+                                    onClick={() => handleReaderTextColor(color)}
+                                    className="h-[20px] w-[20px] rounded-full"
+                                    style={{
+                                      backgroundColor: color,
+                                      boxShadow: readerSelectedColor === color ? '0 0 0 1.5px white' : 'none',
+                                    }}
+                                  />
+                                ))}
+                                <button
+                                  onMouseDown={keepReaderSelectionMouseDown}
+                                  onClick={() => setReaderShowCustomPicker(!readerShowCustomPicker)}
+                                  className="relative h-[20px] w-[20px] overflow-hidden rounded-[6px]"
+                                  style={{ boxShadow: readerShowCustomPicker || !READER_TEXT_COLORS.includes(readerSelectedColor) ? '0 0 0 1.5px white' : 'none' }}
+                                >
+                                  <div className="absolute inset-0 h-full w-full bg-gradient-to-br from-[#12c2e9] via-[#c471ed] to-[#f64f59] pointer-events-none" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {readerShowCustomPicker && (
+                              <div className="picker-popup absolute left-1/2 top-full z-50 mt-2 flex w-[124px] -translate-x-1/2 flex-col gap-2 rounded-[16px] bg-[var(--app-dark)] p-2.5 shadow-xl">
+                                <HexColorPicker color={readerSelectedColor} onChange={handleReaderTextColor} />
+                                <div className="flex w-full items-center">
+                                  <span className="mr-1 pt-[1px] font-mono text-[13px] leading-none text-white/70">#</span>
+                                  <HexColorInput
+                                    color={readerSelectedColor}
+                                    onChange={handleReaderTextColor}
+                                    className="h-[22px] min-w-0 flex-1 rounded-[6px] border border-white/20 bg-white/10 px-1.5 font-mono text-[12px] uppercase text-white focus:border-white/50 focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button className={readerToolButtonClass} onClick={() => {
+                        setReaderActivePanel(null);
+                        setIsReaderToolsOpen(false);
+                      }} aria-label={homeCopy.readerCollapseTools}>
                         <ChevronUp size={30} strokeWidth={2.5} />
                       </button>
                     </motion.div>

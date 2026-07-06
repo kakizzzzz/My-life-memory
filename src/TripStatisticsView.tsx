@@ -93,6 +93,15 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let offsetY = 0;
       let scale = 1;
       let hasMoved = false;
+      let dragStartClientX = 0;
+      let dragStartClientY = 0;
+      let clickBlooms = [];
+      const bloomPalettes = [
+        ['rgba(248, 245, 238, 0.72)', 'rgba(248, 245, 238, 0.22)', 'rgba(248, 245, 238, 0)'],
+        ['rgba(215, 231, 238, 0.62)', 'rgba(215, 231, 238, 0.2)', 'rgba(215, 231, 238, 0)'],
+        ['rgba(232, 218, 232, 0.62)', 'rgba(232, 218, 232, 0.2)', 'rgba(232, 218, 232, 0)'],
+        ['rgba(237, 199, 39, 0.42)', 'rgba(237, 199, 39, 0.16)', 'rgba(237, 199, 39, 0)']
+      ];
 
       if (typeof d3 === 'undefined' || typeof topojson === 'undefined') {
         loadingEl.innerText = window.MAP_COPY?.mapEngineError || 'Map engine failed to load. Please check the network and refresh.';
@@ -267,6 +276,58 @@ const mosaicMapHtml = `<!DOCTYPE html>
         context.closePath();
       }
 
+      function createBloom(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const x = (clientX - rect.left - offsetX) / scale;
+        const y = (clientY - rect.top - offsetY) / scale;
+        const radius = (54 + Math.random() * 58) / scale;
+        const points = [];
+        const count = 9 + Math.floor(Math.random() * 7);
+
+        for (let index = 0; index < count; index += 1) {
+          const angle = (Math.PI * 2 * index) / count + (Math.random() - 0.5) * 0.38;
+          points.push({
+            angle,
+            radius: radius * (0.68 + Math.random() * 0.48)
+          });
+        }
+
+        clickBlooms.push({
+          x,
+          y,
+          radius,
+          rotation: Math.random() * Math.PI * 2,
+          points,
+          palette: bloomPalettes[Math.floor(Math.random() * bloomPalettes.length)]
+        });
+
+        if (clickBlooms.length > 18) clickBlooms = clickBlooms.slice(-18);
+        draw();
+      }
+
+      function drawBloom(bloom) {
+        ctx.save();
+        ctx.translate(bloom.x, bloom.y);
+        ctx.rotate(bloom.rotation);
+
+        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, bloom.radius);
+        gradient.addColorStop(0, bloom.palette[0]);
+        gradient.addColorStop(0.46, bloom.palette[1]);
+        gradient.addColorStop(1, bloom.palette[2]);
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        bloom.points.forEach((point, index) => {
+          const x = Math.cos(point.angle) * point.radius;
+          const y = Math.sin(point.angle) * point.radius;
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
       function draw() {
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -303,28 +364,76 @@ const mosaicMapHtml = `<!DOCTYPE html>
           ctx.fill();
         });
 
+        clickBlooms.forEach(drawBloom);
+
         ctx.restore();
       }
 
-      canvas.addEventListener('mousedown', event => {
+      function beginDrag(event) {
         isDragging = true;
         hasMoved = false;
+        dragStartClientX = event.clientX;
+        dragStartClientY = event.clientY;
         dragStartX = event.clientX - offsetX;
         dragStartY = event.clientY - offsetY;
-      });
-
-      window.addEventListener('mousemove', event => {
-        if (isDragging) {
-          hasMoved = true;
-          offsetX = event.clientX - dragStartX;
-          offsetY = event.clientY - dragStartY;
-          draw();
+        if (event.pointerId !== undefined && canvas.setPointerCapture) {
+          canvas.setPointerCapture(event.pointerId);
         }
-      });
+        event.preventDefault?.();
+      }
 
-      window.addEventListener('mouseup', () => {
+      function moveDrag(event) {
+        if (!isDragging) return;
+        const moveDistance = Math.hypot(event.clientX - dragStartClientX, event.clientY - dragStartClientY);
+        if (moveDistance > 4) hasMoved = true;
+        if (!hasMoved) return;
+        offsetX = event.clientX - dragStartX;
+        offsetY = event.clientY - dragStartY;
+        draw();
+        event.preventDefault?.();
+      }
+
+      function endDrag(event) {
+        const shouldCreateBloom = isDragging && !hasMoved && Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY);
         isDragging = false;
-      });
+        if (event?.pointerId !== undefined && canvas.releasePointerCapture) {
+          try {
+            canvas.releasePointerCapture(event.pointerId);
+          } catch {
+            // Pointer capture may already be released by the browser.
+          }
+        }
+        if (shouldCreateBloom) createBloom(event.clientX, event.clientY);
+      }
+
+      if (window.PointerEvent) {
+        canvas.addEventListener('pointerdown', beginDrag);
+        window.addEventListener('pointermove', moveDrag);
+        window.addEventListener('pointerup', endDrag);
+        window.addEventListener('pointercancel', endDrag);
+      } else {
+        canvas.addEventListener('mousedown', beginDrag);
+        window.addEventListener('mousemove', moveDrag);
+        window.addEventListener('mouseup', endDrag);
+
+        canvas.addEventListener('touchstart', event => {
+          if (event.touches.length !== 1) return;
+          event.preventDefault();
+          beginDrag(event.touches[0]);
+        }, { passive: false });
+
+        window.addEventListener('touchmove', event => {
+          if (!isDragging || event.touches.length !== 1) return;
+          event.preventDefault();
+          moveDrag(event.touches[0]);
+        }, { passive: false });
+
+        window.addEventListener('touchend', event => {
+          const touch = event.changedTouches?.[0];
+          endDrag(touch);
+        });
+        window.addEventListener('touchcancel', endDrag);
+      }
 
       canvas.addEventListener('click', event => {
         if (!hasMoved) event.preventDefault();
@@ -463,7 +572,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
         <div className="relative mb-6 h-[345px] w-[320px] shrink-0 overflow-hidden rounded-[24px] bg-[#1A1A1A] shadow-md">
           <iframe
             srcDoc={mosaicHtml}
-            className="h-full w-full border-none pointer-events-none"
+            className="h-full w-full border-none"
             sandbox="allow-scripts allow-same-origin"
             title={copy.mosaicMap}
           />
@@ -478,7 +587,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
           <button
             popoverTarget="trip-map-fullscreen"
             popoverTargetAction="show"
-            className="absolute bottom-6 right-6 rounded-full bg-[var(--app-page)] px-5 py-2 text-sm font-bold text-black shadow-lg transition-all hover:brightness-105"
+            className="absolute bottom-6 right-6 z-10 rounded-full bg-[var(--app-page)] px-5 py-2 text-sm font-bold text-black shadow-lg transition-all hover:brightness-105"
           >
             {copy.expand}
           </button>
@@ -538,7 +647,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
         <button
           popoverTarget="trip-map-fullscreen"
           popoverTargetAction="hide"
-          className="absolute left-6 top-12 flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/20 text-white backdrop-blur-md transition-transform active:scale-95"
+          className="absolute left-6 top-12 z-10 flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/20 text-white backdrop-blur-md transition-transform active:scale-95"
           aria-label={copy.closeExpandedMap}
         >
           <X size={28} />
