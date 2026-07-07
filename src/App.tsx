@@ -230,6 +230,10 @@ const TRACK_MIN_POINT_INTERVAL_MS = 500;
 const TRACK_START_CALIBRATION_MS = 7000;
 const TRACK_START_REPLACE_DISTANCE_METERS = 12;
 const TRACK_LOW_CONFIDENCE_ACCURACY_METERS = 18;
+const TRACK_SEED_MAX_AGE_MS = 5000;
+const TRACK_SEED_MAX_ACCURACY_METERS = 18;
+const TRACK_JUMP_SPEED_MPS = 3.2;
+const TRACK_JUMP_DISTANCE_MARGIN_METERS = 5;
 
 const createDefaultRecordStar = (): StarData => {
   const timestamp = Date.now();
@@ -1302,6 +1306,7 @@ export default function App() {
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
   const lastGpsAccuracyRef = React.useRef<number | undefined>(undefined);
+  const lastGpsTimestampRef = React.useRef(0);
   const lastTrackPointRef = React.useRef<{ location: [number, number]; timestamp: number; accuracy?: number } | null>(null);
   const trackingStartedAtRef = React.useRef(0);
   const lastCompassHeadingAtRef = React.useRef(0);
@@ -1334,6 +1339,9 @@ export default function App() {
       const elapsedMs = Math.max(0, timestamp - previousAcceptedPoint.timestamp);
       const elapsedSeconds = elapsedMs / 1000;
       const accuracyPair = Math.max(accuracy || 0, previousAcceptedPoint.accuracy || 0);
+      const isImplausibleJump =
+        elapsedSeconds > 0 &&
+        distanceMeters > elapsedSeconds * TRACK_JUMP_SPEED_MPS + TRACK_JUMP_DISTANCE_MARGIN_METERS;
       const isStartCalibration =
         trackingStartedAtRef.current > 0 &&
         Date.now() - trackingStartedAtRef.current < TRACK_START_CALIBRATION_MS;
@@ -1360,6 +1368,8 @@ export default function App() {
         lastTrackPointRef.current = { location: newLoc, timestamp, accuracy };
         return;
       }
+
+      if (isImplausibleJump) return;
 
       const accuracyAwareMinimum = Math.max(
         TRACK_MIN_DISTANCE_METERS,
@@ -1435,6 +1445,7 @@ export default function App() {
     }
     lastGpsLocationRef.current = newLoc;
     lastGpsAccuracyRef.current = undefined;
+    lastGpsTimestampRef.current = Date.now();
     if (shouldFly) setFlyTarget(newLoc);
 
   }, []);
@@ -1462,6 +1473,7 @@ export default function App() {
       });
     }
     lastGpsAccuracyRef.current = accuracy;
+    lastGpsTimestampRef.current = Date.now();
   }, [appendTrackPoint, applyLocationPoint, syncDefaultStarNearUser]);
 
   const stopGpsWatch = React.useCallback(() => {
@@ -3317,8 +3329,13 @@ export default function App() {
                 {/* Route */}
                 <button className={btnClass} onClick={() => {
                   void startHeadingWatch();
-                  const liveSeedLocation = lastGpsLocationRef.current;
                   const startedAt = Date.now();
+                  const canUseLiveSeed =
+                    lastGpsLocationRef.current &&
+                    lastGpsTimestampRef.current > 0 &&
+                    startedAt - lastGpsTimestampRef.current <= TRACK_SEED_MAX_AGE_MS &&
+                    (lastGpsAccuracyRef.current === undefined || lastGpsAccuracyRef.current <= TRACK_SEED_MAX_ACCURACY_METERS);
+                  const liveSeedLocation = canUseLiveSeed ? lastGpsLocationRef.current : null;
                   trackingStartedAtRef.current = startedAt;
                   lastTrackPointRef.current = liveSeedLocation
                     ? { location: liveSeedLocation, timestamp: startedAt, accuracy: lastGpsAccuracyRef.current }
