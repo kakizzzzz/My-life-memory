@@ -9,6 +9,19 @@ import { StarActionOverlay } from './StarActionOverlay';
 import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
 import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
+import {
+  getCloudSession,
+  isCloudBackendEnabled,
+  loadCloudAccountData,
+  normalizeAccountId,
+  onCloudAuthStateChange,
+  saveCloudAppState,
+  saveCloudProfile,
+  signInOrCreateCloudAccount,
+  signOutCloudAccount,
+  type CloudAppState,
+  type CloudProfile,
+} from './lib/cloudBackend';
 
 function createLocationIcon(mapStyle: string, iconColor = '#c3c3c3', heading = 0) {
   const isAerial = mapStyle === 'aerial';
@@ -1194,8 +1207,9 @@ export default function App() {
   const initialProfile: UserProfile = {
     ...DEFAULT_PROFILE,
     ...(persistedAppState?.profile || {}),
+    password: isCloudBackendEnabled ? '' : persistedAppState?.profile?.password || DEFAULT_PROFILE.password,
   };
-  const initialSignedIn = persistedAppState?.isSignedIn === true && hasLoginAccount(initialProfile);
+  const initialSignedIn = !isCloudBackendEnabled && persistedAppState?.isSignedIn === true && hasLoginAccount(initialProfile);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyle>(() => (
     isMapStyle(persistedAppState?.mapStyle) ? persistedAppState.mapStyle : 'light'
@@ -1225,6 +1239,7 @@ export default function App() {
   const [loginAccount, setLoginAccount] = useState(() => initialProfile.account);
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [permissionRequestState, setPermissionRequestState] = useState<'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported'>('idle');
   const [language, setLanguage] = useState(() => (
     isLanguage(persistedAppState?.language) ? persistedAppState.language : 'en'
@@ -1289,6 +1304,9 @@ export default function App() {
   const hasRequestedFirstInteractionLocationRef = React.useRef(false);
   const hasRequestedFirstInteractionHeadingRef = React.useRef(false);
   const hasSyncedDefaultStarToGpsRef = React.useRef(false);
+  const isApplyingCloudStateRef = React.useRef(false);
+  const cloudReadyToSaveRef = React.useRef(!isCloudBackendEnabled);
+  const cloudSaveTimerRef = React.useRef<number | null>(null);
 
   const trackingStateRef = React.useRef({ isTracking, isPaused });
   useEffect(() => {
@@ -1599,8 +1617,11 @@ export default function App() {
     writePersistedAppState({
       mapStyle,
       systemTheme,
-      profile,
-      isSignedIn,
+      profile: {
+        ...profile,
+        password: isCloudBackendEnabled ? '' : profile.password,
+      },
+      isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
       language,
       stars,
       savedTracks,
@@ -1890,9 +1911,125 @@ export default function App() {
     }
   };
 
-  const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
+  const createAppStateSnapshot = React.useCallback((profileOverride?: Partial<UserProfile>): PersistedAppState => {
+    const snapshotProfile = {
+      ...profile,
+      ...profileOverride,
+    };
+
+    return {
+      mapStyle,
+      systemTheme,
+      profile: {
+        name: snapshotProfile.name,
+        account: snapshotProfile.account,
+        password: isCloudBackendEnabled ? '' : snapshotProfile.password,
+        avatarUrl: snapshotProfile.avatarUrl,
+      },
+      isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
+      language,
+      stars,
+      savedTracks,
+    };
+  }, [isSignedIn, language, mapStyle, profile, savedTracks, stars, systemTheme]);
+
+  const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null) => {
+    const remoteState = (cloudState || {}) as PersistedAppState;
+    isApplyingCloudStateRef.current = true;
+    cloudReadyToSaveRef.current = false;
+
+    if (isMapStyle(remoteState.mapStyle)) setMapStyle(remoteState.mapStyle);
+    setSystemTheme({
+      ...DEFAULT_SYSTEM_THEME,
+      ...(remoteState.systemTheme || {}),
+    });
+    setProfile(prev => ({
+      ...DEFAULT_PROFILE,
+      ...(remoteState.profile || {}),
+      name: cloudProfile.name || remoteState.profile?.name || prev.name || DEFAULT_PROFILE.name,
+      account: cloudProfile.account,
+      password: '',
+      avatarUrl: cloudProfile.avatarUrl || remoteState.profile?.avatarUrl || prev.avatarUrl || '',
+    }));
+    if (isLanguage(remoteState.language)) setLanguage(remoteState.language);
+    setStars(normalizeInitialStars(remoteState.stars) || [createDefaultRecordStar()]);
+    setSavedTracks(Array.isArray(remoteState.savedTracks) ? remoteState.savedTracks : []);
+    setIsSignedIn(true);
+    setLoginAccount(cloudProfile.account);
+    setLoginPassword('');
+    setLoginError('');
+    setActiveView('map');
+
+    window.setTimeout(() => {
+      isApplyingCloudStateRef.current = false;
+      cloudReadyToSaveRef.current = true;
+    }, 0);
+  }, []);
+
+  const hydrateCloudSession = React.useCallback(async (session: Awaited<ReturnType<typeof getCloudSession>>) => {
+    if (!isCloudBackendEnabled) return;
+
+    if (!session?.user) {
+      cloudReadyToSaveRef.current = false;
+      setIsSignedIn(false);
+      return;
+    }
+
+    try {
+      const { profile: cloudProfile, state } = await loadCloudAccountData(session.user);
+      applyCloudSnapshot(cloudProfile, state);
+    } catch (error) {
+      console.error('Could not load cloud account data:', error);
+      cloudReadyToSaveRef.current = false;
+      setIsSignedIn(false);
+    }
+  }, [applyCloudSnapshot]);
+
+  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const enteredAccount = loginAccount.trim();
+
+    if (isAuthBusy) return;
+
+    if (isCloudBackendEnabled) {
+      if (!enteredAccount || !loginPassword) {
+        setLoginError(homeCopy.loginError);
+        return;
+      }
+
+      setIsAuthBusy(true);
+      setLoginError('');
+
+      try {
+        const normalizedAccount = normalizeAccountId(enteredAccount);
+        const initialProfileForCloud: CloudProfile = {
+          account: normalizedAccount,
+          name: profile.name || DEFAULT_PROFILE.name,
+          avatarUrl: profile.avatarUrl || '',
+        };
+        const initialState = createAppStateSnapshot({
+          account: normalizedAccount,
+          password: '',
+        }) as CloudAppState;
+        const result = await signInOrCreateCloudAccount({
+          account: normalizedAccount,
+          password: loginPassword,
+          initialProfile: initialProfileForCloud,
+          initialState,
+        });
+
+        applyCloudSnapshot(result.profile, result.state);
+      } catch (error) {
+        console.error('Cloud login failed:', error);
+        cloudReadyToSaveRef.current = false;
+        setLoginError(homeCopy.loginError);
+      } finally {
+        setIsAuthBusy(false);
+      }
+
+      return;
+    }
+
     const storedAccount = profile.account.trim();
     const accountMatches = storedAccount ? enteredAccount === storedAccount : enteredAccount.length > 0;
     const passwordMatches = profile.password ? loginPassword === profile.password : true;
@@ -1918,11 +2055,65 @@ export default function App() {
   };
 
   const handleSignOut = () => {
+    if (isCloudBackendEnabled) {
+      cloudReadyToSaveRef.current = false;
+      void signOutCloudAccount();
+    }
     setIsSignedIn(false);
     setLoginAccount(profile.account);
     setLoginPassword('');
     setLoginError('');
   };
+
+  useEffect(() => {
+    if (!isCloudBackendEnabled) return;
+
+    let isMounted = true;
+    void getCloudSession().then(session => {
+      if (!isMounted) return;
+      void hydrateCloudSession(session);
+    });
+
+    const unsubscribe = onCloudAuthStateChange(session => {
+      if (!isMounted) return;
+      void hydrateCloudSession(session);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [hydrateCloudSession]);
+
+  useEffect(() => {
+    if (!isCloudBackendEnabled || !isSignedIn || !cloudReadyToSaveRef.current || isApplyingCloudStateRef.current) return;
+
+    if (cloudSaveTimerRef.current !== null) {
+      window.clearTimeout(cloudSaveTimerRef.current);
+    }
+
+    const snapshot = createAppStateSnapshot() as CloudAppState;
+    const cloudProfile: CloudProfile = {
+      account: normalizeAccountId(profile.account),
+      name: profile.name,
+      avatarUrl: profile.avatarUrl,
+    };
+
+    cloudSaveTimerRef.current = window.setTimeout(() => {
+      void Promise.all([
+        saveCloudProfile(cloudProfile),
+        saveCloudAppState(snapshot),
+      ]).catch(error => {
+        console.error('Could not save cloud app state:', error);
+      });
+    }, 900);
+
+    return () => {
+      if (cloudSaveTimerRef.current !== null) {
+        window.clearTimeout(cloudSaveTimerRef.current);
+      }
+    };
+  }, [createAppStateSnapshot, isSignedIn, profile.account, profile.avatarUrl, profile.name]);
 
   const closeHomePanel = React.useCallback(() => {
     if (homeScrollRef.current) {
@@ -3557,7 +3748,8 @@ export default function App() {
                     )}
                     <button
                       type="submit"
-                      className="mt-5 h-[48px] w-full rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98]"
+                      disabled={isAuthBusy}
+                      className="mt-5 h-[48px] w-full rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
                     >
                       {homeCopy.login}
                     </button>
