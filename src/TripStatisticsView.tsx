@@ -95,13 +95,18 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let hasMoved = false;
       let dragStartClientX = 0;
       let dragStartClientY = 0;
-      let clickBlooms = [];
       let drawFrame = null;
-      let flowFrame = null;
-      let releaseTimer = null;
-      let lastFlowDrawAt = 0;
-      const flowDrawInterval = 110;
-      const pressBloomColor = [116, 116, 116];
+      let interactionFrame = null;
+      const interactionState = {
+        x: 0,
+        y: 0,
+        targetX: 0,
+        targetY: 0,
+        isDown: false,
+        intensity: 0,
+        time: 0
+      };
+      const interactionHighlightColor = [180, 180, 180];
 
       if (typeof d3 === 'undefined' || typeof topojson === 'undefined') {
         loadingEl.innerText = window.MAP_COPY?.mapEngineError || 'Map engine failed to load. Please check the network and refresh.';
@@ -287,32 +292,24 @@ const mosaicMapHtml = `<!DOCTYPE html>
 
       function getBlockColor(block, now) {
         let color = block.baseRgb || [92, 92, 92];
-        if (clickBlooms.length === 0) {
+        if (interactionState.intensity <= 0.01) {
           return block.baseColor || 'rgb(' + color[0] + ', ' + color[1] + ', ' + color[2] + ')';
         }
 
-        clickBlooms.forEach(bloom => {
-          const age = Math.max(0, now - bloom.startedAt);
-          const progress = (age % bloom.duration) / bloom.duration;
-          const dx = block.centerX - bloom.x;
-          const dy = block.centerY - bloom.y;
-          const maxDistance = bloom.radius * 1.22;
-          if (Math.abs(dx) > maxDistance || Math.abs(dy) > maxDistance) return;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          const irregular = 0.9 + 0.18 * Math.sin(block.x * 0.09 + block.y * 0.13 + bloom.seed);
-          const normalizedDistance = distance / (bloom.radius * irregular);
-          const firstWave = 0.14 + progress * 0.78;
-          const secondWave = 0.14 + ((progress + 0.48) % 1) * 0.78;
-          const firstStrength = Math.max(0, 1 - Math.abs(normalizedDistance - firstWave) / 0.24);
-          const secondStrength = Math.max(0, 1 - Math.abs(normalizedDistance - secondWave) / 0.28) * 0.62;
-          const centerStrength = Math.max(0, 1 - normalizedDistance / 0.44) * 0.22;
-          const texture = 0.78 + 0.22 * Math.sin(block.x * 0.17 + block.y * 0.11 + bloom.seed);
-          const strength = Math.min(0.68, (firstStrength * 0.46 + secondStrength * 0.32 + centerStrength) * texture);
+        const dx = block.centerX - interactionState.x;
+        const dy = block.centerY - interactionState.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const maxRadius = 150 / scale;
 
-          if (strength > 0.015) {
-            color = blendRgb(color, bloom.color, strength);
+        if (distance < maxRadius) {
+          const falloff = Math.exp(-(distance * distance) / (maxRadius * maxRadius * 0.15));
+          const drift = 0.9 + 0.1 * Math.sin(interactionState.time + distance * 0.035);
+          const alpha = falloff * interactionState.intensity * drift;
+
+          if (alpha > 0.01) {
+            color = blendRgb(color, interactionHighlightColor, Math.min(1, alpha));
           }
-        });
+        }
 
         return 'rgb(' + color[0] + ', ' + color[1] + ', ' + color[2] + ')';
       }
@@ -335,66 +332,46 @@ const mosaicMapHtml = `<!DOCTYPE html>
         });
       }
 
-      function animatePressFlow(timestamp) {
-        flowFrame = null;
-        if (clickBlooms.length === 0) return;
+      function requestInteractionFrame() {
+        if (interactionFrame !== null) return;
+        interactionFrame = requestAnimationFrame(animateInteraction);
+      }
 
-        if (timestamp - lastFlowDrawAt >= flowDrawInterval) {
-          lastFlowDrawAt = timestamp;
-          draw(timestamp);
+      function animateInteraction(timestamp) {
+        interactionFrame = null;
+        interactionState.time += 0.05;
+        interactionState.x += (interactionState.targetX - interactionState.x) * 0.15;
+        interactionState.y += (interactionState.targetY - interactionState.y) * 0.15;
+
+        if (interactionState.isDown) {
+          interactionState.intensity = Math.min(1, interactionState.intensity + 0.1);
+        } else {
+          interactionState.intensity = Math.max(0, interactionState.intensity - 0.05);
         }
 
-        flowFrame = requestAnimationFrame(animatePressFlow);
+        draw(timestamp);
+
+        if (interactionState.isDown || interactionState.intensity > 0.01) {
+          requestInteractionFrame();
+        } else {
+          interactionState.intensity = 0;
+          requestDraw();
+        }
       }
 
-      function startPressFlow() {
-        if (flowFrame !== null) return;
-        lastFlowDrawAt = 0;
-        flowFrame = requestAnimationFrame(animatePressFlow);
-      }
-
-      function setPressBloom(clientX, clientY) {
+      function setInteractionTarget(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
         const x = (clientX - rect.left - offsetX) / scale;
         const y = (clientY - rect.top - offsetY) / scale;
-        const existing = clickBlooms[0];
-        if (releaseTimer !== null) {
-          clearTimeout(releaseTimer);
-          releaseTimer = null;
+        interactionState.targetX = x;
+        interactionState.targetY = y;
+
+        if (interactionState.intensity <= 0.01) {
+          interactionState.x = x;
+          interactionState.y = y;
         }
 
-        if (existing) {
-          existing.x = x;
-          existing.y = y;
-          draw(performance.now());
-          return;
-        }
-
-        clickBlooms = [{
-          x,
-          y,
-          radius: 118 / scale,
-          color: pressBloomColor,
-          startedAt: performance.now(),
-          duration: 3400,
-          seed: Math.random() * 1000
-        }];
-
-        draw(performance.now());
-        startPressFlow();
-      }
-
-      function clearPressBloom() {
-        if (flowFrame !== null) {
-          cancelAnimationFrame(flowFrame);
-          flowFrame = null;
-        }
-        if (releaseTimer !== null) clearTimeout(releaseTimer);
-        releaseTimer = setTimeout(() => {
-          clickBlooms = [];
-          releaseTimer = null;
-          requestDraw();
-        }, 140);
+        requestInteractionFrame();
       }
 
       function draw(now = performance.now()) {
@@ -446,24 +423,28 @@ const mosaicMapHtml = `<!DOCTYPE html>
         if (event.pointerId !== undefined && canvas.setPointerCapture) {
           canvas.setPointerCapture(event.pointerId);
         }
-        setPressBloom(event.clientX, event.clientY);
+        interactionState.isDown = true;
+        setInteractionTarget(event.clientX, event.clientY);
         event.preventDefault?.();
       }
 
       function moveDrag(event) {
         if (!isDragging) return;
-        setPressBloom(event.clientX, event.clientY);
         const moveDistance = Math.hypot(event.clientX - dragStartClientX, event.clientY - dragStartClientY);
         if (moveDistance > 4) hasMoved = true;
-        if (!hasMoved) return;
-        offsetX = event.clientX - dragStartX;
-        offsetY = event.clientY - dragStartY;
-        requestDraw();
+        if (hasMoved) {
+          offsetX = event.clientX - dragStartX;
+          offsetY = event.clientY - dragStartY;
+          requestDraw();
+        }
+        setInteractionTarget(event.clientX, event.clientY);
         event.preventDefault?.();
       }
 
       function endDrag(event) {
         isDragging = false;
+        interactionState.isDown = false;
+        requestInteractionFrame();
         if (event?.pointerId !== undefined && canvas.releasePointerCapture) {
           try {
             canvas.releasePointerCapture(event.pointerId);
@@ -471,7 +452,6 @@ const mosaicMapHtml = `<!DOCTYPE html>
             // Pointer capture may already be released by the browser.
           }
         }
-        clearPressBloom();
       }
 
       if (window.PointerEvent) {
@@ -632,9 +612,9 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
 
   return (
     <div className="absolute inset-0 z-[900] flex flex-col overflow-x-hidden overflow-y-auto bg-[var(--app-page)] pb-32 font-sans pointer-events-auto">
-      <div className="flex flex-col items-center pb-6 pt-16">
+      <div className="flex flex-col items-center pb-6 pt-14">
         <div className="mb-6 w-[320px]">
-          <h1 className="mt-1 text-[36px] font-extrabold tracking-tight text-black">
+          <h1 className="text-[36px] font-extrabold tracking-tight text-black">
             {copy.title}
           </h1>
         </div>

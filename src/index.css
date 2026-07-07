@@ -220,6 +220,12 @@ html, body {
   margin: 0 0 1rem;
 }
 
+.note-reader-content p[data-note-tail="true"] {
+  min-height: 1.65em;
+  margin-top: 1rem;
+  cursor: text;
+}
+
 .note-reader-content .note-inline-image {
   margin: 1.75rem 0;
   border-radius: 18px;

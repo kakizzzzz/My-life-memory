@@ -141,14 +141,14 @@ const DEFAULT_PROFILE: UserProfile = {
 
 const THEME_PRESETS: { label: Record<string, string>; theme: SystemTheme }[] = [
   { label: { en: 'Original', zh: '初始', ko: '기본' }, theme: DEFAULT_SYSTEM_THEME },
-  { label: { en: 'Terracotta', zh: '陶土', ko: '테라코타' }, theme: { page: '#FAF4F0', card: '#E8D7CD', icon: '#C97C64', dark: '#6A5048' } },
-  { label: { en: 'Blue', zh: '清蓝', ko: '블루' }, theme: { page: '#F4F8FA', card: '#D7E7EE', icon: '#74A3B7', dark: '#405D6B' } },
-  { label: { en: 'Mauve', zh: '雾紫', ko: '모브' }, theme: { page: '#F8F5F8', card: '#E8DAE8', icon: '#B990B5', dark: '#5D4D62' } },
+  { label: { en: 'Terracotta', zh: '陶土', ko: '테라코타' }, theme: { page: '#FAF4F0', card: '#E8D7CD', icon: '#B98A78', dark: '#6A5048' } },
+  { label: { en: 'Blue', zh: '清蓝', ko: '블루' }, theme: { page: '#F4F8FA', card: '#D7E7EE', icon: '#8AAEBC', dark: '#405D6B' } },
+  { label: { en: 'Mauve', zh: '雾紫', ko: '모브' }, theme: { page: '#F8F5F8', card: '#E8DAE8', icon: '#A994AA', dark: '#5D4D62' } },
 ];
 
 const THEME_PICKER_COLORS = [
-  '#C97C64', '#B990B5', '#EDC727', '#88AA9A', '#C4D4C5', '#D0D5C1',
-  '#D7E7EE', '#74A3B7', '#E8DAE8', '#FAF4F0', '#28292B'
+  '#B98A78', '#A994AA', '#D8C66C', '#88AA9A', '#C4D4C5', '#D0D5C1',
+  '#D7E7EE', '#8AAEBC', '#E8DAE8', '#FAF4F0', '#28292B', '#5C5C5C'
 ];
 
 const READER_TEXT_COLORS = [
@@ -418,7 +418,7 @@ const HOME_COPY = {
     exit: '退出账号',
     base: '页面背景',
     card: '内容卡片',
-    icon: '按钮图标',
+    icon: '图标色',
     dark: '选中强调',
     recordsTitle: '我的记录',
     recordsMenu: '记录菜单',
@@ -663,6 +663,64 @@ const imageToReaderHtml = (src: string, altText = 'Note attachment', removeImage
 );
 
 const readerEditableTailHtml = '<p data-note-tail="true"><br></p>';
+
+const getLastReaderContentChild = (element: HTMLElement) => {
+  let node = element.lastChild;
+  while (node && node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) {
+    node = node.previousSibling;
+  }
+  return node;
+};
+
+const readerNodeHasMeaningfulContent = (node: Node) => {
+  if (!(node instanceof HTMLElement)) return Boolean(node.textContent?.trim());
+  return Boolean(node.textContent?.trim() || node.querySelector('img'));
+};
+
+const appendReaderEditableTail = (element: HTMLElement) => {
+  const tail = document.createElement('p');
+  tail.dataset.noteTail = 'true';
+  tail.appendChild(document.createElement('br'));
+  element.appendChild(tail);
+  return tail;
+};
+
+const normalizeReaderEditableTailMarkers = (element: HTMLElement) => {
+  element.querySelectorAll<HTMLElement>('[data-note-tail="true"]').forEach(tail => {
+    if (readerNodeHasMeaningfulContent(tail)) {
+      delete tail.dataset.noteTail;
+    } else {
+      tail.replaceChildren(document.createElement('br'));
+    }
+  });
+};
+
+const ensureReaderEditableTailAfterMedia = (element: HTMLElement) => {
+  normalizeReaderEditableTailMarkers(element);
+  const lastChild = getLastReaderContentChild(element);
+  if (!lastChild) return appendReaderEditableTail(element);
+
+  if (
+    lastChild instanceof HTMLElement &&
+    lastChild.matches('p') &&
+    !readerNodeHasMeaningfulContent(lastChild)
+  ) {
+    lastChild.dataset.noteTail = 'true';
+    return lastChild;
+  }
+
+  if (
+    lastChild instanceof HTMLElement &&
+    (
+      lastChild.matches('[data-note-image="true"]') ||
+      lastChild.getAttribute('contenteditable') === 'false'
+    )
+  ) {
+    return appendReaderEditableTail(element);
+  }
+
+  return null;
+};
 
 const cleanReaderHtml = (html: string, imageAltText?: string, removeImageText?: string) => {
   if (!html || typeof document === 'undefined') return html;
@@ -1140,7 +1198,6 @@ export default function App() {
   const [isMapStyleMenuOpen, setIsMapStyleMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<AppView>(() => initialSignedIn ? 'map' : 'home');
   const [activeHomePanel, setActiveHomePanel] = useState<HomePanel>(null);
-  const [isHomePanelReturning, setIsHomePanelReturning] = useState(false);
   const [recordsFilter, setRecordsFilter] = useState<RecordsFilter>('all');
   const [selectedRecordsDateKey, setSelectedRecordsDateKey] = useState<string | null>(null);
   const [isRecordsMenuOpen, setIsRecordsMenuOpen] = useState(false);
@@ -1821,7 +1878,6 @@ export default function App() {
       homeScrollRef.current.scrollTop = 0;
       homeScrollRef.current.scrollLeft = 0;
     }
-    setIsHomePanelReturning(true);
     setActiveHomePanel(null);
   }, []);
 
@@ -2168,17 +2224,6 @@ export default function App() {
     setSystemTheme(prev => ({ ...prev, [key]: value }));
   };
 
-  const getDarkSliderValue = () => {
-    const value = systemTheme.dark.replace('#', '');
-    const parsed = Number.parseInt(value.slice(0, 2), 16);
-    return Number.isFinite(parsed) ? parsed : 92;
-  };
-
-  const updateDarkSliderColor = (value: number) => {
-    const channel = Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0').toUpperCase();
-    updateThemeColor('dark', `#${channel}${channel}${channel}`);
-  };
-
   const downloadGalleryImage = (image: UploadedImage) => {
     const link = document.createElement('a');
     link.href = image.src;
@@ -2255,6 +2300,7 @@ export default function App() {
       contentEditor.innerHTML = readerRecord.contentHtml;
     }
 
+    if (contentEditor) ensureReaderEditableTailAfterMedia(contentEditor);
     readerSavedRangeRef.current = null;
     readerPendingTitleStylesRef.current = {};
     readerPendingContentStylesRef.current = {};
@@ -2262,6 +2308,7 @@ export default function App() {
 
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
     if (!readerRecord) return;
+    if (readerContentRef.current) ensureReaderEditableTailAfterMedia(readerContentRef.current);
     const titleHtml = readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml;
     const contentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
     const title = htmlToText(titleHtml);
@@ -2294,6 +2341,85 @@ export default function App() {
   const readerRangeIsInsideElement = React.useCallback((range: Range, element: HTMLElement | null) => (
     Boolean(element && element.contains(range.commonAncestorContainer))
   ), []);
+
+  const getReaderCaretRangeFromPoint = React.useCallback((clientX: number, clientY: number) => {
+    const documentWithCaret = document as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    };
+
+    if (documentWithCaret.caretPositionFromPoint) {
+      const position = documentWithCaret.caretPositionFromPoint(clientX, clientY);
+      if (!position) return null;
+      const range = document.createRange();
+      range.setStart(position.offsetNode, position.offset);
+      range.collapse(true);
+      return range;
+    }
+
+    return documentWithCaret.caretRangeFromPoint?.(clientX, clientY) || null;
+  }, []);
+
+  const readerRangeStartsInsideNonEditable = React.useCallback((range: Range, element: HTMLElement | null) => {
+    const parentElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer as Element
+      : range.startContainer.parentElement;
+    const nonEditable = parentElement?.closest('[contenteditable="false"], [data-note-image="true"], button');
+    return Boolean(element && nonEditable && element.contains(nonEditable));
+  }, []);
+
+  const moveReaderCaretToContentEnd = React.useCallback(() => {
+    const editor = readerContentRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection) return false;
+
+    ensureReaderEditableTailAfterMedia(editor);
+    const lastChild = getLastReaderContentChild(editor);
+    const range = document.createRange();
+    editor.focus();
+
+    if (
+      lastChild instanceof HTMLElement &&
+      ['P', 'DIV', 'LI', 'BLOCKQUOTE'].includes(lastChild.tagName)
+    ) {
+      if (!readerNodeHasMeaningfulContent(lastChild)) {
+        range.setStart(lastChild, 0);
+      } else {
+        range.selectNodeContents(lastChild);
+      }
+    } else {
+      range.selectNodeContents(editor);
+    }
+
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    readerSavedRangeRef.current = range.cloneRange();
+    return true;
+  }, []);
+
+  const moveReaderCaretToPoint = React.useCallback((clientX: number, clientY: number) => {
+    const editor = readerContentRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection) return false;
+
+    ensureReaderEditableTailAfterMedia(editor);
+    const range = getReaderCaretRangeFromPoint(clientX, clientY);
+    if (
+      !range ||
+      !readerRangeIsInsideElement(range, editor) ||
+      readerRangeStartsInsideNonEditable(range, editor) ||
+      (range.startContainer === editor && editor.childNodes.length > 0)
+    ) {
+      return false;
+    }
+
+    editor.focus();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    readerSavedRangeRef.current = range.cloneRange();
+    return true;
+  }, [getReaderCaretRangeFromPoint, readerRangeIsInsideElement, readerRangeStartsInsideNonEditable]);
 
   const getReaderElementForTarget = React.useCallback((target: 'title' | 'content') => (
     target === 'title' ? readerTitleRef.current : readerContentRef.current
@@ -2554,19 +2680,43 @@ export default function App() {
   }, [getReaderElementForTarget, getReaderSelectionRange, insertStyledReaderText]);
 
   const handleReaderInput = React.useCallback(() => {
+    const editor = readerContentRef.current;
+    if (editor) ensureReaderEditableTailAfterMedia(editor);
     requestAnimationFrame(saveReaderSelection);
   }, [saveReaderSelection]);
 
   const handleReaderContentClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
+    const editor = readerContentRef.current;
+    if (editor) ensureReaderEditableTailAfterMedia(editor);
+
     const removeButton = target.closest('[data-remove-image="true"]');
     if (removeButton) {
       event.preventDefault();
       removeButton.closest('[data-note-image="true"]')?.remove();
+      if (editor) ensureReaderEditableTailAfterMedia(editor);
       return;
     }
+
+    const selection = window.getSelection();
+    const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    if (
+      target === editor ||
+      target.closest('[data-note-image="true"]') ||
+      !range ||
+      !editor ||
+      !readerRangeIsInsideElement(range, editor) ||
+      readerRangeStartsInsideNonEditable(range, editor) ||
+      range.startContainer === editor
+    ) {
+      if (!moveReaderCaretToPoint(event.clientX, event.clientY)) {
+        moveReaderCaretToContentEnd();
+      }
+      return;
+    }
+
     saveReaderSelection();
-  }, [saveReaderSelection]);
+  }, [moveReaderCaretToContentEnd, moveReaderCaretToPoint, readerRangeIsInsideElement, readerRangeStartsInsideNonEditable, saveReaderSelection]);
 
   const insertReaderImage = React.useCallback(async (file?: File) => {
     if (!file || !file.type.startsWith('image/')) return;
@@ -2574,7 +2724,9 @@ export default function App() {
     const editor = readerContentRef.current;
     if (!editor) return;
     editor.insertAdjacentHTML('beforeend', `${imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage)}${readerEditableTailHtml}`);
-  }, [homeCopy.noteImageAlt, homeCopy.removeImage]);
+    ensureReaderEditableTailAfterMedia(editor);
+    moveReaderCaretToContentEnd();
+  }, [homeCopy.noteImageAlt, homeCopy.removeImage, moveReaderCaretToContentEnd]);
 
   const handleReaderImageInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -3345,7 +3497,7 @@ export default function App() {
                     </button>
                   </div>
                 </form>
-              ) : !activeHomePanel && !isHomePanelReturning && (
+              ) : !activeHomePanel && (
                 <>
               <div className="flex items-center gap-8">
                 <button
@@ -3399,13 +3551,14 @@ export default function App() {
                 </button>
               )}
 
-              <AnimatePresence mode="wait" onExitComplete={() => setIsHomePanelReturning(false)}>
+              <AnimatePresence mode="wait">
                 {activeHomePanel === 'profile' && (
                   <motion.div
                     key="profile-panel"
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 0 }}
+                    transition={{ duration: 0.12 }}
                     className="mt-4 rounded-[18px] bg-[var(--app-card)] p-4"
                   >
                     <div className="mb-3 flex items-center gap-2 text-[18px] font-medium text-black">
@@ -3507,47 +3660,29 @@ export default function App() {
                           {activeThemeColorKey === control.key && (
                             <div className="absolute right-0 top-[calc(100%+8px)] z-[40] flex flex-col items-center">
                               <div className="bg-[var(--app-dark)] w-[124px] rounded-[20px] p-2.5 shadow-lg relative box-border">
-                                {control.key === 'dark' ? (
-                                  <div className="flex flex-col gap-2">
-                                    <input
-                                      type="range"
-                                      min="24"
-                                      max="126"
-                                      value={getDarkSliderValue()}
-                                      onChange={event => updateDarkSliderColor(Number(event.target.value))}
-                                      className="w-full accent-white"
-                                      aria-label={control.label}
-                                    />
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[11px] font-medium text-white/70">{control.label}</span>
-                                      <span className="h-5 w-8 rounded-full border border-white/25" style={{ backgroundColor: systemTheme.dark }} />
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="grid grid-cols-4 gap-2">
-                                    {THEME_PICKER_COLORS.map(color => (
-                                      <button
-                                        key={color}
-                                        onClick={() => updateThemeColor(control.key, color)}
-                                        className="w-[20px] h-[20px] rounded-full"
-                                        style={{
-                                          backgroundColor: color,
-                                          boxShadow: systemTheme[control.key] === color ? '0 0 0 1.5px white' : 'none'
-                                        }}
-                                      />
-                                    ))}
+                                <div className="grid grid-cols-4 gap-2">
+                                  {THEME_PICKER_COLORS.map(color => (
                                     <button
-                                      onClick={() => setShowThemeCustomPicker(!showThemeCustomPicker)}
-                                      className="w-[20px] h-[20px] rounded-[6px] relative overflow-hidden"
-                                      style={{ boxShadow: showThemeCustomPicker || !THEME_PICKER_COLORS.includes(systemTheme[control.key]) ? '0 0 0 1.5px white' : 'none' }}
-                                    >
-                                      <div className="w-full h-full bg-gradient-to-br from-[#12c2e9] via-[#c471ed] to-[#f64f59] absolute inset-0 pointer-events-none" />
-                                    </button>
-                                  </div>
-                                )}
+                                      key={color}
+                                      onClick={() => updateThemeColor(control.key, color)}
+                                      className="w-[20px] h-[20px] rounded-full"
+                                      style={{
+                                        backgroundColor: color,
+                                        boxShadow: systemTheme[control.key] === color ? '0 0 0 1.5px white' : 'none'
+                                      }}
+                                    />
+                                  ))}
+                                  <button
+                                    onClick={() => setShowThemeCustomPicker(!showThemeCustomPicker)}
+                                    className="w-[20px] h-[20px] rounded-[6px] relative overflow-hidden"
+                                    style={{ boxShadow: showThemeCustomPicker || !THEME_PICKER_COLORS.includes(systemTheme[control.key]) ? '0 0 0 1.5px white' : 'none' }}
+                                  >
+                                    <div className="w-full h-full bg-gradient-to-br from-[#b98a78] via-[#a994aa] to-[#8aaebc] absolute inset-0 pointer-events-none" />
+                                  </button>
+                                </div>
                               </div>
 
-                              {control.key !== 'dark' && showThemeCustomPicker && (
+                              {showThemeCustomPicker && (
                                 <div className="bg-[var(--app-dark)] w-[124px] box-border rounded-[16px] p-2.5 shadow-xl flex flex-col gap-2 picker-popup absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50">
                                   <HexColorPicker color={systemTheme[control.key]} onChange={color => updateThemeColor(control.key, color)} />
                                   <div className="flex items-center w-full">
