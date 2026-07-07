@@ -349,7 +349,7 @@ const HOME_COPY = {
     loginError: 'Account or password is incorrect',
     noImages: 'No uploaded images yet',
     openPermissions: 'Open permissions',
-    openPermissionsHint: 'Request location and direction access again',
+    openPermissionsHint: 'Request location and direction permissions',
     permissionRequesting: 'Requesting permissions...',
     permissionReady: 'Permissions requested',
     permissionDenied: 'Could not open permissions. Check browser site settings.',
@@ -423,7 +423,7 @@ const HOME_COPY = {
     loginError: '账号或密码不正确',
     noImages: '还没有上传过图片',
     openPermissions: '打开权限',
-    openPermissionsHint: '重新请求定位与方向权限',
+    openPermissionsHint: '请求定位与方向权限',
     permissionRequesting: '正在请求权限...',
     permissionReady: '已请求权限',
     permissionDenied: '无法打开权限，请检查浏览器网站设置',
@@ -497,7 +497,7 @@ const HOME_COPY = {
     loginError: '계정 또는 비밀번호가 올바르지 않습니다',
     noImages: '업로드한 이미지가 없습니다',
     openPermissions: '권한 열기',
-    openPermissionsHint: '위치 및 방향 권한 다시 요청',
+    openPermissionsHint: '위치 및 방향 권한 요청',
     permissionRequesting: '권한 요청 중...',
     permissionReady: '권한을 요청했습니다',
     permissionDenied: '권한을 열 수 없습니다. 브라우저 사이트 설정을 확인하세요.',
@@ -1999,7 +1999,7 @@ export default function App() {
     permissionRequestState === 'ready' ? homeCopy.permissionReady :
     permissionRequestState === 'denied' ? homeCopy.permissionDenied :
     permissionRequestState === 'unsupported' ? homeCopy.permissionUnsupported :
-    homeCopy.openPermissionsHint
+    ''
   );
   const isOriginalSystemTheme = (Object.keys(DEFAULT_SYSTEM_THEME) as (keyof SystemTheme)[]).every(
     key => systemTheme[key].toLowerCase() === DEFAULT_SYSTEM_THEME[key].toLowerCase()
@@ -3809,7 +3809,7 @@ export default function App() {
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
                         <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                        {homeCopy.openPermissions}
+                        {homeCopy.openPermissionsHint}
                       </div>
                       <button
                         onClick={handleOpenPermissions}
@@ -3818,9 +3818,11 @@ export default function App() {
                       >
                         {permissionRequestState === 'requesting' ? homeCopy.permissionRequesting : homeCopy.openPermissions}
                       </button>
-                      <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
-                        {permissionStatusText}
-                      </div>
+                      {permissionStatusText && (
+                        <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
+                          {permissionStatusText}
+                        </div>
+                      )}
                     </div>
                     <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
