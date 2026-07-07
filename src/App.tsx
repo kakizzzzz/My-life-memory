@@ -267,26 +267,26 @@ const isLoginWorldMapLand = (x: number, y: number) => (
   isInsideRotatedEllipse(x, y, 0.50, 0.92, 0.38, 0.04, 0)
 );
 
-const LOGIN_WORLD_MAP_DOTS = Array.from({ length: 58 }).flatMap((_, row) => (
-  Array.from({ length: 128 }).flatMap((__, col) => {
-    const normalizedX = col / 127;
-    const normalizedY = row / 57;
+const LOGIN_WORLD_MAP_DOTS = Array.from({ length: 64 }).flatMap((_, row) => (
+  Array.from({ length: 144 }).flatMap((__, col) => {
+    const normalizedX = col / 143;
+    const normalizedY = row / 63;
     if (!isLoginWorldMapLand(normalizedX, normalizedY)) return [];
 
     return [{
-      x: col * 5.2,
-      y: row * 5.2,
-      opacity: 0.15 + ((col + row) % 5) * 0.018,
+      x: col * 4.8,
+      y: row * 4.8,
+      opacity: 0.28 + ((col + row) % 5) * 0.026,
     }];
   })
 ));
 
 function LoginWorldMapBackground() {
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-[-26px] z-0 flex justify-center overflow-hidden opacity-90">
+    <div className="pointer-events-none absolute left-1/2 top-[calc(100%+14px)] z-0 h-[190px] w-[660px] -translate-x-1/2 overflow-visible opacity-100">
       <svg
-        viewBox="0 0 660 298"
-        className="h-[300px] w-[760px] max-w-none"
+        viewBox="0 0 690 304"
+        className="h-full w-full"
         style={{ color: 'var(--app-dark)' }}
         aria-hidden="true"
       >
@@ -296,7 +296,7 @@ function LoginWorldMapBackground() {
               key={`${dot.x}-${dot.y}`}
               cx={dot.x}
               cy={dot.y}
-              r="1.25"
+              r="1.6"
               fill="currentColor"
               opacity={dot.opacity}
             />
@@ -437,10 +437,14 @@ const HOME_COPY = {
     loginPassword: 'Login password',
     accountAccess: 'Account access',
     loginTitle: 'Account login',
-    loginHint: 'No preset account. Register first, then log in on any device.',
+    registerTitle: 'Account registration',
+    loginHint: 'Enter your registered ID and password to log in.',
+    registerHint: 'Create a unique ID first, then use it on any device.',
     login: 'Log in',
     register: 'Register',
+    registerPassword: 'Set password',
     loginMissing: 'Enter an account and password',
+    registerMissing: 'Set an account and password',
     loginError: 'Account or password is incorrect',
     registerError: 'Could not register this account',
     accountExists: 'This account already exists',
@@ -517,10 +521,14 @@ const HOME_COPY = {
     loginPassword: '登录密码',
     accountAccess: '账号访问',
     loginTitle: '账号登录',
-    loginHint: '没有预设账号。先注册，之后可在任意设备登录。',
+    registerTitle: '账号注册',
+    loginHint: '输入已经注册的 ID 和密码登录。',
+    registerHint: '第一次使用请注册唯一 ID，之后可在任意设备登录。',
     login: '登录',
     register: '注册',
+    registerPassword: '设置密码',
     loginMissing: '请输入账号和密码',
+    registerMissing: '请设置账号和密码',
     loginError: '账号或密码不正确',
     registerError: '无法注册这个账号',
     accountExists: '这个账号已经存在',
@@ -597,10 +605,14 @@ const HOME_COPY = {
     loginPassword: '로그인 비밀번호',
     accountAccess: '계정 접근',
     loginTitle: '계정 로그인',
-    loginHint: '기본 계정은 없습니다. 먼저 가입한 뒤 어느 기기에서나 로그인하세요.',
+    registerTitle: '계정 가입',
+    loginHint: '등록한 ID와 비밀번호로 로그인하세요.',
+    registerHint: '먼저 고유 ID를 만든 뒤 어느 기기에서나 사용하세요.',
     login: '로그인',
     register: '가입',
+    registerPassword: '비밀번호 설정',
     loginMissing: '계정과 비밀번호를 입력하세요',
+    registerMissing: '계정과 비밀번호를 설정하세요',
     loginError: '계정 또는 비밀번호가 올바르지 않습니다',
     registerError: '이 계정을 등록할 수 없습니다',
     accountExists: '이미 존재하는 계정입니다',
@@ -1334,7 +1346,8 @@ export default function App() {
   const [galleryPreviewImage, setGalleryPreviewImage] = useState<UploadedImage | null>(null);
   const [profile, setProfile] = useState<UserProfile>(() => initialProfile);
   const [isSignedIn, setIsSignedIn] = useState(initialSignedIn);
-  const [loginAccount, setLoginAccount] = useState(() => initialProfile.account);
+  const [authMode, setAuthMode] = useState<CloudAuthAction>('login');
+  const [loginAccount, setLoginAccount] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
@@ -2151,15 +2164,16 @@ export default function App() {
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const enteredAccount = loginAccount.trim();
+    setAuthMode('login');
 
     if (isAuthBusy) return;
 
-    if (isCloudBackendEnabled) {
-      if (!enteredAccount || !loginPassword) {
-        setLoginError(homeCopy.loginMissing);
-        return;
-      }
+    if (!enteredAccount || !loginPassword) {
+      setLoginError(homeCopy.loginMissing);
+      return;
+    }
 
+    if (isCloudBackendEnabled) {
       setIsAuthBusy(true);
       setLoginError('');
 
@@ -2190,20 +2204,11 @@ export default function App() {
 
     const storedAccount = profile.account.trim();
     const accountMatches = storedAccount ? enteredAccount === storedAccount : enteredAccount.length > 0;
-    const passwordMatches = profile.password ? loginPassword === profile.password : true;
+    const passwordMatches = Boolean(profile.password) && loginPassword === profile.password;
 
-    if (!accountMatches || !passwordMatches) {
+    if (!storedAccount || !accountMatches || !passwordMatches) {
       setLoginError(homeCopy.loginError);
       return;
-    }
-
-    if (!storedAccount) {
-      setProfile(prev => ({
-        ...prev,
-        name: prev.name || DEFAULT_PROFILE.name,
-        account: enteredAccount,
-        password: loginPassword,
-      }));
     }
 
     setIsSignedIn(true);
@@ -2214,10 +2219,11 @@ export default function App() {
 
   const handleRegister = async () => {
     const enteredAccount = loginAccount.trim();
+    setAuthMode('register');
     if (isAuthBusy) return;
 
     if (!enteredAccount || !loginPassword) {
-      setLoginError(homeCopy.loginMissing);
+      setLoginError(homeCopy.registerMissing);
       return;
     }
 
@@ -2267,7 +2273,7 @@ export default function App() {
       void signOutCloudAccount();
     }
     setIsSignedIn(false);
-    setLoginAccount(profile.account);
+    setLoginAccount('');
     setLoginPassword('');
     setLoginError('');
   };
@@ -3916,19 +3922,20 @@ export default function App() {
                   onSubmit={handleLogin}
                   className="relative flex min-h-full flex-col items-center justify-center overflow-hidden pt-8"
                 >
-                  <LoginWorldMapBackground />
-                  <div className="relative z-10 mb-8 w-full text-center">
-                    <h1 className="font-sans text-[36px] font-bold leading-none tracking-tight text-black">
-                      My life memory
-                    </h1>
-                  </div>
-                  <div className="relative z-10 w-full rounded-[18px] bg-[var(--app-card)] p-4">
+                  <div className="relative flex w-full flex-col items-center">
+                    <LoginWorldMapBackground />
+                    <div className="relative z-10 mb-8 w-full text-center">
+                      <h1 className="font-sans text-[36px] font-bold leading-none tracking-tight text-black">
+                        My life memory
+                      </h1>
+                    </div>
+                    <div className="relative z-10 w-full rounded-[18px] bg-[var(--app-card)] p-4">
                     <div className="mb-4 flex items-center gap-2 text-[18px] font-medium text-black">
                       <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                      {homeCopy.loginTitle}
+                      {authMode === 'register' ? homeCopy.registerTitle : homeCopy.loginTitle}
                     </div>
                     <div className="mb-4 text-[15px] font-medium leading-tight text-black/45">
-                      {homeCopy.loginHint}
+                      {authMode === 'register' ? homeCopy.registerHint : homeCopy.loginHint}
                     </div>
                     <div className="space-y-3">
                       <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
@@ -3953,7 +3960,7 @@ export default function App() {
                           }}
                           type="password"
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
-                          placeholder={homeCopy.loginPassword}
+                          placeholder={authMode === 'register' ? homeCopy.registerPassword : homeCopy.loginPassword}
                         />
                       </label>
                     </div>
@@ -3966,6 +3973,7 @@ export default function App() {
                       <button
                         type="submit"
                         disabled={isAuthBusy}
+                        onClick={() => setAuthMode('login')}
                         className="h-[48px] rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
                       >
                         {homeCopy.login}
@@ -3978,6 +3986,7 @@ export default function App() {
                       >
                         {homeCopy.register}
                       </button>
+                    </div>
                     </div>
                   </div>
                 </form>
