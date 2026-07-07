@@ -619,7 +619,7 @@ const formatChartValue = (value: number) => {
 };
 
 export function TripStatisticsView({ activityPoints = [], activityCount = 0, textRankings = [], language = 'en' }: TripStatisticsViewProps) {
-  const [rankingScrollState, setRankingScrollState] = React.useState({ canLeft: false, canRight: false });
+  const [rankingScrollState, setRankingScrollState] = React.useState({ canLeft: false, canRight: false, hasOverflow: false });
   const [expandedMapKey, setExpandedMapKey] = React.useState(0);
   const [isExpandedMapOpen, setIsExpandedMapOpen] = React.useState(false);
   const rankingScrollRef = React.useRef<HTMLDivElement>(null);
@@ -641,10 +641,12 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     const el = rankingScrollRef.current;
     if (!el) return;
 
-    const maxScrollLeft = el.scrollWidth - el.clientWidth;
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const hasOverflow = maxScrollLeft > 1;
     setRankingScrollState({
-      canLeft: el.scrollLeft > 1,
-      canRight: el.scrollLeft < maxScrollLeft - 1,
+      canLeft: hasOverflow && el.scrollLeft > 1,
+      canRight: hasOverflow && el.scrollLeft < maxScrollLeft - 1,
+      hasOverflow,
     });
   }, []);
 
@@ -737,10 +739,10 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             {copy.rankingTitle}
           </h2>
 
-          <div className="mt-1 flex min-h-0 flex-1 -translate-y-1 items-end justify-center px-8">
+          <div className="mt-1 flex min-h-0 flex-1 -translate-y-1 items-end justify-center px-0">
             <button
               onClick={() => scrollRanking(-1)}
-              className={`absolute left-2 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
+              className={`absolute left-7 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.previousRanking}
             >
               <ChevronLeft size={28} />
@@ -749,7 +751,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             <div
               ref={rankingScrollRef}
               onScroll={updateRankingScrollState}
-              className="flex h-full min-h-0 w-full items-end gap-2 overflow-x-auto px-10 pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className={`mx-12 flex h-full min-h-0 w-[calc(100%-6rem)] items-end gap-2 overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${rankingScrollState.hasOverflow ? 'justify-start' : 'justify-center'}`}
             >
               {textRankings.map((item, index) => (
                 <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
@@ -767,7 +769,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
 
             <button
               onClick={() => scrollRanking(1)}
-              className={`absolute right-2 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
+              className={`absolute right-7 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.nextRanking}
             >
               <ChevronRight size={28} />
