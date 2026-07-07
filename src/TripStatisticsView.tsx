@@ -33,7 +33,6 @@ const mosaicMapHtml = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Detailed Mosaic Map</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://unpkg.com/topojson-client@3"></script>
   <style>
@@ -46,13 +45,19 @@ const mosaicMapHtml = `<!DOCTYPE html>
       background-color: #0f172a;
       touch-action: none;
     }
+    #mapCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: default;
+    }
     ::-webkit-scrollbar { display: none; }
   </style>
 </head>
-<body class="bg-slate-900 select-none">
+<body>
   <div id="loading" class="hidden" aria-hidden="true"></div>
 
-  <canvas id="mapCanvas" class="w-full h-full cursor-crosshair block"></canvas>
+  <canvas id="mapCanvas"></canvas>
 
   <script>
     let isInitialized = false;
@@ -71,6 +76,8 @@ const mosaicMapHtml = `<!DOCTYPE html>
       isInitialized = true;
 
       const ctx = canvas.getContext('2d', { alpha: false });
+      const isFullscreen = window.IS_FULLSCREEN === true;
+      canvas.style.cursor = isFullscreen ? 'grab' : 'default';
 
       let mapFeatures = [];
       let colorToFeature = new Map();
@@ -81,7 +88,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let maxBlockActivityWeight = 0;
 
       const config = {
-        blockSize: 4,
+        blockSize: isFullscreen ? 6 : 5,
         cornerRadius: 2,
         gap: 1
       };
@@ -140,11 +147,11 @@ const mosaicMapHtml = `<!DOCTYPE html>
           gridData = [];
           colorToFeature.clear();
 
-          const baseScale = window.IS_FULLSCREEN
-            ? Math.max(canvas.width, canvas.height) / 2.5
+          const baseScale = isFullscreen
+            ? Math.max(canvas.width, canvas.height) / 3.1
             : canvas.width / 6.5;
-          const mapWidth = window.IS_FULLSCREEN ? baseScale * Math.PI * 2 : canvas.width;
-          const mapHeight = window.IS_FULLSCREEN ? baseScale * Math.PI * 2 : canvas.height;
+          const mapWidth = isFullscreen ? baseScale * Math.PI * 2 : canvas.width;
+          const mapHeight = isFullscreen ? baseScale * Math.PI * 2 : canvas.height;
           const offscreenCanvas = document.createElement('canvas');
           const offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
           offscreenCanvas.width = mapWidth;
@@ -152,10 +159,10 @@ const mosaicMapHtml = `<!DOCTYPE html>
 
           const projection = d3.geoMercator()
             .scale(baseScale)
-            .translate(window.IS_FULLSCREEN ? [mapWidth / 2, mapHeight / 2] : [canvas.width / 2, canvas.height / 1.6]);
+            .translate(isFullscreen ? [mapWidth / 2, mapHeight / 2] : [canvas.width / 2, canvas.height / 1.6]);
 
           const path = d3.geoPath().projection(projection).context(offscreenCtx);
-          const heatRadius = window.IS_FULLSCREEN ? Math.max(16, baseScale * 0.045) : Math.max(7, baseScale * 0.14);
+          const heatRadius = isFullscreen ? Math.max(16, baseScale * 0.06) : Math.max(7, baseScale * 0.14);
           const heatRadiusSq = heatRadius * heatRadius;
           const projectedActivityPoints = activityPoints
             .map(point => {
@@ -199,6 +206,11 @@ const mosaicMapHtml = `<!DOCTYPE html>
 
           const imageData = offscreenCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height).data;
 
+          let minGridX = Infinity;
+          let maxGridX = -Infinity;
+          let minGridY = Infinity;
+          let maxGridY = -Infinity;
+
           for (let y = 0; y < offscreenCanvas.height; y += config.blockSize) {
             for (let x = 0; x < offscreenCanvas.width; x += config.blockSize) {
               const centerX = Math.floor(x + config.blockSize / 2);
@@ -223,6 +235,10 @@ const mosaicMapHtml = `<!DOCTYPE html>
                       centerY,
                       activityWeight: getBlockHeat(centerX, centerY)
                     });
+                    if (x < minGridX) minGridX = x;
+                    if (x > maxGridX) maxGridX = x;
+                    if (y < minGridY) minGridY = y;
+                    if (y > maxGridY) maxGridY = y;
                   }
                 }
               }
@@ -241,16 +257,16 @@ const mosaicMapHtml = `<!DOCTYPE html>
 
           if (gridData.length > 0) {
             mapBounds = {
-              minX: Math.min(...gridData.map(block => block.x)),
-              maxX: Math.max(...gridData.map(block => block.x)) + config.blockSize,
-              minY: Math.min(...gridData.map(block => block.y)),
-              maxY: Math.max(...gridData.map(block => block.y)) + config.blockSize
+              minX: minGridX,
+              maxX: maxGridX + config.blockSize,
+              minY: minGridY,
+              maxY: maxGridY + config.blockSize
             };
           } else {
             mapBounds = { minX: 0, maxX: offscreenCanvas.width, minY: 0, maxY: offscreenCanvas.height };
           }
 
-          if (window.IS_FULLSCREEN) {
+          if (isFullscreen) {
             const focusCoords = projection([120, 35]);
             const centerX = focusCoords ? focusCoords[0] : offscreenCanvas.width / 2;
             const centerY = focusCoords ? focusCoords[1] : offscreenCanvas.height / 2;
@@ -378,7 +394,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        if (window.IS_FULLSCREEN) {
+        if (isFullscreen) {
           const actualWidth = (mapBounds.maxX - mapBounds.minX) * scale;
           const actualHeight = (mapBounds.maxY - mapBounds.minY) * scale;
           const mapLeft = mapBounds.minX * scale;
@@ -403,9 +419,23 @@ const mosaicMapHtml = `<!DOCTYPE html>
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
 
+        const viewPadding = config.blockSize * 3;
+        const viewLeft = isFullscreen ? (-offsetX / scale) - viewPadding : -Infinity;
+        const viewRight = isFullscreen ? ((canvas.width - offsetX) / scale) + viewPadding : Infinity;
+        const viewTop = isFullscreen ? (-offsetY / scale) - viewPadding : -Infinity;
+        const viewBottom = isFullscreen ? ((canvas.height - offsetY) / scale) + viewPadding : Infinity;
+        const drawSize = config.blockSize - config.gap;
+
         gridData.forEach(block => {
+          if (
+            block.x > viewRight ||
+            block.x + config.blockSize < viewLeft ||
+            block.y > viewBottom ||
+            block.y + config.blockSize < viewTop
+          ) {
+            return;
+          }
           ctx.fillStyle = getBlockColor(block, now);
-          const drawSize = config.blockSize - config.gap;
           roundRect(ctx, block.x, block.y, drawSize, drawSize, config.cornerRadius);
           ctx.fill();
         });
@@ -452,6 +482,10 @@ const mosaicMapHtml = `<!DOCTYPE html>
             // Pointer capture may already be released by the browser.
           }
         }
+      }
+
+      if (!isFullscreen) {
+        return;
       }
 
       if (window.PointerEvent) {
@@ -587,6 +621,8 @@ const formatChartValue = (value: number) => {
 export function TripStatisticsView({ activityPoints = [], activityCount = 0, textRankings = [], language = 'en' }: TripStatisticsViewProps) {
   const [rankingPage, setRankingPage] = React.useState(0);
   const [expandedMapKey, setExpandedMapKey] = React.useState(0);
+  const [isExpandedMapOpen, setIsExpandedMapOpen] = React.useState(false);
+  const fullscreenMapRef = React.useRef<HTMLDivElement>(null);
   const mapSessionKey = React.useMemo(() => Date.now(), []);
   const copy = TRIP_COPY[language as keyof typeof TRIP_COPY] || TRIP_COPY.en;
   const mosaicHtml = React.useMemo(
@@ -610,6 +646,17 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     setRankingPage(0);
   }, [textRankings]);
 
+  const openExpandedMap = React.useCallback(() => {
+    setExpandedMapKey(key => key + 1);
+    setIsExpandedMapOpen(true);
+    requestAnimationFrame(() => fullscreenMapRef.current?.showPopover?.());
+  }, []);
+
+  const closeExpandedMap = React.useCallback(() => {
+    fullscreenMapRef.current?.hidePopover?.();
+    setIsExpandedMapOpen(false);
+  }, []);
+
   return (
     <div className="absolute inset-0 z-[900] flex flex-col overflow-x-hidden overflow-y-auto bg-[var(--app-page)] pb-32 font-sans pointer-events-auto">
       <div className="flex flex-col items-center pb-6 pt-14">
@@ -619,11 +666,22 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
           </h1>
         </div>
 
-        <div className="relative mb-6 h-[345px] w-[320px] shrink-0 overflow-hidden rounded-[24px] bg-[#1A1A1A] shadow-md">
+        <div
+          className="relative mb-6 h-[345px] w-[320px] shrink-0 overflow-hidden rounded-[24px] bg-[#1A1A1A] shadow-md"
+          role="button"
+          tabIndex={0}
+          onClick={openExpandedMap}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              openExpandedMap();
+            }
+          }}
+        >
           <iframe
             key={`mosaic-${mapSessionKey}`}
             srcDoc={mosaicHtml}
-            className="h-full w-full border-none"
+            className="h-full w-full border-none pointer-events-none"
             sandbox="allow-scripts allow-same-origin"
             title={copy.mosaicMap}
           />
@@ -636,9 +694,10 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
           </div>
 
           <button
-            popoverTarget="trip-map-fullscreen"
-            popoverTargetAction="show"
-            onClick={() => setExpandedMapKey(key => key + 1)}
+            onClick={event => {
+              event.stopPropagation();
+              openExpandedMap();
+            }}
             className="absolute bottom-6 right-6 z-10 rounded-full bg-[var(--app-page)] px-5 py-2 text-sm font-bold text-black shadow-lg transition-all hover:brightness-105"
           >
             {copy.expand}
@@ -686,20 +745,22 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
       </div>
 
       <div
+        ref={fullscreenMapRef}
         id="trip-map-fullscreen"
         popover="manual"
         className="fixed inset-0 m-0 h-[100dvh] max-h-none w-[100dvw] max-w-none overflow-hidden border-0 bg-[#1A1A1A] p-0"
       >
-        <iframe
-          key={`mosaic-fullscreen-${mapSessionKey}-${expandedMapKey}`}
-          srcDoc={fullscreenMapHtml}
-          className="h-full w-full border-none"
-          sandbox="allow-scripts allow-same-origin"
-          title={copy.expandedMosaicMap}
-        />
+        {isExpandedMapOpen && (
+          <iframe
+            key={`mosaic-fullscreen-${mapSessionKey}-${expandedMapKey}`}
+            srcDoc={fullscreenMapHtml}
+            className="h-full w-full border-none"
+            sandbox="allow-scripts allow-same-origin"
+            title={copy.expandedMosaicMap}
+          />
+        )}
         <button
-          popoverTarget="trip-map-fullscreen"
-          popoverTargetAction="hide"
+          onClick={closeExpandedMap}
           className="absolute left-6 top-12 z-10 flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/20 text-white backdrop-blur-md transition-transform active:scale-95"
           aria-label={copy.closeExpandedMap}
         >

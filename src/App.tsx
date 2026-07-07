@@ -418,7 +418,7 @@ const HOME_COPY = {
     exit: '退出账号',
     base: '页面背景',
     card: '内容卡片',
-    icon: '图标色',
+    icon: '图标颜色',
     dark: '选中强调',
     recordsTitle: '我的记录',
     recordsMenu: '记录菜单',
