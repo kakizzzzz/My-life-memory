@@ -892,21 +892,6 @@ function FlyToTarget({ target }: { target: [number, number] | null }) {
   return null;
 }
 
-function FollowUserLocation({ location, enabled }: { location: [number, number]; enabled: boolean }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!enabled) return;
-    map.invalidateSize({ pan: false, debounceMoveend: true });
-    const target = L.latLng(location);
-    const distance = map.getCenter().distanceTo(target);
-    if (distance < 2) return;
-    map.panTo(location, { animate: true, duration: 0.45 });
-  }, [enabled, location, map]);
-
-  return null;
-}
-
 function MapViewportSync({ location, shouldFollow }: { location: [number, number]; shouldFollow: boolean }) {
   const map = useMap();
   const locationRef = React.useRef(location);
@@ -1233,7 +1218,7 @@ export default function App() {
   const [userLocation, setUserLocation] = useState<[number, number]>(DEFAULT_USER_LOCATION);
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null);
   const [deviceHeading, setDeviceHeading] = useState(0);
-  const [isFollowingUserLocation, setIsFollowingUserLocation] = useState(false);
+  const [isWatchingUserLocation, setIsWatchingUserLocation] = useState(false);
   const [stars, setStars] = useState<StarData[]>(() => (
     normalizeInitialStars(persistedAppState?.stars) || [createDefaultRecordStar()]
   ));
@@ -1457,7 +1442,7 @@ export default function App() {
       return false;
     }
 
-    setIsFollowingUserLocation(true);
+    setIsWatchingUserLocation(true);
     navigator.geolocation.getCurrentPosition(
       position => {
         applyGpsPosition(position, shouldFly);
@@ -1466,7 +1451,7 @@ export default function App() {
       error => {
         if (shouldFly) setFlyTarget([userLocation[0], userLocation[1]]);
         if (error.code === error.PERMISSION_DENIED && !trackingStateRef.current.isTracking) {
-          setIsFollowingUserLocation(false);
+          setIsWatchingUserLocation(false);
         }
         isLocating.current = false;
       },
@@ -1518,7 +1503,7 @@ export default function App() {
   useEffect(() => {
     if (hasRequestedInitialLocationRef.current) return;
     hasRequestedInitialLocationRef.current = true;
-    requestUserLocation(true);
+    requestUserLocation(false);
   }, [requestUserLocation]);
 
   useEffect(() => {
@@ -1533,7 +1518,7 @@ export default function App() {
 
       if (!hasRequestedFirstInteractionLocationRef.current) {
         hasRequestedFirstInteractionLocationRef.current = true;
-        requestUserLocation(true);
+        requestUserLocation(false);
       }
     };
 
@@ -1565,7 +1550,7 @@ export default function App() {
     }).__MAP_APP_SENSOR_DEBUG__ = {
       userLocation,
       deviceHeading,
-      isFollowingUserLocation,
+      isWatchingUserLocation,
       isTracking,
       hasGpsWatch: gpsWatchIdRef.current !== null,
       isSecureContext: window.isSecureContext,
@@ -1578,7 +1563,7 @@ export default function App() {
         ? Date.now() - lastCompassHeadingAtRef.current
         : null,
     };
-  }, [deviceHeading, isFollowingUserLocation, isTracking, userLocation]);
+  }, [deviceHeading, isTracking, isWatchingUserLocation, userLocation]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -1593,7 +1578,7 @@ export default function App() {
   }, [isTracking, isPaused]);
 
   useEffect(() => {
-    const shouldWatchLocation = isFollowingUserLocation || isTracking;
+    const shouldWatchLocation = isWatchingUserLocation || isTracking;
 
     if (!shouldWatchLocation || !canUseBrowserGeolocation()) {
       stopGpsWatch();
@@ -1606,14 +1591,14 @@ export default function App() {
         if (error.code !== error.PERMISSION_DENIED) return;
         stopGpsWatch();
         if (!trackingStateRef.current.isTracking) {
-          setIsFollowingUserLocation(false);
+          setIsWatchingUserLocation(false);
         }
       },
       GEOLOCATION_OPTIONS
     );
 
     return stopGpsWatch;
-  }, [applyGpsPosition, isFollowingUserLocation, isTracking, stopGpsWatch]);
+  }, [applyGpsPosition, isTracking, isWatchingUserLocation, stopGpsWatch]);
 
   useEffect(() => () => {
     stopGpsWatch();
@@ -2775,8 +2760,7 @@ export default function App() {
             interactive={false}
           />
           <FlyToTarget target={flyTarget} />
-          <MapViewportSync location={userLocation} shouldFollow={isFollowingUserLocation || isTracking} />
-          <FollowUserLocation location={userLocation} enabled={isFollowingUserLocation || isTracking} />
+          <MapViewportSync location={userLocation} shouldFollow={false} />
           
           <MapEventHandlers onDrop={handleMapDrop} onMapClick={onMapClick} onMapReady={handleMapReady} />
           
