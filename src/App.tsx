@@ -2228,6 +2228,7 @@ export default function App() {
     setLoginPassword('');
     setLoginError('');
     setActiveView('map');
+    setActiveHomePanel(null);
 
     window.setTimeout(() => {
       isApplyingCloudStateRef.current = false;
@@ -2242,6 +2243,7 @@ export default function App() {
     if (!session?.user) {
       cloudReadyToSaveRef.current = false;
       setIsSignedIn(false);
+      setActiveHomePanel(null);
       return;
     }
 
@@ -2253,9 +2255,15 @@ export default function App() {
       setLoginError(getCloudAuthErrorMessage(error, 'login'));
       cloudReadyToSaveRef.current = false;
       setIsSignedIn(false);
+      setActiveHomePanel(null);
       void signOutCloudAccount();
     }
   }, [applyCloudSnapshot]);
+  const hydrateCloudSessionRef = React.useRef(hydrateCloudSession);
+
+  useEffect(() => {
+    hydrateCloudSessionRef.current = hydrateCloudSession;
+  }, [hydrateCloudSession]);
 
   const getCloudAuthErrorMessage = (error: unknown, action: CloudAuthAction) => {
     const code = (
@@ -2368,6 +2376,7 @@ export default function App() {
     setLoginError('');
     setLoginPassword('');
     setActiveView('map');
+    setActiveHomePanel(null);
   };
 
   const handleRegister = async () => {
@@ -2444,6 +2453,7 @@ export default function App() {
       cloudReadyToSaveRef.current = false;
       void signOutCloudAccount();
     }
+    setActiveHomePanel(null);
     writeCloudSessionPassword('', profile.account);
     setIsSignedIn(false);
     setLoginAccount('');
@@ -2458,19 +2468,19 @@ export default function App() {
     let isMounted = true;
     void getCloudSession().then(session => {
       if (!isMounted) return;
-      void hydrateCloudSession(session);
+      void hydrateCloudSessionRef.current(session);
     });
 
     const unsubscribe = onCloudAuthStateChange(session => {
       if (!isMounted) return;
-      void hydrateCloudSession(session);
+      void hydrateCloudSessionRef.current(session);
     });
 
     return () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [hydrateCloudSession]);
+  }, []);
 
   useEffect(() => {
     if (!isCloudBackendEnabled || !isSignedIn || !cloudReadyToSaveRef.current || isApplyingCloudStateRef.current) return;
@@ -4228,7 +4238,7 @@ export default function App() {
               )}
 
               <AnimatePresence mode="wait">
-                {activeHomePanel === 'profile' && (
+                {isSignedIn && activeHomePanel === 'profile' && (
                   <motion.div
                     key="profile-panel"
                     initial={{ opacity: 0, y: -6 }}
@@ -4294,7 +4304,7 @@ export default function App() {
                   </motion.div>
                 )}
 
-                {activeHomePanel === 'theme' && (
+                {isSignedIn && activeHomePanel === 'theme' && (
                   <motion.div
                     key="theme-panel"
                     initial={{ opacity: 0, y: -6 }}
@@ -4395,7 +4405,7 @@ export default function App() {
                   </motion.div>
                 )}
 
-                {activeHomePanel === 'gallery' && (
+                {isSignedIn && activeHomePanel === 'gallery' && (
                   <motion.div
                     key="gallery-panel"
                     initial={{ opacity: 0, y: -6 }}
@@ -4424,7 +4434,7 @@ export default function App() {
                   </motion.div>
                 )}
 
-                {activeHomePanel === 'settings' && (
+                {isSignedIn && activeHomePanel === 'settings' && (
                   <motion.div
                     key="settings-panel"
                     initial={{ opacity: 0, y: -6 }}
@@ -4440,6 +4450,7 @@ export default function App() {
                       <div className="grid grid-cols-3 gap-1.5">
                         {LANGUAGE_OPTIONS.map(option => (
                           <button
+                            type="button"
                             key={option.value}
                             onClick={() => setLanguage(option.value)}
                             className={`h-9 rounded-full text-[14px] font-medium transition-colors ${language === option.value ? 'bg-[var(--app-dark)] text-white' : 'bg-[var(--app-soft-card)] text-black'}`}
@@ -4455,6 +4466,7 @@ export default function App() {
                         {homeCopy.openPermissionsHint}
                       </div>
                       <button
+                        type="button"
                         onClick={handleOpenPermissions}
                         disabled={permissionRequestState === 'requesting'}
                         className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
@@ -4473,6 +4485,7 @@ export default function App() {
                         {homeCopy.accountAccess}
                       </div>
                       <button
+                        type="button"
                         onClick={handleSignOut}
                         className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
                       >
