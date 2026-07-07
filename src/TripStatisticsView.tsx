@@ -634,7 +634,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     [activityPoints, copy]
   );
   const markedCount = Math.max(0, Math.round(activityCount));
-  const rankingPageSize = 11;
+  const rankingPageSize = 7;
   const maxRankingPage = Math.max(0, Math.ceil(textRankings.length / rankingPageSize) - 1);
   const chartItems = textRankings.slice(
     rankingPage * rankingPageSize,
@@ -704,26 +704,26 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
           </button>
         </div>
 
-        <div className="mb-6 flex h-[250px] w-[320px] shrink-0 flex-col justify-between rounded-[24px] bg-[var(--app-card-surface)] px-3 py-5 shadow-sm">
+        <div className="relative mb-6 flex h-[250px] w-[320px] shrink-0 flex-col justify-between rounded-[24px] bg-[var(--app-card-surface)] px-5 py-5 shadow-sm">
           <h2 className="w-[90%] px-2 text-[20px] font-bold leading-snug tracking-tight text-black">
             {copy.rankingTitle}
           </h2>
 
-          <div className="mt-1 flex min-h-0 flex-1 -translate-y-1 items-center gap-0">
+          <div className="mt-1 flex min-h-0 flex-1 -translate-y-1 items-end justify-center px-8">
             <button
               onClick={() => setRankingPage(page => page <= 0 ? maxRankingPage : page - 1)}
-              className="text-gray-300 transition-colors hover:text-gray-500"
+              className={`absolute left-3 top-[58%] -translate-y-1/2 text-gray-300 transition-colors hover:text-gray-500 ${maxRankingPage === 0 ? 'pointer-events-none opacity-0' : ''}`}
               aria-label={copy.previousRanking}
             >
               <ChevronLeft size={28} />
             </button>
 
-            <div className="flex h-full min-h-0 flex-1 items-end justify-start gap-2 px-1 pb-0 pt-4">
+            <div className="flex h-full min-h-0 w-full items-end justify-center gap-2 pb-0 pt-4">
               {chartItems.map((item, index) => (
-                <div key={item.name} className="flex h-full w-[18px] shrink-0 flex-col items-center justify-end">
+                <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
                   <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
                   <span
-                    className="w-[18px] rounded-t-[2px]"
+                    className="w-[20px] rounded-t-[3px]"
                     style={{
                       height: `${Math.max(12, (item.value / maxChartValue) * 132)}px`,
                       backgroundColor: item.fill || chartPalette[index % chartPalette.length],
@@ -735,7 +735,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
 
             <button
               onClick={() => setRankingPage(page => page >= maxRankingPage ? 0 : page + 1)}
-              className="text-gray-300 transition-colors hover:text-gray-500"
+              className={`absolute right-3 top-[58%] -translate-y-1/2 text-gray-300 transition-colors hover:text-gray-500 ${maxRankingPage === 0 ? 'pointer-events-none opacity-0' : ''}`}
               aria-label={copy.nextRanking}
             >
               <ChevronRight size={28} />

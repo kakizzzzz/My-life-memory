@@ -245,13 +245,22 @@ export function StarActionOverlay({
   const copyCoords = async () => {
     try {
       await writeClipboardText(`${star.lat}, ${star.lng}`);
+      setIsMapChoiceOpen(false);
       setCopyStatus(copy.copied);
       if (copyTimerRef.current !== null) {
         window.clearTimeout(copyTimerRef.current);
       }
-      copyTimerRef.current = window.setTimeout(() => setCopyStatus(''), 1400);
+      copyTimerRef.current = window.setTimeout(() => setCopyStatus(''), 1000);
     } catch(e) {
     }
+  };
+
+  const toggleMapChoice = () => {
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+    setCopyStatus('');
+    setIsMapChoiceOpen(open => !open);
   };
 
   const gcjCoords = wgs84ToGcj02(star.lat, star.lng);
@@ -313,42 +322,42 @@ export function StarActionOverlay({
 
       {/* Detail Pill */}
       {activeTab === 'eye' && (
-        <div className="flex flex-col items-center gap-1.5">
-          <div className="bg-[var(--app-active-surface)] rounded-[16px] px-3 py-1.5 flex items-center gap-2 shadow-lg border border-[var(--app-card)]">
-            <span className="font-sans font-medium text-[13px] text-black/90 whitespace-nowrap">{coordsText}</span>
-            <div className="w-[1px] h-3 bg-gray-300"></div>
-            <button onClick={copyCoords} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.copyCoordinates}>
-              <Copy size={14} strokeWidth={2} />
-            </button>
-            {copyStatus && (
-              <span className="rounded-full bg-[var(--app-card)] px-1.5 py-0.5 text-[10px] font-medium leading-none text-black/70">
-                {copyStatus}
-              </span>
-            )}
+        <div className="bg-[var(--app-active-surface)] rounded-[16px] px-3 py-1.5 flex items-center gap-2 shadow-lg border border-[var(--app-card)]">
+          <span className="font-sans font-medium text-[13px] text-black/90 whitespace-nowrap">{coordsText}</span>
+          <div className="w-[1px] h-3 bg-gray-300"></div>
+          <button onClick={copyCoords} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.copyCoordinates}>
+            <Copy size={14} strokeWidth={2} />
+          </button>
+          <button
+            onClick={toggleMapChoice}
+            className={`text-black transition-colors hover:text-gray-500 ${isMapChoiceOpen ? 'text-black' : ''}`}
+            aria-label={copy.openInMaps}
+          >
+            <ExternalLink size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'eye' && copyStatus && (
+        <div className="pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-[30] -translate-x-1/2 rounded-full border border-[var(--app-card)] bg-[var(--app-active-surface)] px-3 py-1 text-[12px] font-medium leading-none text-black/80 shadow-lg">
+          {copyStatus}
+        </div>
+      )}
+
+      {activeTab === 'eye' && isMapChoiceOpen && (
+        <div
+          className="absolute left-1/2 top-[calc(100%+6px)] z-[30] grid w-[132px] -translate-x-1/2 grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--app-card)] bg-[var(--app-active-surface)] p-1.5 shadow-lg"
+          aria-label={copy.chooseMap}
+        >
+          {mapOptions.map(option => (
             <button
-              onClick={() => setIsMapChoiceOpen(open => !open)}
-              className={`text-black transition-colors hover:text-gray-500 ${isMapChoiceOpen ? 'text-black' : ''}`}
-              aria-label={copy.openInMaps}
+              key={option.key}
+              onClick={() => openMapUrl(option.url)}
+              className="h-8 rounded-[10px] bg-[var(--app-card)] px-3 text-[12px] font-medium text-black transition-colors hover:brightness-95"
             >
-              <ExternalLink size={14} strokeWidth={2} />
+              {option.label}
             </button>
-          </div>
-          {isMapChoiceOpen && (
-            <div
-              className="grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--app-card)] bg-[var(--app-active-surface)] p-1.5 shadow-lg"
-              aria-label={copy.chooseMap}
-            >
-              {mapOptions.map(option => (
-                <button
-                  key={option.key}
-                  onClick={() => openMapUrl(option.url)}
-                  className="h-8 rounded-[10px] bg-[var(--app-card)] px-3 text-[12px] font-medium text-black transition-colors hover:brightness-95"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
       )}
 

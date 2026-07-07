@@ -2139,7 +2139,6 @@ export default function App() {
       }))
       .filter(item => item.value > 0)
       .sort((a, b) => b.value - a.value)
-      .slice(0, 11)
       .map((item, index) => ({ ...item, name: String(index + 1) }))
   ), [stars]);
 
