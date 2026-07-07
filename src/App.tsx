@@ -3808,6 +3808,23 @@ export default function App() {
                   >
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                        <Languages size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                        {homeCopy.language}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {LANGUAGE_OPTIONS.map(option => (
+                          <button
+                            key={option.value}
+                            onClick={() => setLanguage(option.value)}
+                            className={`h-9 rounded-full text-[14px] font-medium transition-colors ${language === option.value ? 'bg-[var(--app-dark)] text-white' : 'bg-[var(--app-soft-card)] text-black'}`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
                         <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
                         {homeCopy.openPermissionsHint}
                       </div>
@@ -3823,23 +3840,6 @@ export default function App() {
                           {permissionStatusText}
                         </div>
                       )}
-                    </div>
-                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
-                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
-                        <Languages size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                        {homeCopy.language}
-                      </div>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {LANGUAGE_OPTIONS.map(option => (
-                          <button
-                            key={option.value}
-                            onClick={() => setLanguage(option.value)}
-                            className={`h-9 rounded-full text-[14px] font-medium transition-colors ${language === option.value ? 'bg-[var(--app-dark)] text-white' : 'bg-[var(--app-soft-card)] text-black'}`}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                     <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
