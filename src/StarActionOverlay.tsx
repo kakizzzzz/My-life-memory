@@ -36,6 +36,58 @@ const DEFAULT_COLORS = [
   '#CBE0E8', '#80AACD', '#D3CCE3', '#F0EBE1', '#28292B'
 ];
 
+type MapProvider = 'apple' | 'amap' | 'baidu' | 'google';
+type CoordinatePair = { lat: number; lng: number };
+
+const isInsideMainlandChina = ({ lat, lng }: CoordinatePair) => (
+  lng >= 72.004 && lng <= 137.8347 && lat >= 0.8293 && lat <= 55.8271
+);
+
+const transformChinaLat = (x: number, y: number) => {
+  let result = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  result += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+  result += (20 * Math.sin(y * Math.PI) + 40 * Math.sin(y / 3 * Math.PI)) * 2 / 3;
+  result += (160 * Math.sin(y / 12 * Math.PI) + 320 * Math.sin(y * Math.PI / 30)) * 2 / 3;
+  return result;
+};
+
+const transformChinaLng = (x: number, y: number) => {
+  let result = 300 + x + 2 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  result += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+  result += (20 * Math.sin(x * Math.PI) + 40 * Math.sin(x / 3 * Math.PI)) * 2 / 3;
+  result += (150 * Math.sin(x / 12 * Math.PI) + 300 * Math.sin(x / 30 * Math.PI)) * 2 / 3;
+  return result;
+};
+
+const wgs84ToGcj02 = (point: CoordinatePair): CoordinatePair => {
+  if (!isInsideMainlandChina(point)) return point;
+
+  const a = 6378245.0;
+  const ee = 0.00669342162296594323;
+  const dLat = transformChinaLat(point.lng - 105, point.lat - 35);
+  const dLng = transformChinaLng(point.lng - 105, point.lat - 35);
+  const radLat = point.lat / 180 * Math.PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - ee * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  const mgLat = point.lat + (dLat * 180) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+  const mgLng = point.lng + (dLng * 180) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+  return { lat: mgLat, lng: mgLng };
+};
+
+const gcj02ToBd09 = (point: CoordinatePair): CoordinatePair => {
+  const x = point.lng;
+  const y = point.lat;
+  const z = Math.sqrt(x * x + y * y) + 0.00002 * Math.sin(y * Math.PI * 3000 / 180);
+  const theta = Math.atan2(y, x) + 0.000003 * Math.cos(x * Math.PI * 3000 / 180);
+  return {
+    lat: z * Math.sin(theta) + 0.006,
+    lng: z * Math.cos(theta) + 0.0065,
+  };
+};
+
+const formatCoordinate = (value: number) => value.toFixed(6);
+
 const STAR_OVERLAY_COPY = {
   en: {
     showDetails: 'Show location details',
@@ -109,6 +161,7 @@ export function StarActionOverlay({
   
   const [activeTab, setActiveTab] = useState<'eye'|'color'|'edit'|'trash'|null>(null);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [isMapChooserOpen, setIsMapChooserOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
   const copyTimerRef = React.useRef<number | null>(null);
   
@@ -116,6 +169,7 @@ export function StarActionOverlay({
     if (selectedStarId) {
       setActiveTab(null); // Reset when a new star is selected
       setShowCustomPicker(false);
+      setIsMapChooserOpen(false);
       setCopyStatus('');
       setOffset({ x: 0, y: 0 });
     }
@@ -127,6 +181,7 @@ export function StarActionOverlay({
     }
     if (activeTab !== 'eye') {
       setCopyStatus('');
+      setIsMapChooserOpen(false);
     }
   }, [activeTab]);
 
@@ -205,38 +260,92 @@ export function StarActionOverlay({
     }
   };
 
-  const openNativeMaps = () => {
+  const openWithFallback = (primaryUrl: string, fallbackUrl?: string) => {
+    if (!fallbackUrl) {
+      window.location.href = primaryUrl;
+      return;
+    }
+
+    const startedAt = Date.now();
+    window.location.href = primaryUrl;
+    window.setTimeout(() => {
+      if (!document.hidden && Date.now() - startedAt < 1800) {
+        window.location.href = fallbackUrl;
+      }
+    }, 900);
+  };
+
+  const openMapProvider = (provider: MapProvider) => {
     if (copyTimerRef.current !== null) {
       window.clearTimeout(copyTimerRef.current);
     }
     setCopyStatus('');
+    setIsMapChooserOpen(false);
 
-    const lat = star.lat.toFixed(6);
-    const lng = star.lng.toFixed(6);
+    const wgs84 = { lat: star.lat, lng: star.lng };
+    const gcj02 = wgs84ToGcj02(wgs84);
+    const bd09 = gcj02ToBd09(gcj02);
     const mapTitle = encodeURIComponent(copy.mapLocationTitle);
     const ua = navigator.userAgent || '';
     const isAndroid = /Android/i.test(ua);
     const isIOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const appName = encodeURIComponent('My life memory');
 
-    if (isAndroid) {
-      window.location.href = `geo:${lat},${lng}?q=${lat},${lng}(${mapTitle})`;
+    if (provider === 'apple') {
+      const applePoint = isInsideMainlandChina(wgs84) ? gcj02 : wgs84;
+      const lat = formatCoordinate(applePoint.lat);
+      const lng = formatCoordinate(applePoint.lng);
+      const webUrl = `https://maps.apple.com/?ll=${lat},${lng}&q=${mapTitle}`;
+      if (isIOS) {
+        openWithFallback(`maps://?ll=${lat},${lng}&q=${mapTitle}`, webUrl);
+      } else {
+        window.open(webUrl, '_blank', 'noopener,noreferrer');
+      }
       return;
     }
 
+    if (provider === 'amap') {
+      const lat = formatCoordinate(gcj02.lat);
+      const lng = formatCoordinate(gcj02.lng);
+      const fallbackUrl = `https://uri.amap.com/marker?position=${lng},${lat}&name=${mapTitle}&src=${appName}&coordinate=gaode`;
+      if (isIOS) {
+        openWithFallback(`iosamap://viewMap?sourceApplication=${appName}&poiname=${mapTitle}&lat=${lat}&lon=${lng}&dev=0`, fallbackUrl);
+      } else if (isAndroid) {
+        openWithFallback(`androidamap://viewMap?sourceApplication=${appName}&poiname=${mapTitle}&lat=${lat}&lon=${lng}&dev=0`, fallbackUrl);
+      } else {
+        window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+
+    if (provider === 'baidu') {
+      const lat = formatCoordinate(bd09.lat);
+      const lng = formatCoordinate(bd09.lng);
+      const fallbackUrl = `https://api.map.baidu.com/marker?location=${lat},${lng}&title=${mapTitle}&content=${mapTitle}&coord_type=bd09ll&output=html&src=${appName}`;
+      openWithFallback(`baidumap://map/marker?location=${lat},${lng}&title=${mapTitle}&content=${mapTitle}&coord_type=bd09ll&src=${appName}`, fallbackUrl);
+      return;
+    }
+
+    const lat = formatCoordinate(wgs84.lat);
+    const lng = formatCoordinate(wgs84.lng);
+    const googleUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
     if (isIOS) {
-      const fallbackUrl = `https://maps.apple.com/?ll=${lat},${lng}&q=${mapTitle}`;
-      const startedAt = Date.now();
-      window.location.href = `maps://?ll=${lat},${lng}&q=${mapTitle}`;
-      window.setTimeout(() => {
-        if (!document.hidden && Date.now() - startedAt < 1800) {
-          window.location.href = fallbackUrl;
-        }
-      }, 900);
+      openWithFallback(`comgooglemaps://?q=${lat},${lng}`, googleUrl);
       return;
     }
-
-    window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank', 'noopener,noreferrer');
+    if (isAndroid) {
+      openWithFallback(`geo:${lat},${lng}?q=${lat},${lng}(${mapTitle})`, googleUrl);
+      return;
+    }
+    window.open(googleUrl, '_blank', 'noopener,noreferrer');
   };
+
+  const mapProviders: { id: MapProvider; label: string }[] = [
+    { id: 'apple', label: copy.appleMaps },
+    { id: 'amap', label: copy.amapMaps },
+    { id: 'baidu', label: copy.baiduMaps },
+    { id: 'google', label: copy.googleMaps },
+  ];
 
   return createPortal(
     <div 
@@ -273,12 +382,26 @@ export function StarActionOverlay({
             <Copy size={14} strokeWidth={2} />
           </button>
           <button
-            onClick={openNativeMaps}
+            onClick={() => setIsMapChooserOpen(open => !open)}
             className="text-black transition-colors hover:text-gray-500"
             aria-label={copy.openInMaps}
           >
             <ExternalLink size={14} strokeWidth={2} />
           </button>
+        </div>
+      )}
+
+      {activeTab === 'eye' && isMapChooserOpen && (
+        <div className="grid grid-cols-2 gap-1.5 rounded-[16px] border border-[var(--app-card)] bg-[var(--app-active-surface)] p-1.5 shadow-lg">
+          {mapProviders.map(provider => (
+            <button
+              key={provider.id}
+              onClick={() => openMapProvider(provider.id)}
+              className="min-w-[58px] rounded-full bg-[var(--app-card)] px-3 py-1.5 text-[12px] font-medium leading-none text-black transition-transform active:scale-95"
+            >
+              {provider.label}
+            </button>
+          ))}
         </div>
       )}
 

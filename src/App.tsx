@@ -238,6 +238,7 @@ const TRACK_MAX_SPEED_MPS = 4.5;
 const TRACK_MIN_POINT_INTERVAL_MS = 500;
 const TRACK_STALE_POSITION_GRACE_MS = 2000;
 const CLOUD_PASSWORD_MIN_LENGTH = 6;
+const CLOUD_SESSION_PASSWORD_KEY = `${APP_STORAGE_KEY}:cloud-session-password`;
 
 const isInsideRotatedEllipse = (
   x: number,
@@ -401,6 +402,30 @@ const writePersistedAppState = (state: PersistedAppState) => {
     window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
   } catch {
     // Storage can fail when image-heavy notes exceed the browser quota.
+  }
+};
+
+const readCloudSessionPassword = () => {
+  if (typeof window === 'undefined') return '';
+
+  try {
+    return window.sessionStorage.getItem(CLOUD_SESSION_PASSWORD_KEY) || '';
+  } catch {
+    return '';
+  }
+};
+
+const writeCloudSessionPassword = (password: string) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    if (password) {
+      window.sessionStorage.setItem(CLOUD_SESSION_PASSWORD_KEY, password);
+    } else {
+      window.sessionStorage.removeItem(CLOUD_SESSION_PASSWORD_KEY);
+    }
+  } catch {
+    // Session storage can be unavailable in private browsing.
   }
 };
 
@@ -2156,10 +2181,11 @@ export default function App() {
     };
   }, [isSignedIn, language, mapStyle, profile, savedTracks, stars, systemTheme]);
 
-  const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null) => {
+  const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null, sessionPassword = '') => {
     const remoteState = (cloudState || {}) as PersistedAppState;
     isApplyingCloudStateRef.current = true;
     cloudReadyToSaveRef.current = false;
+    const visiblePassword = sessionPassword || readCloudSessionPassword();
 
     if (isMapStyle(remoteState.mapStyle)) setMapStyle(remoteState.mapStyle);
     setSystemTheme({
@@ -2171,7 +2197,7 @@ export default function App() {
       ...(remoteState.profile || {}),
       name: cloudProfile.name || remoteState.profile?.name || buildDefaultProfileName(cloudProfile.account) || prev.name,
       account: cloudProfile.account,
-      password: '',
+      password: visiblePassword,
       avatarUrl: cloudProfile.avatarUrl || remoteState.profile?.avatarUrl || prev.avatarUrl || '',
     }));
     if (isLanguage(remoteState.language)) setLanguage(remoteState.language);
@@ -2336,7 +2362,8 @@ export default function App() {
           initialState,
         });
 
-        applyCloudSnapshot(result.profile, result.state);
+        writeCloudSessionPassword(loginPassword);
+        applyCloudSnapshot(result.profile, result.state, loginPassword);
       } catch (error) {
         console.error('Cloud login failed:', error);
         cloudReadyToSaveRef.current = false;
@@ -2448,6 +2475,7 @@ export default function App() {
       cloudReadyToSaveRef.current = false;
       void signOutCloudAccount();
     }
+    writeCloudSessionPassword('');
     setIsSignedIn(false);
     setLoginAccount('');
     setLoginPassword('');
