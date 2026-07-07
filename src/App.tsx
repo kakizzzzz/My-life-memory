@@ -4027,13 +4027,13 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1800] flex items-center justify-center bg-black/[0.35] p-6 pointer-events-auto"
+            className="fixed inset-0 z-[1800] flex items-start justify-center bg-black/[0.28] px-6 pb-6 pt-[calc(env(safe-area-inset-top)+4.75rem)] pointer-events-auto"
             onPointerDown={closeSearchModal}
           >
             <motion.form
-              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 14, scale: 0.98 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
               transition={{ duration: 0.18 }}
               className="w-full max-w-[360px] rounded-[28px] bg-white/15 p-2 backdrop-blur-[2px]"
               onPointerDown={event => event.stopPropagation()}
