@@ -529,27 +529,27 @@ const HOME_COPY = {
     openPermissions: 'Open permissions',
     openPermissionsHint: 'Request location and direction permissions',
     userManual: 'User manual',
-    manualIntro: 'My life memory is a private life map: it connects places, notes, photos, routes, and personal statistics into one memory space.',
+    manualIntro: 'My life memory is a private life map. It starts from your current location, lets you place stars for meaningful places, and connects notes, photos, walking routes, coordinates, and statistics into one personal memory space.',
     manualSections: [
-      { title: 'Map and stars', body: 'Use stars to mark places. You can tap the map or drag a star into position, then open it to write notes, add photos, view coordinates, copy them, or open the place in another map app.' },
-      { title: 'Location and direction', body: 'Open permissions to request real GPS and device direction. The origin marker represents your current position; its probe rotates with the phone direction and moves as GPS updates while you walk.' },
-      { title: 'Records', body: 'Notes are created from stars and kept by creation time. In My records, open a note to edit text and images directly; calendar filtering helps you find days with saved content.' },
-      { title: 'Statistics', body: 'Trip statistics summarize stars, routes, frequent locations, rankings, and the dotted world map. Chart colors follow star colors so the data keeps the same visual identity.' },
-      { title: 'Account and sync', body: 'Each ID is unique. After login, stars, notes, routes, settings, and profile data sync to the cloud, and different accounts stay separated even on the same device.' },
+      { title: 'Map and stars', body: 'A star is one place memory. Tap an empty spot on the map to place a star directly, or drag the star tool onto the map to create it more deliberately. After a star is placed, you can still drag it to adjust the location. Tap a star to write notes, add photos, view coordinates, copy them, or choose another map app to open the place.' },
+      { title: 'Location and direction', body: 'Open permissions to request real GPS and device direction. The black origin marker is your current position, and the translucent probe shows the phone-facing direction. On mobile Safari, direction data usually requires HTTPS and a user tap. Walking updates depend on GPS accuracy, so outdoor movement is more reliable than indoor testing.' },
+      { title: 'Records', body: 'Notes are created from stars. The note time is based on the first creation time and should not be edited later. In My records, newer notes appear above older ones. Open a note to edit text and images directly, then use the save button in the expanded tools. The calendar shows dots only on days that have saved content or star marks.' },
+      { title: 'Statistics', body: 'Trip statistics summarize stars, routes, frequent locations, rankings, and the dotted world map. Bar chart colors follow star colors, so the statistics stay visually connected to the memories on the map. The dotted world map is a decorative overview and can be opened for a fuller browsing experience.' },
+      { title: 'Account and sync', body: 'Each ID is unique. Register first, then log in with that ID and password. After login, stars, notes, routes, settings, and profile data sync to the cloud. Different accounts stay separated even on the same device, so switching accounts should show each user’s own data.' },
     ],
     manualIconsTitle: 'Common icons',
-    manualIconMap: 'Map view and place memories',
-    manualIconStats: 'Trip statistics and rankings',
-    manualIconRecords: 'Saved notes and calendar records',
-    manualIconHome: 'Profile, theme, gallery, and settings',
-    manualIconStar: 'Create or open a place star',
-    manualIconLocation: 'Return to your current location',
-    manualIconRoute: 'Record or review a walking route',
-    manualIconCamera: 'Take or add a note photo',
-    manualIconSave: 'Save the current note edits',
-    manualIconCopy: 'Copy coordinates or text',
-    manualIconShare: 'Open this place in another map app',
-    manualIconSearch: 'Search notes, places, or coordinates',
+    manualIconMap: 'Map opens the main map, where your current location, stars, routes, and map style controls live.',
+    manualIconStats: 'Stats opens distance, star, location ranking, and dotted world-map summaries.',
+    manualIconRecords: 'Records opens your saved notes in timeline form; use filters, search, and calendar to find them.',
+    manualIconHome: 'Home contains profile editing, theme colors, image gallery, permissions, this manual, and account exit.',
+    manualIconStar: 'Star creates a place memory. You can tap the map to place it, drag the star tool onto the map, tap an existing star to edit it, and drag a placed star to refine its location.',
+    manualIconLocation: 'Location returns the map to your current GPS origin. The direction probe rotates with phone orientation when browser permission and hardware support are available.',
+    manualIconRoute: 'Route starts, pauses, saves, or reviews a walking route. Distance depends on GPS accuracy and updates while location points arrive.',
+    manualIconCamera: 'Camera opens photo capture or image selection for a note; on mobile it can use the full-screen camera flow when the browser allows it.',
+    manualIconSave: 'Save writes the current note edits, including text, images, color, and font-size changes.',
+    manualIconCopy: 'Copy places coordinates or other selected information on the clipboard and shows a short copied message.',
+    manualIconShare: 'Open map lets you choose Apple, AMap, Baidu, or Google Maps when supported by the device.',
+    manualIconSearch: 'Search finds notes, place text, or coordinates without moving through every star manually.',
     permissionRequesting: 'Requesting permissions...',
     permissionReady: 'Permissions requested',
     permissionDenied: 'Could not open permissions. Check browser site settings.',
@@ -644,27 +644,27 @@ const HOME_COPY = {
     openPermissions: '打开权限',
     openPermissionsHint: '请求定位与方向权限',
     userManual: '用户手册',
-    manualIntro: 'My life memory 是一个私人生活地图：把地点、文字、图片、路线和统计放在同一个记忆空间里。',
+    manualIntro: 'My life memory 是一个私人生活地图。它从你的当前位置出发，用星星记录重要地点，再把文字、图片、步行路线、坐标和统计放进同一个记忆空间里。',
     manualSections: [
-      { title: '地图与星星', body: '星星代表一个地点记忆。可以点击地图直接放置，也可以把星星拖到地图上；点开星星后可以写笔记、添加照片、查看坐标、复制坐标，或选择 Apple / 高德 / 百度 / Google 地图打开。' },
-      { title: '定位与方向', body: '打开权限会请求真实 GPS 和手机方向。黑色原点代表你当前的位置，半透明探头会随手机朝向旋转；走动时，位置会跟随 GPS 更新。' },
-      { title: '我的记录', body: '记录来自星星里的笔记，时间以第一次创建为准。进入记录详情后可以直接编辑文字和图片，日历可以筛选有内容或星标的日期。' },
-      { title: '行程统计', body: '统计页会汇总星星数量、路线距离、常出现地点、排行和点状世界地图。柱状图颜色跟随星星颜色，便于把数据和地图记忆对应起来。' },
-      { title: '账号与同步', body: '每个 ID 都是唯一的。登录后星星、笔记、路线、设置和个人信息会保存到云端；不同账号即使在同一台设备上切换，也会保持数据隔离。' },
+      { title: '地图与星星', body: '星星代表一个地点记忆。你可以点击地图上的空白位置直接创建星星，也可以把星星工具拖到地图上创建；星星放好以后仍然可以拖动调整位置。点开星星后，可以写笔记、添加照片、查看坐标、复制坐标，也可以选择 Apple 地图、高德、百度或 Google 地图打开这个地点。' },
+      { title: '定位与方向', body: '打开权限会请求真实 GPS 和手机方向。黑色原点代表你当前的位置，半透明探头表示手机朝向；浏览器和手机支持时，转动手机探头会跟着旋转，走动时位置会随着 GPS 更新。移动端 Safari 通常需要 HTTPS 和用户点击后才能读取方向，室内 GPS 也可能不如室外稳定。' },
+      { title: '我的记录', body: '记录来自星星里的笔记，时间以第一次创建为准，后续编辑不会改变创建时间。新建记录会显示在旧记录上方。进入记录详情后可以直接编辑文字和图片，图片下方也可以继续输入文字，改完以后用右侧展开工具里的保存按钮保存。日历只会在有文字、图片或星标的日期下面显示点，也可以取消筛选。' },
+      { title: '行程统计', body: '统计页会汇总星星数量、路线距离、常出现地点、排行和点状世界地图。柱状图颜色会跟随星星颜色，方便把统计数据和地图上的记忆对应起来。点状世界地图主要用于整体浏览，它可以打开成更完整的地图视图。' },
+      { title: '账号与同步', body: '每个 ID 都是唯一的。第一次使用先注册，注册完成后再用同一个 ID 和密码登录。登录后星星、笔记、路线、主题、个人信息会保存到云端；不同账号即使在同一台设备上切换，也应该只看到各自的数据。' },
     ],
     manualIconsTitle: '常用图标',
-    manualIconMap: '地图主页与地点记忆',
-    manualIconStats: '行程统计与排行',
-    manualIconRecords: '笔记记录与日历',
-    manualIconHome: '个人信息、主题、图片仓库和设置',
-    manualIconStar: '创建或打开地点星星',
-    manualIconLocation: '回到当前定位原点',
-    manualIconRoute: '记录或查看步行路线',
-    manualIconCamera: '拍照或添加笔记图片',
-    manualIconSave: '保存当前笔记修改',
-    manualIconCopy: '复制坐标或文字',
-    manualIconShare: '用其他地图 App 打开地点',
-    manualIconSearch: '搜索笔记、地点或坐标',
+    manualIconMap: '地图图标会回到主地图。这里可以查看当前定位、星星、路线，也可以切换地图样式。',
+    manualIconStats: '统计图标会进入行程统计页，查看距离、星星数量、常用地点排行和点状世界地图。',
+    manualIconRecords: '记录图标会进入我的记录页，按时间查看笔记，也可以用搜索、月份/年份筛选和日历查找。',
+    manualIconHome: '主页图标会进入个人区域，用来修改信息、更换主题、查看图片仓库、打开权限、阅读手册或退出账号。',
+    manualIconStar: '星星图标用于创建地点记忆。可以点击地图创建，也可以把星星拖到地图上创建；已经放好的星星也可以拖动调整位置，点开后可以编辑笔记和照片。',
+    manualIconLocation: '定位图标会让地图回到当前 GPS 原点。原点旁的半透明探头代表手机朝向，权限和设备支持时会随手机转动。',
+    manualIconRoute: '路线图标用于开始、暂停、保存或查看步行路线。路线距离会根据 GPS 点计算，GPS 精度越好越准确。',
+    manualIconCamera: '相机图标用于拍照或给笔记添加图片。移动端浏览器允许时，可以进入更接近全屏的拍摄体验。',
+    manualIconSave: '保存图标用于保存当前笔记修改，包括文字、图片、颜色和字号等内容。',
+    manualIconCopy: '复制图标用于复制坐标或相关文字，点击后会出现短暂的复制成功提示。',
+    manualIconShare: '打开地图图标用于把地点交给本机地图 App，可选择 Apple 地图、高德、百度或 Google 地图。',
+    manualIconSearch: '搜索图标用于搜索笔记文字、地点内容或坐标，方便从大量记录里快速找到目标。',
     permissionRequesting: '正在请求权限...',
     permissionReady: '已请求权限',
     permissionDenied: '无法打开权限，请检查浏览器网站设置',
@@ -759,27 +759,27 @@ const HOME_COPY = {
     openPermissions: '권한 열기',
     openPermissionsHint: '위치 및 방향 권한 요청',
     userManual: '사용 설명서',
-    manualIntro: 'My life memory는 장소, 글, 사진, 경로, 통계를 하나의 개인 기억 지도에 연결하는 앱입니다.',
+    manualIntro: 'My life memory는 현재 위치에서 시작해 별표로 중요한 장소를 남기고, 글, 사진, 도보 경로, 좌표, 통계를 하나의 개인 기억 지도에 연결하는 앱입니다.',
     manualSections: [
-      { title: '지도와 별표', body: '별표는 장소 기억을 나타냅니다. 지도를 탭하거나 별표를 끌어 위치를 정한 뒤 노트 작성, 사진 추가, 좌표 확인, 복사, 외부 지도 앱 열기를 할 수 있습니다.' },
-      { title: '위치와 방향', body: '권한을 열면 실제 GPS와 기기 방향을 요청합니다. 검은 원점은 현재 위치이고, 반투명 방향 표시는 휴대폰 방향에 맞춰 회전하며 GPS 업데이트에 따라 이동합니다.' },
-      { title: '기록', body: '기록은 별표 안의 노트에서 만들어지고 처음 만든 시간이 기준입니다. 상세 화면에서 텍스트와 이미지를 바로 편집할 수 있으며, 캘린더로 내용이 있는 날짜를 찾을 수 있습니다.' },
-      { title: '통계', body: '통계 화면은 별표 수, 이동 거리, 자주 남긴 장소, 순위, 점 형태의 세계 지도를 보여줍니다. 막대 색상은 별표 색상을 따릅니다.' },
-      { title: '계정과 동기화', body: '각 ID는 고유합니다. 로그인하면 별표, 노트, 경로, 설정, 프로필이 클라우드에 저장되며 같은 기기에서 계정을 바꿔도 데이터는 분리됩니다.' },
+      { title: '지도와 별표', body: '별표는 하나의 장소 기억입니다. 지도 빈 곳을 탭해 바로 만들 수 있고, 별표 도구를 지도 위로 끌어 더 정확히 만들 수도 있습니다. 만든 뒤에도 별표를 끌어 위치를 조정할 수 있습니다. 별표를 열면 노트 작성, 사진 추가, 좌표 보기, 좌표 복사, 다른 지도 앱에서 열기를 할 수 있습니다.' },
+      { title: '위치와 방향', body: '권한을 열면 실제 GPS와 휴대폰 방향을 요청합니다. 검은 원점은 현재 위치이고 반투명 표시는 휴대폰이 향하는 방향입니다. 모바일 Safari에서는 보통 HTTPS와 사용자 탭이 필요하며, 실내보다 실외 GPS가 더 안정적입니다.' },
+      { title: '기록', body: '기록은 별표 안의 노트에서 만들어지며 처음 만든 시간이 기준입니다. 새 기록은 오래된 기록보다 위에 표시됩니다. 상세 화면에서 텍스트와 이미지를 바로 편집하고, 펼쳐진 도구의 저장 버튼으로 변경 사항을 저장합니다. 캘린더는 내용이나 별표가 있는 날짜에만 점을 표시합니다.' },
+      { title: '통계', body: '통계 화면은 별표 수, 이동 거리, 자주 남긴 장소, 순위, 점 형태의 세계 지도를 요약합니다. 막대 색상은 별표 색상을 따라 지도 기억과 통계가 이어져 보이게 합니다.' },
+      { title: '계정과 동기화', body: '각 ID는 고유합니다. 처음에는 가입하고, 가입 후 같은 ID와 비밀번호로 로그인합니다. 로그인하면 별표, 노트, 경로, 테마, 프로필이 클라우드에 저장되며 같은 기기에서 계정을 바꿔도 각자의 데이터만 보여야 합니다.' },
     ],
     manualIconsTitle: '주요 아이콘',
-    manualIconMap: '지도 화면과 장소 기억',
-    manualIconStats: '이동 통계와 순위',
-    manualIconRecords: '저장한 노트와 캘린더',
-    manualIconHome: '프로필, 테마, 갤러리, 설정',
-    manualIconStar: '장소 별표 만들기 또는 열기',
-    manualIconLocation: '현재 위치로 돌아가기',
-    manualIconRoute: '도보 경로 기록 또는 확인',
-    manualIconCamera: '사진 촬영 또는 노트 이미지 추가',
-    manualIconSave: '현재 노트 수정 저장',
-    manualIconCopy: '좌표나 텍스트 복사',
-    manualIconShare: '다른 지도 앱으로 장소 열기',
-    manualIconSearch: '노트, 장소, 좌표 검색',
+    manualIconMap: '지도 아이콘은 현재 위치, 별표, 경로, 지도 스타일을 보는 기본 지도로 돌아갑니다.',
+    manualIconStats: '통계 아이콘은 거리, 별표 수, 자주 남긴 장소 순위, 점 형태의 세계 지도 요약을 엽니다.',
+    manualIconRecords: '기록 아이콘은 저장된 노트를 시간순으로 보여주며 검색, 기간 필터, 캘린더를 사용할 수 있습니다.',
+    manualIconHome: '홈 아이콘은 프로필, 테마, 이미지 갤러리, 권한, 사용 설명서, 로그아웃을 여는 개인 영역입니다.',
+    manualIconStar: '별표 아이콘은 장소 기억을 만듭니다. 지도를 탭하거나 별표를 끌어 만들 수 있고, 만든 별표도 끌어서 위치를 조정할 수 있습니다.',
+    manualIconLocation: '위치 아이콘은 지도를 현재 GPS 원점으로 되돌립니다. 방향 표시는 권한과 기기가 지원할 때 휴대폰 방향에 맞춰 회전합니다.',
+    manualIconRoute: '경로 아이콘은 도보 경로를 시작, 일시정지, 저장, 확인할 때 사용합니다. 거리는 GPS 포인트를 기준으로 계산됩니다.',
+    manualIconCamera: '카메라 아이콘은 사진을 촬영하거나 노트에 이미지를 추가합니다. 모바일 브라우저가 허용하면 더 큰 촬영 화면을 사용할 수 있습니다.',
+    manualIconSave: '저장 아이콘은 현재 노트의 텍스트, 이미지, 색상, 글자 크기 변경을 저장합니다.',
+    manualIconCopy: '복사 아이콘은 좌표나 관련 텍스트를 클립보드에 복사하고 짧은 완료 메시지를 보여줍니다.',
+    manualIconShare: '지도 열기 아이콘은 장소를 Apple 지도, AMap, Baidu, Google 지도 등 지원되는 앱으로 엽니다.',
+    manualIconSearch: '검색 아이콘은 노트 내용, 장소 텍스트, 좌표를 빠르게 찾는 데 사용합니다.',
     permissionRequesting: '권한 요청 중...',
     permissionReady: '권한을 요청했습니다',
     permissionDenied: '권한을 열 수 없습니다. 브라우저 사이트 설정을 확인하세요.',
@@ -1496,6 +1496,7 @@ export default function App() {
   const [isMapStyleMenuOpen, setIsMapStyleMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<AppView>(() => initialSignedIn ? 'map' : 'home');
   const [activeHomePanel, setActiveHomePanel] = useState<HomePanel>(null);
+  const [isUserManualOpen, setIsUserManualOpen] = useState(false);
   const [recordsFilter, setRecordsFilter] = useState<RecordsFilter>('all');
   const [selectedRecordsDateKey, setSelectedRecordsDateKey] = useState<string | null>(null);
   const [isRecordsMenuOpen, setIsRecordsMenuOpen] = useState(false);
@@ -1867,6 +1868,9 @@ export default function App() {
     if (activeHomePanel !== 'theme') {
       setActiveThemeColorKey(null);
       setShowThemeCustomPicker(false);
+    }
+    if (activeHomePanel !== 'settings') {
+      setIsUserManualOpen(false);
     }
   }, [activeHomePanel]);
 
@@ -4584,40 +4588,74 @@ export default function App() {
                       )}
                     </div>
                     <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
-                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
-                        <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                        {homeCopy.userManual}
-                      </div>
-                      <div className="text-[13px] font-medium leading-snug text-black/55">
-                        {homeCopy.manualIntro}
-                      </div>
-                      <div className="mt-3 space-y-2.5">
-                        {homeCopy.manualSections.map(section => (
-                          <div key={section.title}>
-                            <div className="text-[13px] font-semibold leading-tight text-black">
-                              {section.title}
+                      <button
+                        type="button"
+                        onClick={() => setIsUserManualOpen(prev => !prev)}
+                        className="flex h-10 w-full items-center justify-between text-black"
+                      >
+                        <span className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-black/60">
+                          <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                          <span className="truncate">{homeCopy.userManual}</span>
+                        </span>
+                        {isUserManualOpen ? (
+                          <ChevronUp size={22} strokeWidth={2} className="shrink-0 text-black/25" />
+                        ) : (
+                          <ChevronDown size={22} strokeWidth={2} className="shrink-0 text-black/25" />
+                        )}
+                      </button>
+                      <AnimatePresence initial={false}>
+                        {isUserManualOpen && (
+                          <motion.div
+                            key="settings-user-manual-detail"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.16 }}
+                            className="overflow-hidden"
+                          >
+                            <div
+                              className="max-h-[54vh] overflow-y-auto overscroll-contain pr-1"
+                              style={{ WebkitOverflowScrolling: 'touch' }}
+                            >
+                              <div className="pt-2 text-[13px] font-medium leading-snug text-black/55">
+                                {homeCopy.manualIntro}
+                              </div>
+                              <div className="mt-3 space-y-3">
+                                {homeCopy.manualSections.map(section => (
+                                  <div key={section.title}>
+                                    <div className="text-[13px] font-semibold leading-tight text-black">
+                                      {section.title}
+                                    </div>
+                                    <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
+                                      {section.body}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="mt-4 text-[13px] font-semibold leading-tight text-black">
+                                {homeCopy.manualIconsTitle}
+                              </div>
+                              <div className="mt-2 space-y-2.5">
+                                {manualIconGuide.map(item => (
+                                  <div key={`${item.label}-${item.body}`} className="flex min-w-0 items-start gap-2">
+                                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black">
+                                      {item.icon}
+                                    </span>
+                                    <span className="min-w-0">
+                                      <span className="block text-[12px] font-semibold leading-tight text-black">
+                                        {item.label}
+                                      </span>
+                                      <span className="mt-0.5 block text-[11px] font-medium leading-snug text-black/52">
+                                        {item.body}
+                                      </span>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                            <div className="mt-1 text-[12px] font-medium leading-snug text-black/48">
-                              {section.body}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 text-[13px] font-semibold leading-tight text-black">
-                        {homeCopy.manualIconsTitle}
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-2">
-                        {manualIconGuide.map(item => (
-                          <div key={`${item.label}-${item.body}`} className="flex min-w-0 items-start gap-2">
-                            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black">
-                              {item.icon}
-                            </span>
-                            <span className="min-w-0 text-[11px] font-medium leading-snug text-black/52">
-                              {item.body}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                     <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
