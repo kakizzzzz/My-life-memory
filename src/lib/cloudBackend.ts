@@ -22,7 +22,7 @@ type AppStateRow = {
 export type CloudAuthAction = 'login' | 'register';
 
 export class CloudAuthError extends Error {
-  code: 'invalid_credentials' | 'account_exists' | 'setup_required' | 'registration_disabled' | 'unknown';
+  code: 'invalid_credentials' | 'account_exists' | 'setup_required' | 'registration_disabled' | 'weak_password' | 'unknown';
 
   constructor(code: CloudAuthError['code'], message: string) {
     super(message);
@@ -59,10 +59,40 @@ const isCloudSetupError = (error: unknown) => {
   return code === 'PGRST205' || code === '42501' || message.toLowerCase().includes('permission denied');
 };
 
+const getAuthErrorText = (error: unknown) => {
+  if (!error || typeof error !== 'object') return '';
+  const code = 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
+  return `${code} ${message}`.toLowerCase();
+};
+
+const isWeakPasswordError = (error: unknown) => {
+  const text = getAuthErrorText(error);
+  return text.includes('weak_password') || (text.includes('password') && text.includes('6'));
+};
+
+const isExistingAccountError = (error: unknown) => {
+  const text = getAuthErrorText(error);
+  return (
+    text.includes('already registered') ||
+    text.includes('already exists') ||
+    text.includes('duplicate key') ||
+    text.includes('unique constraint') ||
+    text.includes('user_already_exists') ||
+    text.includes('email_exists')
+  );
+};
+
 const toCloudAuthError = (error: unknown, fallback: CloudAuthError['code'] = 'unknown') => {
   if (error instanceof CloudAuthError) return error;
   if (isCloudSetupError(error)) {
     return new CloudAuthError('setup_required', 'Supabase database setup is incomplete.');
+  }
+  if (isWeakPasswordError(error)) {
+    return new CloudAuthError('weak_password', 'Password is too short.');
+  }
+  if (isExistingAccountError(error)) {
+    return new CloudAuthError('account_exists', 'Account already exists.');
   }
   return new CloudAuthError(fallback, error instanceof Error ? error.message : 'Cloud auth failed.');
 };
@@ -216,12 +246,9 @@ export const registerCloudAccount = async ({
   const client = requireSupabase();
   const normalizedAccount = normalizeAccountId(account);
   if (!normalizedAccount || !password) throw new Error('Account and password are required.');
+  if (password.length < 6) throw new CloudAuthError('weak_password', 'Password is too short.');
 
   const email = accountIdToAuthEmail(normalizedAccount);
-  const signInResult = await client.auth.signInWithPassword({ email, password });
-  if (signInResult.data.user && !signInResult.error) {
-    throw new CloudAuthError('account_exists', 'Account already exists.');
-  }
 
   try {
     const signUpResult = await client.auth.signUp({
@@ -233,6 +260,9 @@ export const registerCloudAccount = async ({
     });
 
     if (signUpResult.error) throw signUpResult.error;
+    if (Array.isArray(signUpResult.data.user?.identities) && signUpResult.data.user.identities.length === 0) {
+      throw new CloudAuthError('account_exists', 'Account already exists.');
+    }
     if (!signUpResult.data.session || !signUpResult.data.user) {
       throw new CloudAuthError('registration_disabled', 'Supabase email confirmation must be disabled for ID-only login.');
     }
@@ -244,6 +274,7 @@ export const registerCloudAccount = async ({
     });
     const cloudProfile = await ensureCloudProfile(signUpResult.data.user, initialData.profile);
     await saveCloudAppState(initialData.state);
+    await client.auth.signOut();
 
     return {
       profile: cloudProfile,
@@ -251,7 +282,8 @@ export const registerCloudAccount = async ({
       isNewAccount: true,
     };
   } catch (error) {
-    throw toCloudAuthError(error, 'account_exists');
+    await client.auth.signOut().catch(() => {});
+    throw toCloudAuthError(error);
   }
 };
 
@@ -295,7 +327,7 @@ export const saveCloudAppState = async (state: CloudAppState) => {
     .upsert({
       user_id: user.id,
       state,
-    });
+    }, { onConflict: 'user_id' });
 
   if (error) throw error;
 };

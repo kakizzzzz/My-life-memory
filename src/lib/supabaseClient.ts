@@ -8,7 +8,7 @@ export const isCloudBackendEnabled = Boolean(supabaseUrl && supabaseAnonKey);
 export const supabase = isCloudBackendEnabled
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        persistSession: true,
+        persistSession: false,
         autoRefreshToken: true,
         detectSessionInUrl: true,
       },

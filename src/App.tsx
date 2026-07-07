@@ -151,7 +151,7 @@ const DEFAULT_SYSTEM_THEME: SystemTheme = {
 
 const DEFAULT_PROFILE: UserProfile = {
   name: 'yujun',
-  account: '15466',
+  account: '',
   password: '',
   avatarUrl: '',
 };
@@ -231,6 +231,7 @@ const TRACK_MAX_SEGMENT_METERS = 35;
 const TRACK_MAX_SPEED_MPS = 4.5;
 const TRACK_MIN_POINT_INTERVAL_MS = 500;
 const TRACK_STALE_POSITION_GRACE_MS = 2000;
+const CLOUD_PASSWORD_MIN_LENGTH = 6;
 
 const isInsideRotatedEllipse = (
   x: number,
@@ -251,32 +252,42 @@ const isInsideRotatedEllipse = (
   return ((rotatedX * rotatedX) / (rx * rx)) + ((rotatedY * rotatedY) / (ry * ry)) <= 1;
 };
 
+const LOGIN_WORLD_MAP_WIDTH = 430;
+const LOGIN_WORLD_MAP_HEIGHT = 932;
+const LOGIN_WORLD_MAP_DOT_SPACING = 7;
+
 const isLoginWorldMapLand = (x: number, y: number) => (
-  isInsideRotatedEllipse(x, y, 0.18, 0.34, 0.12, 0.12, -0.2) ||
-  isInsideRotatedEllipse(x, y, 0.27, 0.39, 0.12, 0.16, 0.1) ||
-  isInsideRotatedEllipse(x, y, 0.32, 0.51, 0.08, 0.04, 0.25) ||
-  isInsideRotatedEllipse(x, y, 0.35, 0.68, 0.08, 0.19, 0.2) ||
-  isInsideRotatedEllipse(x, y, 0.40, 0.19, 0.06, 0.06, -0.15) ||
-  isInsideRotatedEllipse(x, y, 0.50, 0.37, 0.08, 0.06, -0.08) ||
-  isInsideRotatedEllipse(x, y, 0.52, 0.57, 0.09, 0.17, -0.1) ||
-  isInsideRotatedEllipse(x, y, 0.65, 0.40, 0.18, 0.13, 0.03) ||
-  isInsideRotatedEllipse(x, y, 0.77, 0.43, 0.12, 0.14, 0.12) ||
-  isInsideRotatedEllipse(x, y, 0.62, 0.56, 0.05, 0.08, -0.15) ||
-  isInsideRotatedEllipse(x, y, 0.75, 0.61, 0.08, 0.05, 0.35) ||
-  isInsideRotatedEllipse(x, y, 0.82, 0.73, 0.08, 0.05, 0.08) ||
-  isInsideRotatedEllipse(x, y, 0.50, 0.92, 0.38, 0.04, 0)
+  isInsideRotatedEllipse(x, y, 0.10, 0.25, 0.18, 0.08, -0.25) ||
+  isInsideRotatedEllipse(x, y, 0.20, 0.34, 0.15, 0.12, 0.08) ||
+  isInsideRotatedEllipse(x, y, 0.30, 0.44, 0.08, 0.04, 0.25) ||
+  isInsideRotatedEllipse(x, y, 0.31, 0.57, 0.10, 0.14, 0.12) ||
+  isInsideRotatedEllipse(x, y, 0.48, 0.26, 0.10, 0.06, -0.1) ||
+  isInsideRotatedEllipse(x, y, 0.54, 0.36, 0.09, 0.06, -0.08) ||
+  isInsideRotatedEllipse(x, y, 0.55, 0.50, 0.10, 0.14, -0.1) ||
+  isInsideRotatedEllipse(x, y, 0.72, 0.31, 0.20, 0.10, 0.03) ||
+  isInsideRotatedEllipse(x, y, 0.82, 0.41, 0.15, 0.11, 0.12) ||
+  isInsideRotatedEllipse(x, y, 0.68, 0.50, 0.06, 0.08, -0.15) ||
+  isInsideRotatedEllipse(x, y, 0.79, 0.57, 0.09, 0.05, 0.35) ||
+  isInsideRotatedEllipse(x, y, 0.83, 0.68, 0.10, 0.05, 0.08) ||
+  isInsideRotatedEllipse(x, y, 0.47, 0.82, 0.45, 0.04, 0)
 );
 
-const LOGIN_WORLD_MAP_DOTS = Array.from({ length: 64 }).flatMap((_, row) => (
-  Array.from({ length: 144 }).flatMap((__, col) => {
-    const normalizedX = col / 143;
-    const normalizedY = row / 63;
+const LOGIN_WORLD_MAP_DOTS = Array.from({
+  length: Math.ceil(LOGIN_WORLD_MAP_HEIGHT / LOGIN_WORLD_MAP_DOT_SPACING) + 1,
+}).flatMap((_, row) => (
+  Array.from({
+    length: Math.ceil(LOGIN_WORLD_MAP_WIDTH / LOGIN_WORLD_MAP_DOT_SPACING) + 1,
+  }).flatMap((__, col) => {
+    const x = col * LOGIN_WORLD_MAP_DOT_SPACING + (row % 2 ? LOGIN_WORLD_MAP_DOT_SPACING / 2 : 0);
+    const y = row * LOGIN_WORLD_MAP_DOT_SPACING;
+    const normalizedX = x / LOGIN_WORLD_MAP_WIDTH;
+    const normalizedY = y / LOGIN_WORLD_MAP_HEIGHT;
     if (!isLoginWorldMapLand(normalizedX, normalizedY)) return [];
 
     return [{
-      x: col * 4.8,
-      y: row * 4.8,
-      opacity: 0.28 + ((col + row) % 5) * 0.026,
+      x,
+      y,
+      opacity: 0.08 + ((col * 3 + row) % 6) * 0.018,
     }];
   })
 ));
@@ -285,34 +296,30 @@ function LoginWorldMapBackground() {
   return (
     <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
       <svg
-        viewBox="0 0 690 304"
+        viewBox={`0 0 ${LOGIN_WORLD_MAP_WIDTH} ${LOGIN_WORLD_MAP_HEIGHT}`}
         className="h-full w-full"
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid slice"
         style={{ color: 'var(--app-dark)' }}
         aria-hidden="true"
       >
         <defs>
-          <pattern id="login-background-dot-grid" width="16" height="16" patternUnits="userSpaceOnUse">
-            <circle cx="2" cy="2" r="0.9" fill="currentColor" opacity="0.075" />
-          </pattern>
           <linearGradient id="login-map-fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="white" stopOpacity="0.22" />
-            <stop offset="20%" stopColor="white" stopOpacity="0.72" />
-            <stop offset="78%" stopColor="white" stopOpacity="0.86" />
-            <stop offset="100%" stopColor="white" stopOpacity="0.28" />
+            <stop offset="0%" stopColor="white" stopOpacity="0.18" />
+            <stop offset="14%" stopColor="white" stopOpacity="0.50" />
+            <stop offset="78%" stopColor="white" stopOpacity="0.72" />
+            <stop offset="100%" stopColor="white" stopOpacity="0.30" />
           </linearGradient>
           <mask id="login-map-mask">
-            <rect width="690" height="304" fill="url(#login-map-fade)" />
+            <rect width={LOGIN_WORLD_MAP_WIDTH} height={LOGIN_WORLD_MAP_HEIGHT} fill="url(#login-map-fade)" />
           </mask>
         </defs>
-        <rect width="690" height="304" fill="url(#login-background-dot-grid)" />
         <g mask="url(#login-map-mask)">
           {LOGIN_WORLD_MAP_DOTS.map(dot => (
             <circle
               key={`${dot.x}-${dot.y}`}
               cx={dot.x}
               cy={dot.y}
-              r="1.6"
+              r="1.25"
               fill="currentColor"
               opacity={dot.opacity}
             />
@@ -459,8 +466,10 @@ const HOME_COPY = {
     login: 'Log in',
     register: 'Register',
     registerPassword: 'Set password',
+    registerSuccess: 'Registration complete. Please log in.',
     loginMissing: 'Enter an account and password',
     registerMissing: 'Set an account and password',
+    passwordTooShort: 'Password must be at least 6 characters',
     loginError: 'Account or password is incorrect',
     registerError: 'Could not register this account',
     accountExists: 'This account already exists',
@@ -543,8 +552,10 @@ const HOME_COPY = {
     login: '登录',
     register: '注册',
     registerPassword: '设置密码',
+    registerSuccess: '注册成功，请登录。',
     loginMissing: '请输入账号和密码',
     registerMissing: '请设置账号和密码',
+    passwordTooShort: '密码至少需要 6 位',
     loginError: '账号或密码不正确',
     registerError: '无法注册这个账号',
     accountExists: '这个账号已经存在',
@@ -627,8 +638,10 @@ const HOME_COPY = {
     login: '로그인',
     register: '가입',
     registerPassword: '비밀번호 설정',
+    registerSuccess: '가입이 완료되었습니다. 로그인해 주세요.',
     loginMissing: '계정과 비밀번호를 입력하세요',
     registerMissing: '계정과 비밀번호를 설정하세요',
+    passwordTooShort: '비밀번호는 최소 6자여야 합니다',
     loginError: '계정 또는 비밀번호가 올바르지 않습니다',
     registerError: '이 계정을 등록할 수 없습니다',
     accountExists: '이미 존재하는 계정입니다',
@@ -1330,10 +1343,11 @@ function MapEventHandlers({
 
 export default function App() {
   const [persistedAppState] = useState<PersistedAppState | null>(() => readPersistedAppState());
+  const persistedPrivateState = isCloudBackendEnabled ? null : persistedAppState;
   const initialProfile: UserProfile = {
     ...DEFAULT_PROFILE,
-    ...(persistedAppState?.profile || {}),
-    password: isCloudBackendEnabled ? '' : persistedAppState?.profile?.password || DEFAULT_PROFILE.password,
+    ...(persistedPrivateState?.profile || {}),
+    password: persistedPrivateState?.profile?.password || DEFAULT_PROFILE.password,
   };
   const initialSignedIn = !isCloudBackendEnabled && persistedAppState?.isSignedIn === true && hasLoginAccount(initialProfile);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -1381,7 +1395,7 @@ export default function App() {
   const [deviceHeading, setDeviceHeading] = useState(0);
   const [isWatchingUserLocation, setIsWatchingUserLocation] = useState(false);
   const [stars, setStars] = useState<StarData[]>(() => (
-    normalizeInitialStars(persistedAppState?.stars) || [createDefaultRecordStar()]
+    normalizeInitialStars(persistedPrivateState?.stars) || [createDefaultRecordStar()]
   ));
   const [selectedStarId, setSelectedStarId] = useState<string | null>(null);
   const [editingNoteTarget, setEditingNoteTarget] = useState<EditingNoteTarget | null>(null);
@@ -1412,7 +1426,7 @@ export default function App() {
   const [trackPaths, setTrackPaths] = useState<[number, number][][]>([]);
   const [trackTime, setTrackTime] = useState(0);
   const [savedTracks, setSavedTracks] = useState<TrackData[]>(() => (
-    Array.isArray(persistedAppState?.savedTracks) ? persistedAppState.savedTracks : []
+    Array.isArray(persistedPrivateState?.savedTracks) ? persistedPrivateState.savedTracks : []
   ));
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [selectedTrackLatLng, setSelectedTrackLatLng] = useState<[number, number] | null>(null);
@@ -1434,6 +1448,7 @@ export default function App() {
   const hasSyncedDefaultStarToGpsRef = React.useRef(false);
   const isApplyingCloudStateRef = React.useRef(false);
   const cloudReadyToSaveRef = React.useRef(!isCloudBackendEnabled);
+  const cloudRegistrationInProgressRef = React.useRef(false);
   const cloudSaveTimerRef = React.useRef<number | null>(null);
 
   const trackingStateRef = React.useRef({ isTracking, isPaused });
@@ -1772,14 +1787,24 @@ export default function App() {
   }, [requestUserLocation, startHeadingWatch]);
 
   useEffect(() => {
+    if (isCloudBackendEnabled) {
+      writePersistedAppState({
+        mapStyle,
+        systemTheme,
+        isSignedIn: false,
+        language,
+      });
+      return;
+    }
+
     writePersistedAppState({
       mapStyle,
       systemTheme,
       profile: {
         ...profile,
-        password: isCloudBackendEnabled ? '' : profile.password,
+        password: profile.password,
       },
-      isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
+      isSignedIn,
       language,
       stars,
       savedTracks,
@@ -2126,6 +2151,7 @@ export default function App() {
 
   const hydrateCloudSession = React.useCallback(async (session: Awaited<ReturnType<typeof getCloudSession>>) => {
     if (!isCloudBackendEnabled) return;
+    if (cloudRegistrationInProgressRef.current) return;
 
     if (!session?.user) {
       cloudReadyToSaveRef.current = false;
@@ -2140,6 +2166,7 @@ export default function App() {
       console.error('Could not load cloud account data:', error);
       cloudReadyToSaveRef.current = false;
       setIsSignedIn(false);
+      void signOutCloudAccount();
     }
   }, [applyCloudSnapshot]);
 
@@ -2154,6 +2181,7 @@ export default function App() {
     if (code === 'setup_required') return homeCopy.cloudSetupRequired;
     if (code === 'registration_disabled') return homeCopy.cloudEmailConfirmRequired;
     if (code === 'account_exists') return homeCopy.accountExists;
+    if (code === 'weak_password') return homeCopy.passwordTooShort;
     if (code === 'invalid_credentials') return homeCopy.loginError;
     return action === 'register' ? homeCopy.registerError : homeCopy.loginError;
   };
@@ -2210,6 +2238,7 @@ export default function App() {
       } catch (error) {
         console.error('Cloud login failed:', error);
         cloudReadyToSaveRef.current = false;
+        void signOutCloudAccount();
         setLoginError(getCloudAuthErrorMessage(error, 'login'));
       } finally {
         setIsAuthBusy(false);
@@ -2243,6 +2272,11 @@ export default function App() {
       return;
     }
 
+    if (loginPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
+      setLoginError(homeCopy.passwordTooShort);
+      return;
+    }
+
     if (!isCloudBackendEnabled) {
       setProfile(prev => ({
         ...prev,
@@ -2250,15 +2284,16 @@ export default function App() {
         account: enteredAccount,
         password: loginPassword,
       }));
-      setIsSignedIn(true);
-      setLoginError('');
+      setIsSignedIn(false);
+      setAuthMode('login');
+      setLoginError(homeCopy.registerSuccess);
       setLoginPassword('');
-      setActiveView('map');
       return;
     }
 
     setIsAuthBusy(true);
     setLoginError('');
+    cloudRegistrationInProgressRef.current = true;
 
     try {
       const {
@@ -2266,19 +2301,26 @@ export default function App() {
         initialProfileForCloud,
         initialState,
       } = buildCloudAuthPayload(enteredAccount);
-      const result = await registerCloudAccount({
+      await registerCloudAccount({
         account: normalizedAccount,
         password: loginPassword,
         initialProfile: initialProfileForCloud,
         initialState,
       });
 
-      applyCloudSnapshot(result.profile, result.state);
+      cloudReadyToSaveRef.current = false;
+      setIsSignedIn(false);
+      setAuthMode('login');
+      setLoginAccount(normalizedAccount);
+      setLoginPassword('');
+      setLoginError(homeCopy.registerSuccess);
     } catch (error) {
       console.error('Cloud register failed:', error);
       cloudReadyToSaveRef.current = false;
+      void signOutCloudAccount();
       setLoginError(getCloudAuthErrorMessage(error, 'register'));
     } finally {
+      cloudRegistrationInProgressRef.current = false;
       setIsAuthBusy(false);
     }
   };
@@ -3934,11 +3976,12 @@ export default function App() {
 
             <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto px-10 pb-28 ${screenTopPaddingClass}`}>
               {!isSignedIn ? (
+                <>
+                <LoginWorldMapBackground />
                 <form
                   onSubmit={handleLogin}
-                  className="relative flex min-h-full flex-col items-center justify-center overflow-hidden pt-8"
+                  className="relative z-10 flex min-h-full flex-col items-center justify-center"
                 >
-                  <LoginWorldMapBackground />
                   <div className="relative flex w-full flex-col items-center">
                     <div className="relative z-10 mb-8 w-full text-center">
                       <h1 className="font-sans text-[36px] font-bold leading-none tracking-tight text-black">
@@ -4006,6 +4049,7 @@ export default function App() {
                     </div>
                   </div>
                 </form>
+                </>
               ) : !activeHomePanel && (
                 <>
               <div className="flex items-center gap-8">
