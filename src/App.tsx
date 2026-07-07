@@ -13,12 +13,15 @@ import {
   getCloudSession,
   isCloudBackendEnabled,
   loadCloudAccountData,
+  loginCloudAccount,
   normalizeAccountId,
   onCloudAuthStateChange,
+  registerCloudAccount,
   saveCloudAppState,
   saveCloudProfile,
-  signInOrCreateCloudAccount,
   signOutCloudAccount,
+  type CloudAuthAction,
+  type CloudAuthError,
   type CloudAppState,
   type CloudProfile,
 } from './lib/cloudBackend';
@@ -229,6 +232,81 @@ const TRACK_MAX_SPEED_MPS = 4.5;
 const TRACK_MIN_POINT_INTERVAL_MS = 500;
 const TRACK_STALE_POSITION_GRACE_MS = 2000;
 
+const isInsideRotatedEllipse = (
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  rotation = 0
+) => {
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const dx = x - cx;
+  const dy = y - cy;
+  const rotatedX = dx * cos + dy * sin;
+  const rotatedY = -dx * sin + dy * cos;
+
+  return ((rotatedX * rotatedX) / (rx * rx)) + ((rotatedY * rotatedY) / (ry * ry)) <= 1;
+};
+
+const isLoginWorldMapLand = (x: number, y: number) => (
+  isInsideRotatedEllipse(x, y, 0.18, 0.34, 0.12, 0.12, -0.2) ||
+  isInsideRotatedEllipse(x, y, 0.27, 0.39, 0.12, 0.16, 0.1) ||
+  isInsideRotatedEllipse(x, y, 0.32, 0.51, 0.08, 0.04, 0.25) ||
+  isInsideRotatedEllipse(x, y, 0.35, 0.68, 0.08, 0.19, 0.2) ||
+  isInsideRotatedEllipse(x, y, 0.40, 0.19, 0.06, 0.06, -0.15) ||
+  isInsideRotatedEllipse(x, y, 0.50, 0.37, 0.08, 0.06, -0.08) ||
+  isInsideRotatedEllipse(x, y, 0.52, 0.57, 0.09, 0.17, -0.1) ||
+  isInsideRotatedEllipse(x, y, 0.65, 0.40, 0.18, 0.13, 0.03) ||
+  isInsideRotatedEllipse(x, y, 0.77, 0.43, 0.12, 0.14, 0.12) ||
+  isInsideRotatedEllipse(x, y, 0.62, 0.56, 0.05, 0.08, -0.15) ||
+  isInsideRotatedEllipse(x, y, 0.75, 0.61, 0.08, 0.05, 0.35) ||
+  isInsideRotatedEllipse(x, y, 0.82, 0.73, 0.08, 0.05, 0.08) ||
+  isInsideRotatedEllipse(x, y, 0.50, 0.92, 0.38, 0.04, 0)
+);
+
+const LOGIN_WORLD_MAP_DOTS = Array.from({ length: 44 }).flatMap((_, row) => (
+  Array.from({ length: 92 }).flatMap((__, col) => {
+    const normalizedX = col / 91;
+    const normalizedY = row / 43;
+    if (!isLoginWorldMapLand(normalizedX, normalizedY)) return [];
+
+    return [{
+      x: col * 6,
+      y: row * 6,
+      opacity: 0.18 + ((col + row) % 4) * 0.025,
+    }];
+  })
+));
+
+function LoginWorldMapBackground() {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-[-38px] z-0 flex justify-center overflow-hidden opacity-80">
+      <svg
+        viewBox="0 0 546 258"
+        className="h-[240px] w-[560px] max-w-none"
+        style={{ color: 'var(--app-dark)' }}
+        aria-hidden="true"
+      >
+        <g>
+          {LOGIN_WORLD_MAP_DOTS.map(dot => (
+            <circle
+              key={`${dot.x}-${dot.y}`}
+              cx={dot.x}
+              cy={dot.y}
+              r="1.75"
+              fill="currentColor"
+              opacity={dot.opacity}
+            />
+          ))}
+        </g>
+      </svg>
+    </div>
+  );
+}
+
 const createDefaultRecordStar = (): StarData => {
   const timestamp = Date.now();
   return {
@@ -359,9 +437,15 @@ const HOME_COPY = {
     loginPassword: 'Login password',
     accountAccess: 'Account access',
     loginTitle: 'Account login',
-    loginHint: 'Sign in to enter',
+    loginHint: 'No preset account. Register first, then log in on any device.',
     login: 'Log in',
+    register: 'Register',
+    loginMissing: 'Enter an account and password',
     loginError: 'Account or password is incorrect',
+    registerError: 'Could not register this account',
+    accountExists: 'This account already exists',
+    cloudSetupRequired: 'Cloud database setup is not complete',
+    cloudEmailConfirmRequired: 'Disable Supabase email confirmation first',
     noImages: 'No uploaded images yet',
     openPermissions: 'Open permissions',
     openPermissionsHint: 'Request location and direction permissions',
@@ -433,9 +517,15 @@ const HOME_COPY = {
     loginPassword: '登录密码',
     accountAccess: '账号访问',
     loginTitle: '账号登录',
-    loginHint: '登录后进入',
+    loginHint: '没有预设账号。先注册，之后可在任意设备登录。',
     login: '登录',
+    register: '注册',
+    loginMissing: '请输入账号和密码',
     loginError: '账号或密码不正确',
+    registerError: '无法注册这个账号',
+    accountExists: '这个账号已经存在',
+    cloudSetupRequired: '云端数据库还没有设置完成',
+    cloudEmailConfirmRequired: '请先关闭 Supabase 邮箱确认',
     noImages: '还没有上传过图片',
     openPermissions: '打开权限',
     openPermissionsHint: '请求定位与方向权限',
@@ -507,9 +597,15 @@ const HOME_COPY = {
     loginPassword: '로그인 비밀번호',
     accountAccess: '계정 접근',
     loginTitle: '계정 로그인',
-    loginHint: '로그인 후 입장',
+    loginHint: '기본 계정은 없습니다. 먼저 가입한 뒤 어느 기기에서나 로그인하세요.',
     login: '로그인',
+    register: '가입',
+    loginMissing: '계정과 비밀번호를 입력하세요',
     loginError: '계정 또는 비밀번호가 올바르지 않습니다',
+    registerError: '이 계정을 등록할 수 없습니다',
+    accountExists: '이미 존재하는 계정입니다',
+    cloudSetupRequired: '클라우드 데이터베이스 설정이 완료되지 않았습니다',
+    cloudEmailConfirmRequired: '먼저 Supabase 이메일 확인을 꺼주세요',
     noImages: '업로드한 이미지가 없습니다',
     openPermissions: '권한 열기',
     openPermissionsHint: '위치 및 방향 권한 요청',
@@ -2018,6 +2114,40 @@ export default function App() {
     }
   }, [applyCloudSnapshot]);
 
+  const getCloudAuthErrorMessage = (error: unknown, action: CloudAuthAction) => {
+    const code = (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      typeof (error as CloudAuthError).code === 'string'
+    ) ? (error as CloudAuthError).code : 'unknown';
+
+    if (code === 'setup_required') return homeCopy.cloudSetupRequired;
+    if (code === 'registration_disabled') return homeCopy.cloudEmailConfirmRequired;
+    if (code === 'account_exists') return homeCopy.accountExists;
+    if (code === 'invalid_credentials') return homeCopy.loginError;
+    return action === 'register' ? homeCopy.registerError : homeCopy.loginError;
+  };
+
+  const buildCloudAuthPayload = React.useCallback((enteredAccount: string) => {
+    const normalizedAccount = normalizeAccountId(enteredAccount);
+    const initialProfileForCloud: CloudProfile = {
+      account: normalizedAccount,
+      name: profile.name || DEFAULT_PROFILE.name,
+      avatarUrl: profile.avatarUrl || '',
+    };
+    const initialState = createAppStateSnapshot({
+      account: normalizedAccount,
+      password: '',
+    }) as CloudAppState;
+
+    return {
+      normalizedAccount,
+      initialProfileForCloud,
+      initialState,
+    };
+  }, [createAppStateSnapshot, profile.avatarUrl, profile.name]);
+
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const enteredAccount = loginAccount.trim();
@@ -2026,7 +2156,7 @@ export default function App() {
 
     if (isCloudBackendEnabled) {
       if (!enteredAccount || !loginPassword) {
-        setLoginError(homeCopy.loginError);
+        setLoginError(homeCopy.loginMissing);
         return;
       }
 
@@ -2034,17 +2164,12 @@ export default function App() {
       setLoginError('');
 
       try {
-        const normalizedAccount = normalizeAccountId(enteredAccount);
-        const initialProfileForCloud: CloudProfile = {
-          account: normalizedAccount,
-          name: profile.name || DEFAULT_PROFILE.name,
-          avatarUrl: profile.avatarUrl || '',
-        };
-        const initialState = createAppStateSnapshot({
-          account: normalizedAccount,
-          password: '',
-        }) as CloudAppState;
-        const result = await signInOrCreateCloudAccount({
+        const {
+          normalizedAccount,
+          initialProfileForCloud,
+          initialState,
+        } = buildCloudAuthPayload(enteredAccount);
+        const result = await loginCloudAccount({
           account: normalizedAccount,
           password: loginPassword,
           initialProfile: initialProfileForCloud,
@@ -2055,7 +2180,7 @@ export default function App() {
       } catch (error) {
         console.error('Cloud login failed:', error);
         cloudReadyToSaveRef.current = false;
-        setLoginError(homeCopy.loginError);
+        setLoginError(getCloudAuthErrorMessage(error, 'login'));
       } finally {
         setIsAuthBusy(false);
       }
@@ -2085,6 +2210,55 @@ export default function App() {
     setLoginError('');
     setLoginPassword('');
     setActiveView('map');
+  };
+
+  const handleRegister = async () => {
+    const enteredAccount = loginAccount.trim();
+    if (isAuthBusy) return;
+
+    if (!enteredAccount || !loginPassword) {
+      setLoginError(homeCopy.loginMissing);
+      return;
+    }
+
+    if (!isCloudBackendEnabled) {
+      setProfile(prev => ({
+        ...prev,
+        name: prev.name || DEFAULT_PROFILE.name,
+        account: enteredAccount,
+        password: loginPassword,
+      }));
+      setIsSignedIn(true);
+      setLoginError('');
+      setLoginPassword('');
+      setActiveView('map');
+      return;
+    }
+
+    setIsAuthBusy(true);
+    setLoginError('');
+
+    try {
+      const {
+        normalizedAccount,
+        initialProfileForCloud,
+        initialState,
+      } = buildCloudAuthPayload(enteredAccount);
+      const result = await registerCloudAccount({
+        account: normalizedAccount,
+        password: loginPassword,
+        initialProfile: initialProfileForCloud,
+        initialState,
+      });
+
+      applyCloudSnapshot(result.profile, result.state);
+    } catch (error) {
+      console.error('Cloud register failed:', error);
+      cloudReadyToSaveRef.current = false;
+      setLoginError(getCloudAuthErrorMessage(error, 'register'));
+    } finally {
+      setIsAuthBusy(false);
+    }
   };
 
   const handleSignOut = () => {
@@ -3740,9 +3914,15 @@ export default function App() {
               {!isSignedIn ? (
                 <form
                   onSubmit={handleLogin}
-                  className="flex min-h-full flex-col justify-center"
+                  className="relative flex min-h-full flex-col justify-center overflow-hidden"
                 >
-                  <div className="rounded-[18px] bg-[var(--app-card)] p-4">
+                  <LoginWorldMapBackground />
+                  <div className="relative z-10 mb-5">
+                    <h1 className="font-sans text-[36px] font-bold leading-none tracking-tight text-black">
+                      My life memory
+                    </h1>
+                  </div>
+                  <div className="relative z-10 rounded-[18px] bg-[var(--app-card)] p-4">
                     <div className="mb-4 flex items-center gap-2 text-[18px] font-medium text-black">
                       <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
                       {homeCopy.loginTitle}
@@ -3782,13 +3962,23 @@ export default function App() {
                         {loginError}
                       </div>
                     )}
-                    <button
-                      type="submit"
-                      disabled={isAuthBusy}
-                      className="mt-5 h-[48px] w-full rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-                    >
-                      {homeCopy.login}
-                    </button>
+                    <div className="mt-5 grid grid-cols-2 gap-2">
+                      <button
+                        type="submit"
+                        disabled={isAuthBusy}
+                        className="h-[48px] rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
+                      >
+                        {homeCopy.login}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isAuthBusy}
+                        onClick={handleRegister}
+                        className="h-[48px] rounded-full bg-[var(--app-soft-surface)] text-[16px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
+                      >
+                        {homeCopy.register}
+                      </button>
+                    </div>
                   </div>
                 </form>
               ) : !activeHomePanel && (

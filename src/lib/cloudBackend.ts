@@ -19,6 +19,18 @@ type AppStateRow = {
   state: CloudAppState | null;
 };
 
+export type CloudAuthAction = 'login' | 'register';
+
+export class CloudAuthError extends Error {
+  code: 'invalid_credentials' | 'account_exists' | 'setup_required' | 'registration_disabled' | 'unknown';
+
+  constructor(code: CloudAuthError['code'], message: string) {
+    super(message);
+    this.name = 'CloudAuthError';
+    this.code = code;
+  }
+}
+
 const requireSupabase = () => {
   if (!supabase) throw new Error('Cloud backend is not configured.');
   return supabase;
@@ -38,6 +50,18 @@ const rowToProfile = (row: ProfileRow, fallbackAccount = ''): CloudProfile => ({
   name: row.name || '',
   avatarUrl: row.avatar_url || '',
 });
+
+const isMissingTableError = (error: unknown) => (
+  Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === 'PGRST205')
+);
+
+const toCloudAuthError = (error: unknown, fallback: CloudAuthError['code'] = 'unknown') => {
+  if (error instanceof CloudAuthError) return error;
+  if (isMissingTableError(error)) {
+    return new CloudAuthError('setup_required', 'Supabase tables are missing.');
+  }
+  return new CloudAuthError(fallback, error instanceof Error ? error.message : 'Cloud auth failed.');
+};
 
 export const getCloudSession = async (): Promise<CloudSession | null> => {
   if (!supabase) return null;
@@ -113,7 +137,23 @@ const ensureCloudProfile = async (user: User, profile: CloudProfile) => {
   return rowToProfile(data, account);
 };
 
-export const signInOrCreateCloudAccount = async ({
+const buildInitialCloudData = ({
+  account,
+  initialProfile,
+  initialState,
+}: {
+  account: string;
+  initialProfile: CloudProfile;
+  initialState: CloudAppState;
+}) => ({
+  profile: {
+    ...initialProfile,
+    account,
+  },
+  state: initialState,
+});
+
+export const loginCloudAccount = async ({
   account,
   password,
   initialProfile,
@@ -130,10 +170,56 @@ export const signInOrCreateCloudAccount = async ({
 
   const email = accountIdToAuthEmail(normalizedAccount);
   const signInResult = await client.auth.signInWithPassword({ email, password });
-  let user = signInResult.data.user;
-  let isNewAccount = false;
+  const user = signInResult.data.user;
 
   if (signInResult.error || !user) {
+    throw new CloudAuthError('invalid_credentials', 'Invalid account or password.');
+  }
+
+  try {
+    const initialData = buildInitialCloudData({
+      account: normalizedAccount,
+      initialProfile,
+      initialState,
+    });
+    const cloudProfile = await ensureCloudProfile(user, initialData.profile);
+    const { state } = await loadCloudAccountData(user);
+    if (!state) {
+      await saveCloudAppState(initialData.state);
+    }
+
+    return {
+      profile: cloudProfile,
+      state: state || initialData.state,
+      isNewAccount: false,
+    };
+  } catch (error) {
+    throw toCloudAuthError(error);
+  }
+};
+
+export const registerCloudAccount = async ({
+  account,
+  password,
+  initialProfile,
+  initialState,
+}: {
+  account: string;
+  password: string;
+  initialProfile: CloudProfile;
+  initialState: CloudAppState;
+}) => {
+  const client = requireSupabase();
+  const normalizedAccount = normalizeAccountId(account);
+  if (!normalizedAccount || !password) throw new Error('Account and password are required.');
+
+  const email = accountIdToAuthEmail(normalizedAccount);
+  const signInResult = await client.auth.signInWithPassword({ email, password });
+  if (signInResult.data.user && !signInResult.error) {
+    throw new CloudAuthError('account_exists', 'Account already exists.');
+  }
+
+  try {
     const signUpResult = await client.auth.signUp({
       email,
       password,
@@ -142,30 +228,37 @@ export const signInOrCreateCloudAccount = async ({
       },
     });
 
-    if (signUpResult.error) throw signInResult.error || signUpResult.error;
+    if (signUpResult.error) throw signUpResult.error;
     if (!signUpResult.data.session || !signUpResult.data.user) {
-      throw new Error('Supabase email confirmation must be disabled for ID-only login.');
+      throw new CloudAuthError('registration_disabled', 'Supabase email confirmation must be disabled for ID-only login.');
     }
 
-    user = signUpResult.data.user;
-    isNewAccount = true;
+    const initialData = buildInitialCloudData({
+      account: normalizedAccount,
+      initialProfile,
+      initialState,
+    });
+    const cloudProfile = await ensureCloudProfile(signUpResult.data.user, initialData.profile);
+    await saveCloudAppState(initialData.state);
+
+    return {
+      profile: cloudProfile,
+      state: initialData.state,
+      isNewAccount: true,
+    };
+  } catch (error) {
+    throw toCloudAuthError(error, 'account_exists');
   }
+};
 
-  const cloudProfile = await ensureCloudProfile(user, {
-    ...initialProfile,
-    account: normalizedAccount,
-  });
-
-  const { state } = await loadCloudAccountData(user);
-  if (!state) {
-    await saveCloudAppState(initialState);
+export const signInOrCreateCloudAccount = async (params: Parameters<typeof loginCloudAccount>[0]) => {
+  try {
+    return await loginCloudAccount(params);
+  } catch (error) {
+    const authError = toCloudAuthError(error, 'invalid_credentials');
+    if (authError.code !== 'invalid_credentials') throw authError;
+    return registerCloudAccount(params);
   }
-
-  return {
-    profile: cloudProfile,
-    state: state || initialState,
-    isNewAccount,
-  };
 };
 
 export const saveCloudProfile = async (profile: CloudProfile) => {

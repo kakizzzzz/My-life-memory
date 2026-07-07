@@ -42,6 +42,10 @@ for each row execute function public.set_updated_at();
 alter table public.profiles enable row level security;
 alter table public.app_states enable row level security;
 
+grant usage on schema public to authenticated;
+grant select, insert, update on public.profiles to authenticated;
+grant select, insert, update on public.app_states to authenticated;
+
 drop policy if exists "Users can read own profile" on public.profiles;
 create policy "Users can read own profile"
 on public.profiles for select
