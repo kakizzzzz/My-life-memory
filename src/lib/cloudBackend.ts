@@ -394,7 +394,7 @@ const inferAccountFromAuthUser = (user: User, fallback = '') => {
           .map(byte => String.fromCharCode(byte))
           .join('');
         const normalized = normalizeAccountId(decoded);
-        if (normalized && normalized.length === bytes.length) return normalized;
+        if (normalized) return normalized;
       } catch {
         // fallback to prefix form
       }
@@ -600,7 +600,7 @@ export const registerCloudAccount = async ({
     }
 
     if (signUpResult.error) {
-      throw new CloudAuthError('unknown', signUpResult.error.message, {
+      throw toCloudAuthError(signUpResult.error, 'unknown', {
         ...signUpDebug,
         userId: signUpResult.data.user?.id,
         tokenRef: signUpResult.data.session ? getTokenProjectRef(signUpResult.data.session.access_token) : '',
@@ -664,7 +664,7 @@ export const registerCloudAccount = async ({
     };
   } catch (error) {
     await client.auth.signOut().catch(() => {});
-    throw toCloudAuthError(error, 'account_exists', {
+    throw toCloudAuthError(error, 'unknown', {
       ...signUpDebug,
       userId: signUpResult?.data.user?.id,
       tokenRef: signUpResult?.data.session ? getTokenProjectRef(signUpResult.data.session.access_token) : '',

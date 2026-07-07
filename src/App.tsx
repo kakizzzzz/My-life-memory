@@ -238,7 +238,7 @@ const TRACK_MAX_SPEED_MPS = 4.5;
 const TRACK_MIN_POINT_INTERVAL_MS = 500;
 const TRACK_STALE_POSITION_GRACE_MS = 2000;
 const CLOUD_PASSWORD_MIN_LENGTH = 6;
-const CLOUD_SESSION_PASSWORD_KEY = `${APP_STORAGE_KEY}:cloud-session-password`;
+const CLOUD_SESSION_PASSWORD_KEY_PREFIX = `${APP_STORAGE_KEY}:cloud-session-password`;
 
 const isInsideRotatedEllipse = (
   x: number,
@@ -405,24 +405,30 @@ const writePersistedAppState = (state: PersistedAppState) => {
   }
 };
 
-const readCloudSessionPassword = () => {
+const getCloudSessionPasswordKey = (account = '') => {
+  const normalizedAccount = normalizeAccountId(account);
+  return normalizedAccount ? `${CLOUD_SESSION_PASSWORD_KEY_PREFIX}:${normalizedAccount}` : CLOUD_SESSION_PASSWORD_KEY_PREFIX;
+};
+
+const readCloudSessionPassword = (account = '') => {
   if (typeof window === 'undefined') return '';
 
   try {
-    return window.sessionStorage.getItem(CLOUD_SESSION_PASSWORD_KEY) || '';
+    return window.sessionStorage.getItem(getCloudSessionPasswordKey(account)) || '';
   } catch {
     return '';
   }
 };
 
-const writeCloudSessionPassword = (password: string) => {
+const writeCloudSessionPassword = (password: string, account = '') => {
   if (typeof window === 'undefined') return;
 
   try {
+    const key = getCloudSessionPasswordKey(account);
     if (password) {
-      window.sessionStorage.setItem(CLOUD_SESSION_PASSWORD_KEY, password);
+      window.sessionStorage.setItem(key, password);
     } else {
-      window.sessionStorage.removeItem(CLOUD_SESSION_PASSWORD_KEY);
+      window.sessionStorage.removeItem(key);
     }
   } catch {
     // Session storage can be unavailable in private browsing.
@@ -503,7 +509,7 @@ const HOME_COPY = {
     loginMissing: 'Enter an account and password',
     registerMissing: 'Set an account and password',
   passwordTooShort: 'Password must be at least 6 characters',
-  loginError: 'Account or password is incorrect',
+    loginError: 'Account does not exist or password is incorrect',
     registerError: 'Could not register this account',
     accountExists: 'This account already exists',
     cloudSetupRequired: 'Cloud setup blocked by permission/policy. Run schema.sql (or grants) and verify pg_policies qual/with_check in Supabase.',
@@ -594,7 +600,7 @@ const HOME_COPY = {
     loginMissing: '请输入账号和密码',
     registerMissing: '请设置账号和密码',
   passwordTooShort: '密码至少需要 6 位',
-  loginError: '账号或密码不正确',
+    loginError: '账号不存在或密码不正确',
     registerError: '无法注册这个账号',
     accountExists: '这个账号已经存在',
     cloudSetupRequired: '数据库权限或策略阻断：请在 Supabase 执行 schema.sql（含表权限），并检查 pg_policies 的 qual/with_check。',
@@ -685,7 +691,7 @@ const HOME_COPY = {
     loginMissing: '계정과 비밀번호를 입력하세요',
     registerMissing: '계정과 비밀번호를 설정하세요',
   passwordTooShort: '비밀번호는 최소 6자여야 합니다',
-  loginError: '계정 또는 비밀번호가 올바르지 않습니다',
+    loginError: '계정이 없거나 비밀번호가 올바르지 않습니다',
     registerError: '이 계정을 등록할 수 없습니다',
     accountExists: '이미 존재하는 계정입니다',
     cloudSetupRequired: '클라우드 데이터베이스 권한/정책이 부족합니다. Supabase에서 schema.sql(권한 GRANT 포함)을 다시 실행하고 pg_policies의 qual/with_check를 확인하세요.',
@@ -1436,7 +1442,6 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [isPasswordRevealed, setIsPasswordRevealed] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const [loginDebug, setLoginDebug] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [permissionRequestState, setPermissionRequestState] = useState<'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported'>('idle');
   const [language, setLanguage] = useState(() => (
@@ -2181,11 +2186,26 @@ export default function App() {
     };
   }, [isSignedIn, language, mapStyle, profile, savedTracks, stars, systemTheme]);
 
+  const createCleanCloudInitialState = React.useCallback((account: string, password: string): PersistedAppState => ({
+    mapStyle: 'light',
+    systemTheme: DEFAULT_SYSTEM_THEME,
+    profile: {
+      ...DEFAULT_PROFILE,
+      account,
+      password,
+      name: buildDefaultProfileName(account),
+    },
+    isSignedIn: false,
+    language,
+    stars: [createDefaultRecordStar()],
+    savedTracks: [],
+  }), [buildDefaultProfileName, language]);
+
   const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null, sessionPassword = '') => {
     const remoteState = (cloudState || {}) as PersistedAppState;
     isApplyingCloudStateRef.current = true;
     cloudReadyToSaveRef.current = false;
-    const visiblePassword = sessionPassword || remoteState.profile?.password || readCloudSessionPassword();
+    const visiblePassword = sessionPassword || remoteState.profile?.password || readCloudSessionPassword(cloudProfile.account);
 
     if (isMapStyle(remoteState.mapStyle)) setMapStyle(remoteState.mapStyle);
     setSystemTheme({
@@ -2207,7 +2227,6 @@ export default function App() {
     setLoginAccount(cloudProfile.account);
     setLoginPassword('');
     setLoginError('');
-    setLoginDebug('');
     setActiveView('map');
 
     window.setTimeout(() => {
@@ -2232,7 +2251,6 @@ export default function App() {
     } catch (error) {
       console.error('Could not load cloud account data:', error);
       setLoginError(getCloudAuthErrorMessage(error, 'login'));
-      setLoginDebug(getCloudAuthErrorDebug(error));
       cloudReadyToSaveRef.current = false;
       setIsSignedIn(false);
       void signOutCloudAccount();
@@ -2247,15 +2265,6 @@ export default function App() {
       typeof (error as CloudAuthError).code === 'string'
     ) ? (error as CloudAuthError).code : 'unknown';
     const detail = error instanceof CloudAuthError ? error.details : undefined;
-    const detailsText = [
-      detail?.rawCode ? `code=${detail.rawCode}` : '',
-      detail?.rawStatus ? `status=${detail.rawStatus}` : '',
-      detail?.rawName ? `name=${detail.rawName}` : '',
-      detail?.rawMessage ? `message=${detail.rawMessage}` : '',
-      detail?.rawDetails ? `details=${detail.rawDetails}` : '',
-      detail?.rawHint ? `hint=${detail.rawHint}` : '',
-    ].filter(Boolean).join(' | ');
-
     if (code === 'setup_required') {
       if (detail?.tokenRef && detail.clientProjectRef && detail.tokenRef !== detail.clientProjectRef) {
         return homeCopy.cloudProjectMismatch;
@@ -2264,60 +2273,34 @@ export default function App() {
       if (text.includes('unable to reach supabase')) {
         return homeCopy.cloudConnectivityIssue;
       }
-      return detailsText ? `${homeCopy.cloudSetupRequired}\n${detailsText}` : homeCopy.cloudSetupRequired;
+      return homeCopy.cloudSetupRequired;
     }
     if (code === 'registration_disabled') {
-      if (detail?.rawCode === 'email_not_confirmed' || detail?.rawName === 'AuthApiError') {
-        return `${homeCopy.cloudEmailConfirmRequired}\n${detailsText ? detailsText : 'Email confirmation is required.'}`;
-      }
-      return `${homeCopy.cloudEmailConfirmRequired}\n${detailsText || ''}`.trim();
+      return homeCopy.cloudEmailConfirmRequired;
     }
-    if (code === 'account_exists') return detailsText ? `${homeCopy.accountExists}\n${detailsText}` : homeCopy.accountExists;
-    if (code === 'weak_password') return detailsText ? `${homeCopy.passwordTooShort}\n${detailsText}` : homeCopy.passwordTooShort;
+    if (code === 'account_exists') return homeCopy.accountExists;
+    if (code === 'weak_password') return homeCopy.passwordTooShort;
     if (code === 'invalid_credentials') {
-      return detailsText ? `${homeCopy.loginError}\n${detailsText}` : homeCopy.loginError;
+      return homeCopy.loginError;
     }
     return action === 'register' ? homeCopy.registerError : homeCopy.loginError;
-  };
-
-  const getCloudAuthErrorDebug = (error: unknown) => {
-    if (!error) return '';
-    const details =
-      error instanceof CloudAuthError && error.details
-        ? error.details
-        : error instanceof Error ? { message: error.message } : error;
-
-    const payload = {
-      code: error instanceof CloudAuthError ? error.code : 'unknown',
-      message: error instanceof Error ? error.message : String(error),
-      details,
-    };
-
-    try {
-      return JSON.stringify(payload, null, 2);
-    } catch {
-      return String(payload.message);
-    }
   };
 
   const buildCloudAuthPayload = React.useCallback((enteredAccount: string, enteredPassword = '') => {
     const normalizedAccount = normalizeAccountId(enteredAccount);
     const initialProfileForCloud: CloudProfile = {
       account: normalizedAccount,
-      name: profile.name || buildDefaultProfileName(normalizedAccount),
-      avatarUrl: profile.avatarUrl || '',
+      name: buildDefaultProfileName(normalizedAccount),
+      avatarUrl: '',
     };
-    const initialState = createAppStateSnapshot({
-      account: normalizedAccount,
-      password: enteredPassword,
-    }) as CloudAppState;
+    const initialState = createCleanCloudInitialState(normalizedAccount, enteredPassword) as CloudAppState;
 
     return {
       normalizedAccount,
       initialProfileForCloud,
       initialState,
     };
-  }, [createAppStateSnapshot, profile.avatarUrl, profile.name, buildDefaultProfileName]);
+  }, [buildDefaultProfileName, createCleanCloudInitialState]);
 
   React.useEffect(() => {
     setIsPasswordRevealed(false);
@@ -2327,27 +2310,23 @@ export default function App() {
     event.preventDefault();
     const enteredAccount = loginAccount.trim();
     setAuthMode('login');
-    setLoginDebug('');
     setIsPasswordRevealed(false);
 
     if (isAuthBusy) return;
 
     if (cloudConfigError) {
       setLoginError(homeCopy.cloudConfigInvalid);
-      setLoginDebug(cloudConfigError);
       return;
     }
 
     if (!enteredAccount || !loginPassword) {
       setLoginError(homeCopy.loginMissing);
-      setLoginDebug('');
       return;
     }
 
     if (isCloudBackendEnabled) {
       setIsAuthBusy(true);
       setLoginError('');
-      setLoginDebug('');
 
       try {
         const {
@@ -2362,14 +2341,13 @@ export default function App() {
           initialState,
         });
 
-        writeCloudSessionPassword(loginPassword);
+        writeCloudSessionPassword(loginPassword, normalizedAccount);
         applyCloudSnapshot(result.profile, result.state, loginPassword);
       } catch (error) {
         console.error('Cloud login failed:', error);
         cloudReadyToSaveRef.current = false;
         void signOutCloudAccount();
         setLoginError(getCloudAuthErrorMessage(error, 'login'));
-        setLoginDebug(getCloudAuthErrorDebug(error));
       } finally {
         setIsAuthBusy(false);
       }
@@ -2383,13 +2361,11 @@ export default function App() {
 
     if (!storedAccount || !accountMatches || !passwordMatches) {
       setLoginError(homeCopy.loginError);
-      setLoginDebug('');
       return;
     }
 
     setIsSignedIn(true);
     setLoginError('');
-    setLoginDebug('');
     setLoginPassword('');
     setActiveView('map');
   };
@@ -2402,19 +2378,16 @@ export default function App() {
 
     if (!enteredAccount || !loginPassword) {
       setLoginError(homeCopy.registerMissing);
-      setLoginDebug('');
       return;
     }
 
     if (cloudConfigError) {
       setLoginError(homeCopy.cloudConfigInvalid);
-      setLoginDebug(cloudConfigError);
       return;
     }
 
     if (loginPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
       setLoginError(homeCopy.passwordTooShort);
-      setLoginDebug('');
       return;
     }
 
@@ -2429,13 +2402,11 @@ export default function App() {
       setAuthMode('login');
       setLoginError(homeCopy.registerSuccess);
       setLoginPassword('');
-      setLoginDebug('');
       return;
     }
 
     setIsAuthBusy(true);
     setLoginError('');
-    setLoginDebug('');
     cloudRegistrationInProgressRef.current = true;
 
     try {
@@ -2457,13 +2428,11 @@ export default function App() {
       setLoginAccount(normalizedAccount);
       setLoginPassword('');
       setLoginError(homeCopy.registerSuccess);
-      setLoginDebug('');
     } catch (error) {
       console.error('Cloud register failed:', error);
       cloudReadyToSaveRef.current = false;
       void signOutCloudAccount();
       setLoginError(getCloudAuthErrorMessage(error, 'register'));
-      setLoginDebug(getCloudAuthErrorDebug(error));
     } finally {
       cloudRegistrationInProgressRef.current = false;
       setIsAuthBusy(false);
@@ -2475,13 +2444,12 @@ export default function App() {
       cloudReadyToSaveRef.current = false;
       void signOutCloudAccount();
     }
-    writeCloudSessionPassword('');
+    writeCloudSessionPassword('', profile.account);
     setIsSignedIn(false);
     setLoginAccount('');
     setLoginPassword('');
     setIsPasswordRevealed(false);
     setLoginError('');
-    setLoginDebug('');
   };
 
   useEffect(() => {
@@ -4147,7 +4115,6 @@ export default function App() {
                     {cloudConfigError && (
                       <div className="mb-4 rounded-[12px] bg-black/8 px-3 py-2 text-[12px] leading-5 text-black/65">
                         {homeCopy.cloudConfigInvalid}
-                        <div className="mt-1 text-[11px] text-black/45">{cloudConfigError}</div>
                       </div>
                     )}
                     <div className="space-y-3">
@@ -4158,7 +4125,6 @@ export default function App() {
                           onChange={event => {
                             setLoginAccount(event.target.value);
                             setLoginError('');
-                            setLoginDebug('');
                             setIsPasswordRevealed(false);
                           }}
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
@@ -4172,7 +4138,6 @@ export default function App() {
                           onChange={event => {
                             setLoginPassword(event.target.value);
                             setLoginError('');
-                            setLoginDebug('');
                             setIsPasswordRevealed(false);
                           }}
                           type="password"
@@ -4185,11 +4150,6 @@ export default function App() {
                       <div className="mt-3 text-[13px] font-medium text-black/45">
                         {loginError}
                       </div>
-                    )}
-                    {loginDebug && (
-                      <pre className="mt-2 max-h-48 w-full overflow-auto rounded-[10px] bg-black/5 p-2 text-[11px] leading-5 whitespace-pre-wrap text-black/55">
-                        {loginDebug}
-                      </pre>
                     )}
                     <div className="mt-5 grid grid-cols-2 gap-2">
                       <button
