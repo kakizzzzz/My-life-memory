@@ -222,18 +222,12 @@ const GEOLOCATION_OPTIONS: PositionOptions = {
   maximumAge: 0,
   timeout: 15000,
 };
-const TRACK_MAX_ACCURACY_METERS = 55;
+const TRACK_MAX_ACCURACY_METERS = 75;
 const TRACK_MIN_DISTANCE_METERS = 2;
-const TRACK_FAST_SAMPLE_DISTANCE_METERS = 5;
-const TRACK_MAX_SPEED_MPS = 10;
+const TRACK_MAX_SEGMENT_METERS = 35;
+const TRACK_MAX_SPEED_MPS = 4.5;
 const TRACK_MIN_POINT_INTERVAL_MS = 500;
-const TRACK_START_CALIBRATION_MS = 7000;
-const TRACK_START_REPLACE_DISTANCE_METERS = 12;
-const TRACK_LOW_CONFIDENCE_ACCURACY_METERS = 18;
-const TRACK_SEED_MAX_AGE_MS = 5000;
-const TRACK_SEED_MAX_ACCURACY_METERS = 18;
-const TRACK_JUMP_SPEED_MPS = 3.2;
-const TRACK_JUMP_DISTANCE_MARGIN_METERS = 5;
+const TRACK_STALE_POSITION_GRACE_MS = 2000;
 
 const createDefaultRecordStar = (): StarData => {
   const timestamp = Date.now();
@@ -1305,8 +1299,6 @@ export default function App() {
   const gpsWatchIdRef = React.useRef<number | null>(null);
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
-  const lastGpsAccuracyRef = React.useRef<number | undefined>(undefined);
-  const lastGpsTimestampRef = React.useRef(0);
   const lastTrackPointRef = React.useRef<{ location: [number, number]; timestamp: number; accuracy?: number } | null>(null);
   const trackingStartedAtRef = React.useRef(0);
   const lastCompassHeadingAtRef = React.useRef(0);
@@ -1332,63 +1324,57 @@ export default function App() {
     const timestamp = Number.isFinite(metadata.timestamp) ? metadata.timestamp as number : Date.now();
     const previousAcceptedPoint = lastTrackPointRef.current;
 
-    if (accuracy !== undefined && accuracy > TRACK_MAX_ACCURACY_METERS && previousAcceptedPoint) return;
+    if (
+      trackingStartedAtRef.current > 0 &&
+      timestamp < trackingStartedAtRef.current - TRACK_STALE_POSITION_GRACE_MS
+    ) {
+      return;
+    }
 
-    if (previousAcceptedPoint) {
-      const distanceMeters = L.latLng(previousAcceptedPoint.location).distanceTo(L.latLng(newLoc));
-      const elapsedMs = Math.max(0, timestamp - previousAcceptedPoint.timestamp);
-      const elapsedSeconds = elapsedMs / 1000;
-      const accuracyPair = Math.max(accuracy || 0, previousAcceptedPoint.accuracy || 0);
-      const isImplausibleJump =
-        elapsedSeconds > 0 &&
-        distanceMeters > elapsedSeconds * TRACK_JUMP_SPEED_MPS + TRACK_JUMP_DISTANCE_MARGIN_METERS;
-      const isStartCalibration =
-        trackingStartedAtRef.current > 0 &&
-        Date.now() - trackingStartedAtRef.current < TRACK_START_CALIBRATION_MS;
-      const shouldReplaceInitialFix =
-        isStartCalibration &&
-        distanceMeters >= TRACK_START_REPLACE_DISTANCE_METERS &&
-        (
-          previousAcceptedPoint.accuracy === undefined ||
-          accuracyPair >= TRACK_LOW_CONFIDENCE_ACCURACY_METERS
-        );
+    if (accuracy !== undefined && accuracy > TRACK_MAX_ACCURACY_METERS) return;
 
-      if (shouldReplaceInitialFix) {
-        setTrackPaths(prev => {
-          if (prev.length === 0) return [[newLoc]];
-          const newPaths = [...prev];
-          const lastIndex = newPaths.length - 1;
-          const currentSegment = [...newPaths[lastIndex]];
-          if (currentSegment.length <= 1) {
-            newPaths[lastIndex] = [newLoc];
-            return newPaths;
-          }
-          return prev;
-        });
-        lastTrackPointRef.current = { location: newLoc, timestamp, accuracy };
-        return;
-      }
+    const startNewSegment = () => {
+      setTrackPaths(prev => {
+        if (prev.length === 0) return [[newLoc]];
+        const newPaths = [...prev];
+        const lastIndex = newPaths.length - 1;
+        const currentSegment = newPaths[lastIndex];
+        if (currentSegment.length === 0) {
+          newPaths[lastIndex] = [newLoc];
+          return newPaths;
+        }
+        if (currentSegment.length === 1) {
+          newPaths[lastIndex] = [newLoc];
+          return newPaths;
+        }
+        return [...newPaths, [newLoc]];
+      });
+      lastTrackPointRef.current = { location: newLoc, timestamp, accuracy };
+    };
 
-      if (isImplausibleJump) return;
+    if (!previousAcceptedPoint) {
+      startNewSegment();
+      return;
+    }
 
-      const accuracyAwareMinimum = Math.max(
-        TRACK_MIN_DISTANCE_METERS,
-        Math.min(6, accuracyPair * 0.18)
-      );
-      const lowConfidenceMinimum = Math.min(14, Math.max(6, accuracyPair * 0.35));
+    const distanceMeters = L.latLng(previousAcceptedPoint.location).distanceTo(L.latLng(newLoc));
+    const elapsedMs = Math.max(0, timestamp - previousAcceptedPoint.timestamp);
+    const elapsedSeconds = elapsedMs / 1000;
+    const computedSpeed = elapsedSeconds > 0 ? distanceMeters / elapsedSeconds : 0;
+    const reportedSpeed = (
+      typeof metadata.speed === 'number' && Number.isFinite(metadata.speed)
+    ) ? metadata.speed : null;
 
-      if (elapsedMs < TRACK_MIN_POINT_INTERVAL_MS && distanceMeters < TRACK_FAST_SAMPLE_DISTANCE_METERS) return;
-      if (distanceMeters < accuracyAwareMinimum) return;
-      if (accuracyPair >= TRACK_LOW_CONFIDENCE_ACCURACY_METERS && distanceMeters < lowConfidenceMinimum) return;
-      if (elapsedSeconds > 0 && distanceMeters / elapsedSeconds > TRACK_MAX_SPEED_MPS) return;
-      if (
-        typeof metadata.speed === 'number' &&
-        Number.isFinite(metadata.speed) &&
-        metadata.speed > TRACK_MAX_SPEED_MPS &&
-        distanceMeters > Math.max(8, TRACK_MIN_DISTANCE_METERS)
-      ) {
-        return;
-      }
+    if (elapsedMs < TRACK_MIN_POINT_INTERVAL_MS) return;
+    if (distanceMeters < TRACK_MIN_DISTANCE_METERS) return;
+
+    if (
+      distanceMeters > TRACK_MAX_SEGMENT_METERS ||
+      computedSpeed > TRACK_MAX_SPEED_MPS ||
+      (reportedSpeed !== null && reportedSpeed > TRACK_MAX_SPEED_MPS)
+    ) {
+      startNewSegment();
+      return;
     }
 
     setTrackPaths(prev => {
@@ -1444,8 +1430,6 @@ export default function App() {
       setDeviceHeading(getBearingBetweenPoints(previousLoc, newLoc));
     }
     lastGpsLocationRef.current = newLoc;
-    lastGpsAccuracyRef.current = undefined;
-    lastGpsTimestampRef.current = Date.now();
     if (shouldFly) setFlyTarget(newLoc);
 
   }, []);
@@ -1472,8 +1456,6 @@ export default function App() {
         speed: position.coords.speed,
       });
     }
-    lastGpsAccuracyRef.current = accuracy;
-    lastGpsTimestampRef.current = Date.now();
   }, [appendTrackPoint, applyLocationPoint, syncDefaultStarNearUser]);
 
   const stopGpsWatch = React.useCallback(() => {
@@ -3330,22 +3312,14 @@ export default function App() {
                 <button className={btnClass} onClick={() => {
                   void startHeadingWatch();
                   const startedAt = Date.now();
-                  const canUseLiveSeed =
-                    lastGpsLocationRef.current &&
-                    lastGpsTimestampRef.current > 0 &&
-                    startedAt - lastGpsTimestampRef.current <= TRACK_SEED_MAX_AGE_MS &&
-                    (lastGpsAccuracyRef.current === undefined || lastGpsAccuracyRef.current <= TRACK_SEED_MAX_ACCURACY_METERS);
-                  const liveSeedLocation = canUseLiveSeed ? lastGpsLocationRef.current : null;
                   trackingStartedAtRef.current = startedAt;
-                  lastTrackPointRef.current = liveSeedLocation
-                    ? { location: liveSeedLocation, timestamp: startedAt, accuracy: lastGpsAccuracyRef.current }
-                    : null;
+                  lastTrackPointRef.current = null;
                   trackingStateRef.current = { isTracking: true, isPaused: false };
                   setIsTracking(true);
                   setIsPaused(false);
                   const didRequestGps = requestUserLocation(true);
-                  setTrackPaths(liveSeedLocation ? [[liveSeedLocation]] : (didRequestGps ? [] : [[userLocation]]));
-                  if (!didRequestGps && !liveSeedLocation) {
+                  setTrackPaths(didRequestGps ? [] : [[userLocation]]);
+                  if (!didRequestGps) {
                     lastTrackPointRef.current = { location: userLocation, timestamp: Date.now() };
                   }
                   setTrackTime(0);
