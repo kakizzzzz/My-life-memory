@@ -2171,7 +2171,7 @@ export default function App() {
       profile: {
         name: snapshotProfile.name,
         account: snapshotProfile.account,
-        password: isCloudBackendEnabled ? '' : snapshotProfile.password,
+        password: snapshotProfile.password,
         avatarUrl: snapshotProfile.avatarUrl,
       },
       isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
@@ -2185,7 +2185,7 @@ export default function App() {
     const remoteState = (cloudState || {}) as PersistedAppState;
     isApplyingCloudStateRef.current = true;
     cloudReadyToSaveRef.current = false;
-    const visiblePassword = sessionPassword || readCloudSessionPassword();
+    const visiblePassword = sessionPassword || remoteState.profile?.password || readCloudSessionPassword();
 
     if (isMapStyle(remoteState.mapStyle)) setMapStyle(remoteState.mapStyle);
     setSystemTheme({
@@ -2300,7 +2300,7 @@ export default function App() {
     }
   };
 
-  const buildCloudAuthPayload = React.useCallback((enteredAccount: string) => {
+  const buildCloudAuthPayload = React.useCallback((enteredAccount: string, enteredPassword = '') => {
     const normalizedAccount = normalizeAccountId(enteredAccount);
     const initialProfileForCloud: CloudProfile = {
       account: normalizedAccount,
@@ -2309,7 +2309,7 @@ export default function App() {
     };
     const initialState = createAppStateSnapshot({
       account: normalizedAccount,
-      password: '',
+      password: enteredPassword,
     }) as CloudAppState;
 
     return {
@@ -2354,7 +2354,7 @@ export default function App() {
           normalizedAccount,
           initialProfileForCloud,
           initialState,
-        } = buildCloudAuthPayload(enteredAccount);
+        } = buildCloudAuthPayload(enteredAccount, loginPassword);
         const result = await loginCloudAccount({
           account: normalizedAccount,
           password: loginPassword,
@@ -2443,7 +2443,7 @@ export default function App() {
         normalizedAccount,
         initialProfileForCloud,
         initialState,
-      } = buildCloudAuthPayload(enteredAccount);
+      } = buildCloudAuthPayload(enteredAccount, loginPassword);
       await registerCloudAccount({
         account: normalizedAccount,
         password: loginPassword,
