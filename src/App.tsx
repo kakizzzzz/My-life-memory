@@ -68,6 +68,26 @@ function createLocationIcon(mapStyle: string, iconColor = '#c3c3c3', heading = 0
   });
 }
 
+function PhotoGpsStarIcon({ size = 24, strokeWidth = 2.1 }: { size?: number; strokeWidth?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3.55 14.28 8.2l5.13.74-3.7 3.62.88 5.1L12 15.25l-4.59 2.41.88-5.1-3.7-3.62 5.13-.74L12 3.55Z"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 19V10.7M8.85 13.85 12 10.7l3.15 3.15M7 20.6h10"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 type NoteData = {
   id: string;
   title: string;
@@ -600,6 +620,7 @@ const HOME_COPY = {
     manualIconLocation: 'Location returns the map to your current GPS origin. The direction probe rotates with phone orientation when browser permission and hardware support are available.',
     manualIconRoute: 'Route starts, pauses, saves, or reviews a walking route. Distance depends on GPS accuracy and updates while location points arrive.',
     manualIconCamera: 'Camera opens photo capture or image selection for a note; on mobile it can use the full-screen camera flow when the browser allows it.',
+    manualIconPhotoGps: 'Star upload reads GPS from one original photo and creates a star with a photo note at that location. If the photo has no usable location data, it only shows a short notice and does not create a star.',
     manualIconSave: 'Save writes the current note edits, including text, images, color, and font-size changes.',
     manualIconCopy: 'Copy places coordinates or other selected information on the clipboard and shows a short copied message.',
     manualIconShare: 'Open map lets you choose Apple, AMap, Baidu, or Google Maps when supported by the device.',
@@ -745,6 +766,7 @@ const HOME_COPY = {
     manualIconLocation: '定位图标会让地图回到当前 GPS 原点。原点旁的半透明探头代表手机朝向，权限和设备支持时会随手机转动。',
     manualIconRoute: '路线图标用于开始、暂停、保存或查看步行路线。路线距离会根据 GPS 点计算，GPS 精度越好越准确。',
     manualIconCamera: '相机图标用于拍照或给笔记添加图片。移动端浏览器允许时，可以进入更接近全屏的拍摄体验。',
+    manualIconPhotoGps: '星星上传图标用于读取一张原始照片里的 GPS 信息，并在照片地点自动创建星星和带图笔记。如果照片没有可用定位，只会短暂提示，不会创建星星。',
     manualIconSave: '保存图标用于保存当前笔记修改，包括文字、图片、颜色和字号等内容。',
     manualIconCopy: '复制图标用于复制坐标或相关文字，点击后会出现短暂的复制成功提示。',
     manualIconShare: '打开地图图标用于把地点交给本机地图 App，可选择 Apple 地图、高德、百度或 Google 地图。',
@@ -890,6 +912,7 @@ const HOME_COPY = {
     manualIconLocation: '위치 아이콘은 지도를 현재 GPS 원점으로 되돌립니다. 방향 표시는 권한과 기기가 지원할 때 휴대폰 방향에 맞춰 회전합니다.',
     manualIconRoute: '경로 아이콘은 도보 경로를 시작, 일시정지, 저장, 확인할 때 사용합니다. 거리는 GPS 포인트를 기준으로 계산됩니다.',
     manualIconCamera: '카메라 아이콘은 사진을 촬영하거나 노트에 이미지를 추가합니다. 모바일 브라우저가 허용하면 더 큰 촬영 화면을 사용할 수 있습니다.',
+    manualIconPhotoGps: '별표 업로드 아이콘은 원본 사진의 GPS를 읽어 해당 위치에 사진 노트가 포함된 별표를 만듭니다. 사용할 수 있는 위치 정보가 없으면 짧게 알림만 표시하고 별표는 만들지 않습니다.',
     manualIconSave: '저장 아이콘은 현재 노트의 텍스트, 이미지, 색상, 글자 크기 변경을 저장합니다.',
     manualIconCopy: '복사 아이콘은 좌표나 관련 텍스트를 클립보드에 복사하고 짧은 완료 메시지를 보여줍니다.',
     manualIconShare: '지도 열기 아이콘은 장소를 Apple 지도, AMap, Baidu, Google 지도 등 지원되는 앱으로 엽니다.',
@@ -3154,6 +3177,7 @@ export default function App() {
     { icon: <MapPin size={18} strokeWidth={2.1} />, label: homeCopy.openPermissions, body: homeCopy.manualIconLocation },
     { icon: <Route size={18} strokeWidth={2.1} />, label: homeCopy.manualSections[3].title, body: homeCopy.manualIconRoute },
     { icon: <Camera size={18} strokeWidth={2.1} />, label: homeCopy.readerAddPhoto, body: homeCopy.manualIconCamera },
+    { icon: <PhotoGpsStarIcon size={18} strokeWidth={2} />, label: homeCopy.uploadPhotoLocation, body: homeCopy.manualIconPhotoGps },
     { icon: <Save size={18} strokeWidth={2.1} />, label: homeCopy.readerEdit, body: homeCopy.manualIconSave },
     { icon: <Copy size={18} strokeWidth={2.1} />, label: homeCopy.manualIconCopy, body: homeCopy.manualIconCopy },
     { icon: <Share size={18} strokeWidth={2.1} />, label: homeCopy.manualIconShare, body: homeCopy.manualIconShare },
@@ -4637,7 +4661,7 @@ export default function App() {
                   aria-label={homeCopy.uploadPhotoLocation}
                   title={homeCopy.uploadPhotoLocation}
                 >
-                  <ImageIcon size={23} strokeWidth={2.1} />
+                  <PhotoGpsStarIcon size={24} strokeWidth={2.1} />
                 </button>
               </motion.div>
             )}
@@ -5228,7 +5252,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => {
-                                setIsPasswordChangeOpen(prev => !prev);
+                                setIsPasswordChangeOpen(true);
                                 setPasswordChangeStatus('');
                               }}
                               className="shrink-0 rounded-full bg-[var(--app-card)] px-3 py-1.5 text-[12px] font-medium text-black transition-transform active:scale-95"
@@ -5236,58 +5260,6 @@ export default function App() {
                               {homeCopy.changePassword}
                             </button>
                           </div>
-                          <div className="mt-1 pl-9 text-[11px] font-medium leading-snug text-black/40">
-                            {homeCopy.passwordNotViewable}
-                          </div>
-                          <AnimatePresence initial={false}>
-                            {isPasswordChangeOpen && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.18 }}
-                                className="overflow-hidden"
-                              >
-                                <div className="mt-3 space-y-2">
-                                  <input
-                                    value={currentPasswordInput}
-                                    onChange={event => setCurrentPasswordInput(event.target.value)}
-                                    type="password"
-                                    autoComplete="current-password"
-                                    className="h-10 w-full rounded-[10px] bg-[var(--app-card)] px-3 text-[14px] font-medium outline-none placeholder:text-black/30"
-                                    placeholder={homeCopy.currentPassword}
-                                    aria-label={homeCopy.currentPassword}
-                                  />
-                                  <input
-                                    value={newPasswordInput}
-                                    onChange={event => setNewPasswordInput(event.target.value)}
-                                    type="password"
-                                    autoComplete="new-password"
-                                    className="h-10 w-full rounded-[10px] bg-[var(--app-card)] px-3 text-[14px] font-medium outline-none placeholder:text-black/30"
-                                    placeholder={homeCopy.newPassword}
-                                    aria-label={homeCopy.newPassword}
-                                  />
-                                  <input
-                                    value={confirmPasswordInput}
-                                    onChange={event => setConfirmPasswordInput(event.target.value)}
-                                    type="password"
-                                    autoComplete="new-password"
-                                    className="h-10 w-full rounded-[10px] bg-[var(--app-card)] px-3 text-[14px] font-medium outline-none placeholder:text-black/30"
-                                    placeholder={homeCopy.confirmPassword}
-                                    aria-label={homeCopy.confirmPassword}
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={handleChangePassword}
-                                    disabled={isChangingPassword}
-                                    className="h-10 w-full rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-                                  >
-                                    {isChangingPassword ? homeCopy.changingPassword : homeCopy.savePassword}
-                                  </button>
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
                           {passwordChangeStatus && (
                             <div className="mt-2 pl-9 text-[12px] font-medium leading-snug text-black/45">
                               {passwordChangeStatus}
@@ -5598,6 +5570,103 @@ export default function App() {
                 </button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isPasswordChangeOpen && isSignedIn && isCloudBackendEnabled && activeHomePanel === 'profile' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[2300] flex items-center justify-center bg-black/35 px-5 py-[calc(env(safe-area-inset-top)+1rem)] pointer-events-auto"
+          >
+            <motion.form
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.18 }}
+              onSubmit={event => {
+                event.preventDefault();
+                void handleChangePassword();
+              }}
+              className="w-full max-w-[360px] rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2 text-[18px] font-medium leading-tight">
+                  <Lock size={23} strokeWidth={2.2} />
+                  <span className="truncate">{homeCopy.changePassword}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPasswordChangeOpen(false);
+                    setCurrentPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmPasswordInput('');
+                    setPasswordChangeStatus('');
+                  }}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black transition-transform active:scale-95"
+                  aria-label={homeCopy.closeManual}
+                >
+                  <X size={20} strokeWidth={2.2} />
+                </button>
+              </div>
+              <div className="mb-3 text-[12px] font-medium leading-snug text-black/45">
+                {homeCopy.passwordNotViewable}
+              </div>
+              <div className="space-y-2">
+                <input
+                  value={currentPasswordInput}
+                  onChange={event => {
+                    setCurrentPasswordInput(event.target.value);
+                    setPasswordChangeStatus('');
+                  }}
+                  type="password"
+                  autoComplete="current-password"
+                  className="h-11 w-full rounded-[12px] bg-[var(--app-soft-card)] px-3 text-[15px] font-medium outline-none placeholder:text-black/30"
+                  placeholder={homeCopy.currentPassword}
+                  aria-label={homeCopy.currentPassword}
+                />
+                <input
+                  value={newPasswordInput}
+                  onChange={event => {
+                    setNewPasswordInput(event.target.value);
+                    setPasswordChangeStatus('');
+                  }}
+                  type="password"
+                  autoComplete="new-password"
+                  className="h-11 w-full rounded-[12px] bg-[var(--app-soft-card)] px-3 text-[15px] font-medium outline-none placeholder:text-black/30"
+                  placeholder={homeCopy.newPassword}
+                  aria-label={homeCopy.newPassword}
+                />
+                <input
+                  value={confirmPasswordInput}
+                  onChange={event => {
+                    setConfirmPasswordInput(event.target.value);
+                    setPasswordChangeStatus('');
+                  }}
+                  type="password"
+                  autoComplete="new-password"
+                  className="h-11 w-full rounded-[12px] bg-[var(--app-soft-card)] px-3 text-[15px] font-medium outline-none placeholder:text-black/30"
+                  placeholder={homeCopy.confirmPassword}
+                  aria-label={homeCopy.confirmPassword}
+                />
+              </div>
+              {passwordChangeStatus && (
+                <div className="mt-3 text-[12px] font-medium leading-snug text-black/45">
+                  {passwordChangeStatus}
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={isChangingPassword}
+                className="mt-4 h-11 w-full rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
+              >
+                {isChangingPassword ? homeCopy.changingPassword : homeCopy.savePassword}
+              </button>
+            </motion.form>
           </motion.div>
         )}
       </AnimatePresence>
