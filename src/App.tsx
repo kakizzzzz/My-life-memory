@@ -2,16 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { MapContainer, TileLayer, Marker, useMap, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
-import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Eye, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Languages, Download, CalendarDays, Camera } from 'lucide-react';
+import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Languages, Download, CalendarDays, Camera, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import { StarActionOverlay } from './StarActionOverlay';
 import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
 import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
+import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
 import {
   getCloudSession,
-  isCloudBackendEnabled,
   loadCloudAccountData,
   loginCloudAccount,
   normalizeAccountId,
@@ -21,7 +21,7 @@ import {
   saveCloudProfile,
   signOutCloudAccount,
   type CloudAuthAction,
-  type CloudAuthError,
+  CloudAuthError,
   type CloudAppState,
   type CloudProfile,
 } from './lib/cloudBackend';
@@ -104,6 +104,8 @@ type UserProfile = {
   name: string;
   account: string;
   password: string;
+  securityQuestion: string;
+  securityAnswer: string;
   avatarUrl: string;
 };
 
@@ -150,10 +152,18 @@ const DEFAULT_SYSTEM_THEME: SystemTheme = {
 };
 
 const DEFAULT_PROFILE: UserProfile = {
-  name: 'yujun',
+  name: '',
   account: '',
   password: '',
+  securityQuestion: '',
+  securityAnswer: '',
   avatarUrl: '',
+};
+
+const DEFAULT_NAME_PREFIX: Record<'en' | 'zh' | 'ko', string> = {
+  en: 'User ',
+  zh: '用户',
+  ko: '사용자 ',
 };
 
 const THEME_PRESETS: { label: Record<string, string>; theme: SystemTheme }[] = [
@@ -367,13 +377,15 @@ const isMapStyle = (value: unknown): value is MapStyle => (
   value === 'light' || value === 'dark' || value === 'aerial'
 );
 
-const isLanguage = (value: unknown): value is string => (
+const isLanguage = (value: unknown): value is 'en' | 'zh' | 'ko' => (
   typeof value === 'string' && LANGUAGE_OPTIONS.some(option => option.value === value)
 );
 
 const hasLoginAccount = (profile: UserProfile) => (
   profile.account.trim().length > 0
 );
+
+const normalizeSecurityValue = (value: string) => value.trim().toLowerCase();
 
 const readPersistedAppState = (): PersistedAppState | null => {
   if (typeof window === 'undefined') return null;
@@ -454,11 +466,20 @@ const HOME_COPY = {
     settings: 'Settings',
     uploadAvatar: 'Upload avatar',
     back: 'Back',
-    userName: 'User name',
-    account: 'Account',
-    idUnique: 'Unique ID',
-    loginPassword: 'Login password',
-    accountAccess: 'Account access',
+  userName: 'User name',
+  account: 'Account',
+  idUnique: 'Unique ID',
+  loginPassword: 'Login password',
+  securityQuestion: 'Set security question',
+  securityAnswer: 'Security answer',
+  securityRevealAction: 'Show password',
+  securityQuestionHint: 'Set a security question and answer to reveal password in local mode.',
+  securityAnswerHint: 'Answer your security question to reveal your password',
+  securityQuestionNotSet: 'No security question set yet',
+  securityQuestionMismatch: 'Security question does not match',
+  securityAnswerRequired: 'Please answer the security question',
+  securityAnswerIncorrect: 'Security answer is not correct',
+  accountAccess: 'Account access',
     loginTitle: 'Account login',
     registerTitle: 'Account registration',
     loginHint: 'Enter your registered ID and password to log in.',
@@ -469,11 +490,15 @@ const HOME_COPY = {
     registerSuccess: 'Registration complete. Please log in.',
     loginMissing: 'Enter an account and password',
     registerMissing: 'Set an account and password',
-    passwordTooShort: 'Password must be at least 6 characters',
-    loginError: 'Account or password is incorrect',
+  passwordTooShort: 'Password must be at least 6 characters',
+  securityQuestionRequired: 'Security question and answer are required to set',
+  loginError: 'Account or password is incorrect',
     registerError: 'Could not register this account',
     accountExists: 'This account already exists',
-    cloudSetupRequired: 'Cloud database setup is not complete',
+    cloudSetupRequired: 'Cloud setup blocked by permission/policy. Run schema.sql (or grants) and verify pg_policies qual/with_check in Supabase.',
+    cloudConnectivityIssue: 'Cannot reach Supabase project. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local.',
+    cloudProjectMismatch: 'Cloud token is from another Supabase project. Check VITE_SUPABASE_URL.',
+    cloudConfigInvalid: 'Cloud configuration is invalid. Fill real VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local.',
     cloudEmailConfirmRequired: 'Disable Supabase email confirmation first',
     noImages: 'No uploaded images yet',
     openPermissions: 'Open permissions',
@@ -540,11 +565,20 @@ const HOME_COPY = {
     settings: '设置',
     uploadAvatar: '上传头像',
     back: '返回',
-    userName: '用户姓名',
-    account: '账号',
-    idUnique: 'ID唯一',
-    loginPassword: '登录密码',
-    accountAccess: '账号访问',
+  userName: '用户姓名',
+  account: '账号',
+  idUnique: 'ID唯一',
+  loginPassword: '登录密码',
+  securityQuestion: '设置密保问题',
+  securityAnswer: '密保答案',
+  securityRevealAction: '查看密码',
+  securityQuestionHint: '设置后可在下方验证答案并自动显示密码',
+  securityAnswerHint: '输入密保问题答案',
+  securityQuestionNotSet: '还未设置密保问题',
+  securityQuestionMismatch: '密保问题不一致',
+  securityAnswerRequired: '请输入密保答案',
+  securityAnswerIncorrect: '密保答案不正确',
+  accountAccess: '账号访问',
     loginTitle: '账号登录',
     registerTitle: '账号注册',
     loginHint: '输入已经注册的 ID 和密码登录。',
@@ -555,11 +589,15 @@ const HOME_COPY = {
     registerSuccess: '注册成功，请登录。',
     loginMissing: '请输入账号和密码',
     registerMissing: '请设置账号和密码',
-    passwordTooShort: '密码至少需要 6 位',
-    loginError: '账号或密码不正确',
+  passwordTooShort: '密码至少需要 6 位',
+  securityQuestionRequired: '请填写并配对密保问题与答案',
+  loginError: '账号或密码不正确',
     registerError: '无法注册这个账号',
     accountExists: '这个账号已经存在',
-    cloudSetupRequired: '云端数据库还没有设置完成',
+    cloudSetupRequired: '数据库权限或策略阻断：请在 Supabase 执行 schema.sql（含表权限），并检查 pg_policies 的 qual/with_check。',
+    cloudConnectivityIssue: '无法连接到 Supabase。请检查 .env.local 中的 VITE_SUPABASE_URL 与 VITE_SUPABASE_ANON_KEY',
+    cloudProjectMismatch: '登录令牌来自其他 Supabase 项目，请检查 VITE_SUPABASE_URL。',
+    cloudConfigInvalid: '未检测到有效云端配置：请在 .env.local 中填写真实的 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY。',
     cloudEmailConfirmRequired: '请先关闭 Supabase 邮箱确认',
     noImages: '还没有上传过图片',
     openPermissions: '打开权限',
@@ -626,11 +664,20 @@ const HOME_COPY = {
     settings: '설정',
     uploadAvatar: '아바타 업로드',
     back: '뒤로',
-    userName: '사용자 이름',
-    account: '계정',
-    idUnique: '고유 ID',
-    loginPassword: '로그인 비밀번호',
-    accountAccess: '계정 접근',
+  userName: '사용자 이름',
+  account: '계정',
+  idUnique: '고유 ID',
+  loginPassword: '로그인 비밀번호',
+  securityQuestion: '보안 질문 설정',
+  securityAnswer: '보안 답변',
+  securityRevealAction: '비밀번호 보기',
+  securityQuestionHint: '계정 비밀번호를 표시하려면 보안 질문과 답변을 설정하세요',
+  securityAnswerHint: '보안 질문 답변을 입력하세요',
+  securityQuestionNotSet: '보안 질문이 설정되지 않았습니다',
+  securityQuestionMismatch: '보안 질문이 일치하지 않습니다',
+  securityAnswerRequired: '보안 답변을 입력하세요',
+  securityAnswerIncorrect: '보안 답변이 맞지 않습니다',
+  accountAccess: '계정 접근',
     loginTitle: '계정 로그인',
     registerTitle: '계정 가입',
     loginHint: '등록한 ID와 비밀번호로 로그인하세요.',
@@ -641,11 +688,15 @@ const HOME_COPY = {
     registerSuccess: '가입이 완료되었습니다. 로그인해 주세요.',
     loginMissing: '계정과 비밀번호를 입력하세요',
     registerMissing: '계정과 비밀번호를 설정하세요',
-    passwordTooShort: '비밀번호는 최소 6자여야 합니다',
-    loginError: '계정 또는 비밀번호가 올바르지 않습니다',
+  passwordTooShort: '비밀번호는 최소 6자여야 합니다',
+  securityQuestionRequired: '보안 질문과 답변을 모두 입력하세요',
+  loginError: '계정 또는 비밀번호가 올바르지 않습니다',
     registerError: '이 계정을 등록할 수 없습니다',
     accountExists: '이미 존재하는 계정입니다',
-    cloudSetupRequired: '클라우드 데이터베이스 설정이 완료되지 않았습니다',
+    cloudSetupRequired: '클라우드 데이터베이스 권한/정책이 부족합니다. Supabase에서 schema.sql(권한 GRANT 포함)을 다시 실행하고 pg_policies의 qual/with_check를 확인하세요.',
+    cloudConnectivityIssue: 'Supabase에 연결할 수 없습니다. .env.local의 VITE_SUPABASE_URL 및 VITE_SUPABASE_ANON_KEY를 확인하세요.',
+    cloudProjectMismatch: '세션 토큰이 다른 Supabase 프로젝트에서 발급되었습니다. VITE_SUPABASE_URL을 확인하세요.',
+    cloudConfigInvalid: '클라우드 설정이 유효하지 않습니다. .env.local의 VITE_SUPABASE_URL 및 VITE_SUPABASE_ANON_KEY를 실제 값으로 채워 주세요.',
     cloudEmailConfirmRequired: '먼저 Supabase 이메일 확인을 꺼주세요',
     noImages: '업로드한 이미지가 없습니다',
     openPermissions: '권한 열기',
@@ -1344,12 +1395,21 @@ function MapEventHandlers({
 export default function App() {
   const [persistedAppState] = useState<PersistedAppState | null>(() => readPersistedAppState());
   const persistedPrivateState = isCloudBackendEnabled ? null : persistedAppState;
+  const initialLanguage = isLanguage(persistedAppState?.language) ? persistedAppState.language : 'en';
+  const persistedAccount = normalizeAccountId(persistedPrivateState?.profile?.account || '');
   const initialProfile: UserProfile = {
     ...DEFAULT_PROFILE,
     ...(persistedPrivateState?.profile || {}),
+    name: (persistedPrivateState?.profile?.name || '').trim()
+      || (persistedAccount ? `${DEFAULT_NAME_PREFIX[initialLanguage]}${persistedAccount}` : DEFAULT_NAME_PREFIX[initialLanguage].trim()),
     password: persistedPrivateState?.profile?.password || DEFAULT_PROFILE.password,
   };
-  const initialSignedIn = !isCloudBackendEnabled && persistedAppState?.isSignedIn === true && hasLoginAccount(initialProfile);
+  const initialSignedIn = (
+    !isCloudBackendEnabled &&
+    !supabaseConfigMessage &&
+    persistedAppState?.isSignedIn === true &&
+    hasLoginAccount(initialProfile)
+  );
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyle>(() => (
     isMapStyle(persistedAppState?.mapStyle) ? persistedAppState.mapStyle : 'light'
@@ -1379,12 +1439,22 @@ export default function App() {
   const [authMode, setAuthMode] = useState<CloudAuthAction>('login');
   const [loginAccount, setLoginAccount] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [isPasswordRevealed, setIsPasswordRevealed] = useState(false);
+  const [securityRevealMessage, setSecurityRevealMessage] = useState('');
+  const [securityRevealAnswer, setSecurityRevealAnswer] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [loginDebug, setLoginDebug] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [permissionRequestState, setPermissionRequestState] = useState<'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported'>('idle');
   const [language, setLanguage] = useState(() => (
-    isLanguage(persistedAppState?.language) ? persistedAppState.language : 'en'
+    initialLanguage
   ));
+  const buildDefaultProfileName = React.useCallback((account: string) => {
+    const normalizedAccount = normalizeAccountId(account);
+    const lang = isLanguage(language) ? language : 'zh';
+    const prefix = DEFAULT_NAME_PREFIX[lang];
+    return normalizedAccount ? `${prefix}${normalizedAccount}` : prefix.trim();
+  }, [language]);
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
   const homeScrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -1413,6 +1483,8 @@ export default function App() {
   const readerSavedRangeRef = React.useRef<Range | null>(null);
   const readerPendingTitleStylesRef = React.useRef<Record<string, string>>({});
   const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
+
+  const cloudConfigError = !isCloudBackendEnabled ? supabaseConfigMessage : '';
   
   // Tag Mode State
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
@@ -2108,6 +2180,8 @@ export default function App() {
         account: snapshotProfile.account,
         password: isCloudBackendEnabled ? '' : snapshotProfile.password,
         avatarUrl: snapshotProfile.avatarUrl,
+        securityQuestion: isCloudBackendEnabled ? '' : snapshotProfile.securityQuestion || '',
+        securityAnswer: isCloudBackendEnabled ? '' : snapshotProfile.securityAnswer || '',
       },
       isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
       language,
@@ -2129,10 +2203,12 @@ export default function App() {
     setProfile(prev => ({
       ...DEFAULT_PROFILE,
       ...(remoteState.profile || {}),
-      name: cloudProfile.name || remoteState.profile?.name || prev.name || DEFAULT_PROFILE.name,
+      name: cloudProfile.name || remoteState.profile?.name || buildDefaultProfileName(cloudProfile.account) || prev.name,
       account: cloudProfile.account,
       password: '',
       avatarUrl: cloudProfile.avatarUrl || remoteState.profile?.avatarUrl || prev.avatarUrl || '',
+      securityQuestion: '',
+      securityAnswer: '',
     }));
     if (isLanguage(remoteState.language)) setLanguage(remoteState.language);
     setStars(normalizeInitialStars(remoteState.stars) || [createDefaultRecordStar()]);
@@ -2141,6 +2217,7 @@ export default function App() {
     setLoginAccount(cloudProfile.account);
     setLoginPassword('');
     setLoginError('');
+    setLoginDebug('');
     setActiveView('map');
 
     window.setTimeout(() => {
@@ -2164,6 +2241,8 @@ export default function App() {
       applyCloudSnapshot(cloudProfile, state);
     } catch (error) {
       console.error('Could not load cloud account data:', error);
+      setLoginError(getCloudAuthErrorMessage(error, 'login'));
+      setLoginDebug(getCloudAuthErrorDebug(error));
       cloudReadyToSaveRef.current = false;
       setIsSignedIn(false);
       void signOutCloudAccount();
@@ -2177,20 +2256,65 @@ export default function App() {
       'code' in error &&
       typeof (error as CloudAuthError).code === 'string'
     ) ? (error as CloudAuthError).code : 'unknown';
+    const detail = error instanceof CloudAuthError ? error.details : undefined;
+    const detailsText = [
+      detail?.rawCode ? `code=${detail.rawCode}` : '',
+      detail?.rawStatus ? `status=${detail.rawStatus}` : '',
+      detail?.rawName ? `name=${detail.rawName}` : '',
+      detail?.rawMessage ? `message=${detail.rawMessage}` : '',
+      detail?.rawDetails ? `details=${detail.rawDetails}` : '',
+      detail?.rawHint ? `hint=${detail.rawHint}` : '',
+    ].filter(Boolean).join(' | ');
 
-    if (code === 'setup_required') return homeCopy.cloudSetupRequired;
-    if (code === 'registration_disabled') return homeCopy.cloudEmailConfirmRequired;
-    if (code === 'account_exists') return homeCopy.accountExists;
-    if (code === 'weak_password') return homeCopy.passwordTooShort;
-    if (code === 'invalid_credentials') return homeCopy.loginError;
+    if (code === 'setup_required') {
+      if (detail?.tokenRef && detail.clientProjectRef && detail.tokenRef !== detail.clientProjectRef) {
+        return homeCopy.cloudProjectMismatch;
+      }
+      const text = String(detail?.message || (error instanceof Error ? error.message : '')).toLowerCase();
+      if (text.includes('unable to reach supabase')) {
+        return homeCopy.cloudConnectivityIssue;
+      }
+      return detailsText ? `${homeCopy.cloudSetupRequired}\n${detailsText}` : homeCopy.cloudSetupRequired;
+    }
+    if (code === 'registration_disabled') {
+      if (detail?.rawCode === 'email_not_confirmed' || detail?.rawName === 'AuthApiError') {
+        return `${homeCopy.cloudEmailConfirmRequired}\n${detailsText ? detailsText : 'Email confirmation is required.'}`;
+      }
+      return `${homeCopy.cloudEmailConfirmRequired}\n${detailsText || ''}`.trim();
+    }
+    if (code === 'account_exists') return detailsText ? `${homeCopy.accountExists}\n${detailsText}` : homeCopy.accountExists;
+    if (code === 'weak_password') return detailsText ? `${homeCopy.passwordTooShort}\n${detailsText}` : homeCopy.passwordTooShort;
+    if (code === 'invalid_credentials') {
+      return detailsText ? `${homeCopy.loginError}\n${detailsText}` : homeCopy.loginError;
+    }
     return action === 'register' ? homeCopy.registerError : homeCopy.loginError;
+  };
+
+  const getCloudAuthErrorDebug = (error: unknown) => {
+    if (!error) return '';
+    const details =
+      error instanceof CloudAuthError && error.details
+        ? error.details
+        : error instanceof Error ? { message: error.message } : error;
+
+    const payload = {
+      code: error instanceof CloudAuthError ? error.code : 'unknown',
+      message: error instanceof Error ? error.message : String(error),
+      details,
+    };
+
+    try {
+      return JSON.stringify(payload, null, 2);
+    } catch {
+      return String(payload.message);
+    }
   };
 
   const buildCloudAuthPayload = React.useCallback((enteredAccount: string) => {
     const normalizedAccount = normalizeAccountId(enteredAccount);
     const initialProfileForCloud: CloudProfile = {
       account: normalizedAccount,
-      name: profile.name || DEFAULT_PROFILE.name,
+      name: profile.name || buildDefaultProfileName(normalizedAccount),
       avatarUrl: profile.avatarUrl || '',
     };
     const initialState = createAppStateSnapshot({
@@ -2203,23 +2327,69 @@ export default function App() {
       initialProfileForCloud,
       initialState,
     };
-  }, [createAppStateSnapshot, profile.avatarUrl, profile.name]);
+  }, [createAppStateSnapshot, profile.avatarUrl, profile.name, buildDefaultProfileName]);
+
+  React.useEffect(() => {
+    setSecurityRevealMessage('');
+    setIsPasswordRevealed(false);
+    setSecurityRevealAnswer('');
+  }, [authMode, activeHomePanel]);
+
+  const handleRevealPasswordBySecurity = () => {
+    if (isCloudBackendEnabled) {
+      setSecurityRevealMessage(homeCopy.securityQuestionHint);
+      return;
+    }
+
+    const normalizedStoredQuestion = normalizeSecurityValue(profile.securityQuestion);
+    const normalizedStoredAnswer = normalizeSecurityValue(profile.securityAnswer);
+    const normalizedRevealAnswer = normalizeSecurityValue(securityRevealAnswer);
+
+    if (!normalizedStoredQuestion || !normalizedStoredAnswer) {
+      setSecurityRevealMessage(homeCopy.securityQuestionNotSet);
+      return;
+    }
+
+    if (!normalizedRevealAnswer) {
+      setSecurityRevealMessage(homeCopy.securityAnswerRequired);
+      return;
+    }
+
+    if (normalizedRevealAnswer !== normalizedStoredAnswer) {
+      setSecurityRevealMessage(homeCopy.securityAnswerIncorrect);
+      return;
+    }
+
+    setIsPasswordRevealed(true);
+    setSecurityRevealMessage('');
+  };
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const enteredAccount = loginAccount.trim();
     setAuthMode('login');
+    setLoginDebug('');
+    setSecurityRevealMessage('');
+    setIsPasswordRevealed(false);
 
     if (isAuthBusy) return;
 
+    if (cloudConfigError) {
+      setLoginError(homeCopy.cloudConfigInvalid);
+      setLoginDebug(cloudConfigError);
+      return;
+    }
+
     if (!enteredAccount || !loginPassword) {
       setLoginError(homeCopy.loginMissing);
+      setLoginDebug('');
       return;
     }
 
     if (isCloudBackendEnabled) {
       setIsAuthBusy(true);
       setLoginError('');
+      setLoginDebug('');
 
       try {
         const {
@@ -2240,6 +2410,7 @@ export default function App() {
         cloudReadyToSaveRef.current = false;
         void signOutCloudAccount();
         setLoginError(getCloudAuthErrorMessage(error, 'login'));
+        setLoginDebug(getCloudAuthErrorDebug(error));
       } finally {
         setIsAuthBusy(false);
       }
@@ -2253,11 +2424,13 @@ export default function App() {
 
     if (!storedAccount || !accountMatches || !passwordMatches) {
       setLoginError(homeCopy.loginError);
+      setLoginDebug('');
       return;
     }
 
     setIsSignedIn(true);
     setLoginError('');
+    setLoginDebug('');
     setLoginPassword('');
     setActiveView('map');
   };
@@ -2265,34 +2438,48 @@ export default function App() {
   const handleRegister = async () => {
     const enteredAccount = loginAccount.trim();
     setAuthMode('register');
+    setSecurityRevealMessage('');
+    setIsPasswordRevealed(false);
     if (isAuthBusy) return;
 
     if (!enteredAccount || !loginPassword) {
       setLoginError(homeCopy.registerMissing);
+      setLoginDebug('');
+      return;
+    }
+
+    if (cloudConfigError) {
+      setLoginError(homeCopy.cloudConfigInvalid);
+      setLoginDebug(cloudConfigError);
       return;
     }
 
     if (loginPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
       setLoginError(homeCopy.passwordTooShort);
+      setLoginDebug('');
       return;
     }
 
     if (!isCloudBackendEnabled) {
       setProfile(prev => ({
         ...prev,
-        name: prev.name || DEFAULT_PROFILE.name,
+        name: prev.name || buildDefaultProfileName(enteredAccount),
         account: enteredAccount,
         password: loginPassword,
+        securityQuestion: '',
+        securityAnswer: '',
       }));
       setIsSignedIn(false);
       setAuthMode('login');
       setLoginError(homeCopy.registerSuccess);
       setLoginPassword('');
+      setLoginDebug('');
       return;
     }
 
     setIsAuthBusy(true);
     setLoginError('');
+    setLoginDebug('');
     cloudRegistrationInProgressRef.current = true;
 
     try {
@@ -2314,11 +2501,13 @@ export default function App() {
       setLoginAccount(normalizedAccount);
       setLoginPassword('');
       setLoginError(homeCopy.registerSuccess);
+      setLoginDebug('');
     } catch (error) {
       console.error('Cloud register failed:', error);
       cloudReadyToSaveRef.current = false;
       void signOutCloudAccount();
       setLoginError(getCloudAuthErrorMessage(error, 'register'));
+      setLoginDebug(getCloudAuthErrorDebug(error));
     } finally {
       cloudRegistrationInProgressRef.current = false;
       setIsAuthBusy(false);
@@ -2333,7 +2522,10 @@ export default function App() {
     setIsSignedIn(false);
     setLoginAccount('');
     setLoginPassword('');
+    setIsPasswordRevealed(false);
+    setSecurityRevealMessage('');
     setLoginError('');
+    setLoginDebug('');
   };
 
   useEffect(() => {
@@ -3996,6 +4188,12 @@ export default function App() {
                     <div className="mb-4 text-[15px] font-medium leading-tight text-black/45">
                       {authMode === 'register' ? homeCopy.registerHint : homeCopy.loginHint}
                     </div>
+                    {cloudConfigError && (
+                      <div className="mb-4 rounded-[12px] bg-black/8 px-3 py-2 text-[12px] leading-5 text-black/65">
+                        {homeCopy.cloudConfigInvalid}
+                        <div className="mt-1 text-[11px] text-black/45">{cloudConfigError}</div>
+                      </div>
+                    )}
                     <div className="space-y-3">
                       <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
                         <AtSign size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
@@ -4004,6 +4202,9 @@ export default function App() {
                           onChange={event => {
                             setLoginAccount(event.target.value);
                             setLoginError('');
+                            setLoginDebug('');
+                            setIsPasswordRevealed(false);
+                            setSecurityRevealMessage('');
                           }}
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
                           placeholder={homeCopy.account}
@@ -4016,6 +4217,8 @@ export default function App() {
                           onChange={event => {
                             setLoginPassword(event.target.value);
                             setLoginError('');
+                            setLoginDebug('');
+                            setIsPasswordRevealed(false);
                           }}
                           type="password"
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
@@ -4027,6 +4230,11 @@ export default function App() {
                       <div className="mt-3 text-[13px] font-medium text-black/45">
                         {loginError}
                       </div>
+                    )}
+                    {loginDebug && (
+                      <pre className="mt-2 max-h-48 w-full overflow-auto rounded-[10px] bg-black/5 p-2 text-[11px] leading-5 whitespace-pre-wrap text-black/55">
+                        {loginDebug}
+                      </pre>
                     )}
                     <div className="mt-5 grid grid-cols-2 gap-2">
                       <button
@@ -4145,12 +4353,73 @@ export default function App() {
                         <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
                         <input
                           value={profile.password}
-                          onChange={event => setProfile(prev => ({ ...prev, password: event.target.value }))}
-                          type="password"
+                          onChange={event => {
+                            setProfile(prev => ({ ...prev, password: event.target.value }));
+                            setIsPasswordRevealed(false);
+                            setSecurityRevealMessage('');
+                            setSecurityRevealAnswer('');
+                          }}
+                          type={isPasswordRevealed ? 'text' : 'password'}
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
                           placeholder={homeCopy.loginPassword}
                         />
                       </label>
+                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                        <Shield size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                        <input
+                          value={profile.securityQuestion}
+                          onChange={event => {
+                            setProfile(prev => ({ ...prev, securityQuestion: event.target.value }));
+                            setIsPasswordRevealed(false);
+                            setSecurityRevealMessage('');
+                            setSecurityRevealAnswer('');
+                          }}
+                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                          placeholder={homeCopy.securityQuestion}
+                        />
+                      </label>
+                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                        <input
+                          value={profile.securityAnswer}
+                          onChange={event => {
+                            setProfile(prev => ({ ...prev, securityAnswer: event.target.value }));
+                            setIsPasswordRevealed(false);
+                            setSecurityRevealMessage('');
+                            setSecurityRevealAnswer('');
+                          }}
+                          type="password"
+                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                          placeholder={homeCopy.securityAnswer}
+                        />
+                      </label>
+                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                        <input
+                          value={securityRevealAnswer}
+                          onChange={event => {
+                            setSecurityRevealAnswer(event.target.value);
+                            setSecurityRevealMessage('');
+                            setIsPasswordRevealed(false);
+                          }}
+                          type={isPasswordRevealed ? 'text' : 'password'}
+                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                          placeholder={homeCopy.securityAnswerHint}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRevealPasswordBySecurity}
+                          disabled={isCloudBackendEnabled || isPasswordRevealed}
+                          className="rounded-full bg-[var(--app-card)] px-2 py-1 text-xs font-medium text-black disabled:opacity-45"
+                        >
+                          {homeCopy.securityRevealAction}
+                        </button>
+                      </label>
+                      {securityRevealMessage && (
+                        <div className="mt-2 text-[12px] leading-5 text-black/50">
+                          {securityRevealMessage}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
