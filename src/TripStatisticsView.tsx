@@ -42,7 +42,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background-color: #1A1A1A;
+      background-color: #0f172a;
       touch-action: none;
     }
     #mapCanvas {
@@ -391,7 +391,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
       }
 
       function draw(now = performance.now()) {
-        ctx.fillStyle = isFullscreen ? '#1A1A1A' : '#0f172a';
+        ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         if (isFullscreen) {
@@ -748,7 +748,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
         </div>
 
         <div
-          className="relative mb-6 h-[345px] w-[320px] shrink-0 overflow-hidden rounded-[24px] bg-[#1A1A1A] shadow-md"
+          className="relative mb-6 h-[345px] w-[320px] shrink-0 overflow-hidden rounded-[24px] bg-[#0f172a] shadow-md"
           role="button"
           tabIndex={0}
           onClick={openExpandedMap}
@@ -841,7 +841,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
         ref={fullscreenMapRef}
         id="trip-map-fullscreen"
         popover="manual"
-        className="fixed inset-0 m-0 h-[100dvh] max-h-none w-[100dvw] max-w-none overflow-hidden border-0 bg-transparent p-0 backdrop:bg-transparent"
+        className="fixed inset-0 m-0 h-[100dvh] max-h-none w-[100dvw] max-w-none overflow-hidden border-0 bg-[#0f172a] p-0 backdrop:bg-transparent"
       >
         {isExpandedMapOpen && (
           <iframe
