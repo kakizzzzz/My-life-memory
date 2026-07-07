@@ -114,6 +114,28 @@ html, body {
   font-size: calc(14px * var(--app-font-scale, 1));
 }
 
+.record-preview-card {
+  height: 132px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.record-preview-text {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
+}
+
+.record-preview-time {
+  flex: 0 0 auto;
+  margin-top: 12px;
+}
+
 .note-title-editor {
   cursor: text;
   line-height: 1.28;

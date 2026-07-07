@@ -3914,11 +3914,11 @@ export default function App() {
                               className="absolute left-[6px] top-1/2 z-10 box-content h-[12px] w-[12px] -translate-y-1/2 rounded-full border-2 border-[var(--app-page)] ring-[3px] ring-[var(--app-page)]"
                               style={{ backgroundColor: record.color }}
                             />
-                            <span className="block rounded-[20px] bg-[var(--app-card-surface)] p-5 shadow-sm transition-shadow hover:shadow-md">
-                              <span className="line-clamp-3 block text-[15px] font-medium leading-relaxed text-black/80">
+                            <span className="record-preview-card block rounded-[20px] bg-[var(--app-card-surface)] p-5 shadow-sm transition-shadow hover:shadow-md">
+                              <span className="record-preview-text block text-[15px] font-medium leading-relaxed text-black/80">
                                 {record.text || record.title}
                               </span>
-                              <span className="mt-4 flex justify-end text-xs font-medium text-gray-400">
+                              <span className="record-preview-time flex justify-end text-xs font-medium text-gray-400">
                                 {formatRecordTime(record.timestamp, languageLocale)}
                               </span>
                             </span>
