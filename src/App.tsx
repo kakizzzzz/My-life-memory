@@ -267,26 +267,26 @@ const isLoginWorldMapLand = (x: number, y: number) => (
   isInsideRotatedEllipse(x, y, 0.50, 0.92, 0.38, 0.04, 0)
 );
 
-const LOGIN_WORLD_MAP_DOTS = Array.from({ length: 44 }).flatMap((_, row) => (
-  Array.from({ length: 92 }).flatMap((__, col) => {
-    const normalizedX = col / 91;
-    const normalizedY = row / 43;
+const LOGIN_WORLD_MAP_DOTS = Array.from({ length: 58 }).flatMap((_, row) => (
+  Array.from({ length: 128 }).flatMap((__, col) => {
+    const normalizedX = col / 127;
+    const normalizedY = row / 57;
     if (!isLoginWorldMapLand(normalizedX, normalizedY)) return [];
 
     return [{
-      x: col * 6,
-      y: row * 6,
-      opacity: 0.18 + ((col + row) % 4) * 0.025,
+      x: col * 5.2,
+      y: row * 5.2,
+      opacity: 0.15 + ((col + row) % 5) * 0.018,
     }];
   })
 ));
 
 function LoginWorldMapBackground() {
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-[-38px] z-0 flex justify-center overflow-hidden opacity-80">
+    <div className="pointer-events-none absolute inset-x-0 bottom-[-26px] z-0 flex justify-center overflow-hidden opacity-90">
       <svg
-        viewBox="0 0 546 258"
-        className="h-[240px] w-[560px] max-w-none"
+        viewBox="0 0 660 298"
+        className="h-[300px] w-[760px] max-w-none"
         style={{ color: 'var(--app-dark)' }}
         aria-hidden="true"
       >
@@ -296,7 +296,7 @@ function LoginWorldMapBackground() {
               key={`${dot.x}-${dot.y}`}
               cx={dot.x}
               cy={dot.y}
-              r="1.75"
+              r="1.25"
               fill="currentColor"
               opacity={dot.opacity}
             />
@@ -3914,15 +3914,15 @@ export default function App() {
               {!isSignedIn ? (
                 <form
                   onSubmit={handleLogin}
-                  className="relative flex min-h-full flex-col justify-center overflow-hidden"
+                  className="relative flex min-h-full flex-col items-center justify-center overflow-hidden pt-8"
                 >
                   <LoginWorldMapBackground />
-                  <div className="relative z-10 mb-5">
+                  <div className="relative z-10 mb-8 w-full text-center">
                     <h1 className="font-sans text-[36px] font-bold leading-none tracking-tight text-black">
                       My life memory
                     </h1>
                   </div>
-                  <div className="relative z-10 rounded-[18px] bg-[var(--app-card)] p-4">
+                  <div className="relative z-10 w-full rounded-[18px] bg-[var(--app-card)] p-4">
                     <div className="mb-4 flex items-center gap-2 text-[18px] font-medium text-black">
                       <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
                       {homeCopy.loginTitle}
