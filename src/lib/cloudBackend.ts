@@ -757,6 +757,53 @@ export const saveCloudAppState = async (state: CloudAppState) => {
   if (error) throw error;
 };
 
+export const updateCloudPassword = async ({
+  account,
+  currentPassword,
+  newPassword,
+}: {
+  account: string;
+  currentPassword: string;
+  newPassword: string;
+}) => {
+  const client = requireSupabase();
+  const normalizedAccount = normalizeAccountId(account);
+  if (!normalizedAccount || !currentPassword || !newPassword) {
+    throw new CloudAuthError('invalid_credentials', 'Account and password are required.');
+  }
+  if (newPassword.length < 6) {
+    throw new CloudAuthError('weak_password', 'Password is too short.');
+  }
+
+  const email = accountIdToAuthEmail(normalizedAccount);
+  const signInResult = await client.auth.signInWithPassword({ email, password: currentPassword });
+  if (signInResult.error || !signInResult.data.user) {
+    throw toCloudAuthError(signInResult.error, 'invalid_credentials', {
+      phase: 'signin',
+      email,
+      accountId: normalizedAccount,
+      message: signInResult.error?.message,
+      raw: signInResult.error,
+      ...extractSupabaseErrorMeta(signInResult.error),
+    });
+  }
+
+  await activateCloudSession(signInResult.data.session, signInResult.data.user.id);
+
+  const { error } = await client.auth.updateUser({ password: newPassword });
+  if (error) {
+    throw toCloudAuthError(error, 'unknown', {
+      phase: 'signin',
+      email,
+      accountId: normalizedAccount,
+      userId: signInResult.data.user.id,
+      message: error.message,
+      raw: error,
+      ...extractSupabaseErrorMeta(error),
+    });
+  }
+};
+
 export const signOutCloudAccount = async () => {
   if (!supabase) return;
   await supabase.auth.signOut();

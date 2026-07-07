@@ -5,6 +5,7 @@ import L from 'leaflet';
 import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Languages, Download, CalendarDays, Camera, Eye, EyeOff, Underline } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
+import * as exifr from 'exifr';
 import { StarActionOverlay } from './StarActionOverlay';
 import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
@@ -12,6 +13,7 @@ import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from 
 import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
+  createSignedImageUrl,
   dehydrateStorageMediaHtml,
   deleteImageFromStorage,
   hydrateStorageMediaHtml,
@@ -33,6 +35,7 @@ import {
   saveCloudAppState,
   saveCloudProfile,
   signOutCloudAccount,
+  updateCloudPassword,
   type CloudAuthAction,
   CloudAuthError,
   type CloudAppState,
@@ -260,6 +263,12 @@ const TRACK_MAX_SPEED_MPS = 4.5;
 const TRACK_MIN_POINT_INTERVAL_MS = 500;
 const TRACK_STALE_POSITION_GRACE_MS = 2000;
 const CLOUD_PASSWORD_MIN_LENGTH = 6;
+
+const createClientId = () => (
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2, 11)
+);
 
 const isInsideRotatedEllipse = (
   x: number,
@@ -518,9 +527,25 @@ const HOME_COPY = {
   idUnique: 'Unique ID',
   loginPassword: 'Login password',
   passwordManaged: 'Password is protected by Supabase Auth',
+  passwordNotViewable: 'Saved passwords cannot be viewed. You can change it with your current password.',
+  changePassword: 'Change password',
+  currentPassword: 'Current password',
+  newPassword: 'New password',
+  confirmPassword: 'Confirm password',
+  savePassword: 'Save password',
+  changingPassword: 'Changing...',
+  passwordChanged: 'Password changed',
+  passwordMismatch: 'The new passwords do not match',
+  currentPasswordWrong: 'Current password is incorrect',
   showPassword: 'Show password',
   hidePassword: 'Hide password',
   accountAccess: 'Account access',
+  uploadPhotoLocation: 'Create star from photo GPS',
+  photoLocationLoading: 'Reading photo location...',
+  photoLocationCreated: 'Star created from photo',
+  photoLocationNoGps: 'This photo has no usable GPS',
+  photoLocationFailed: 'Could not read this photo',
+  photoGpsNoteTitle: 'Photo location',
     loginTitle: 'Account login',
     registerTitle: 'Account registration',
     loginHint: 'Enter your registered ID and password to log in.',
@@ -548,6 +573,13 @@ const HOME_COPY = {
     userManual: 'User manual',
     openManual: 'Open manual',
     closeManual: 'Close manual',
+    exportData: 'Export data',
+    exportDataHint: 'Download all locations, notes, routes, settings, and images as JSON',
+    exportJson: 'Export JSON',
+    exportingData: 'Exporting...',
+    exportDataReady: 'JSON exported',
+    exportDataPartial: 'JSON exported. Some images could not be embedded.',
+    exportDataFailed: 'Could not export data',
     initialPermissionsTitle: 'Location permission',
     initialPermissionsBody: 'Allow location to center the map on your current position and update the origin marker.',
     notNow: 'Later',
@@ -640,9 +672,25 @@ const HOME_COPY = {
   idUnique: 'ID唯一',
   loginPassword: '登录密码',
   passwordManaged: '密码由 Supabase Auth 安全保存',
+  passwordNotViewable: '已保存的密码不能查看原文。你可以用当前密码修改新密码。',
+  changePassword: '修改密码',
+  currentPassword: '当前密码',
+  newPassword: '新密码',
+  confirmPassword: '确认新密码',
+  savePassword: '保存密码',
+  changingPassword: '修改中...',
+  passwordChanged: '密码已修改',
+  passwordMismatch: '两次输入的新密码不一致',
+  currentPasswordWrong: '当前密码不正确',
   showPassword: '查看密码',
   hidePassword: '隐藏密码',
   accountAccess: '账号访问',
+  uploadPhotoLocation: '从照片定位创建星星',
+  photoLocationLoading: '正在读取照片定位...',
+  photoLocationCreated: '已根据照片创建星星',
+  photoLocationNoGps: '找不到该图片的定位信息',
+  photoLocationFailed: '无法读取这张照片',
+  photoGpsNoteTitle: '照片定位',
     loginTitle: '账号登录',
     registerTitle: '账号注册',
     loginHint: '输入已经注册的 ID 和密码登录。',
@@ -670,6 +718,13 @@ const HOME_COPY = {
     userManual: '用户手册',
     openManual: '打开查阅',
     closeManual: '关闭手册',
+    exportData: '导出数据',
+    exportDataHint: '导出全部坐标、笔记、路线、设置和图片为 JSON',
+    exportJson: '导出 JSON',
+    exportingData: '导出中...',
+    exportDataReady: 'JSON 已导出',
+    exportDataPartial: 'JSON 已导出，部分图片未能写入文件',
+    exportDataFailed: '导出失败',
     initialPermissionsTitle: '定位权限',
     initialPermissionsBody: '允许定位后，地图会回到你当前的位置，并更新原点。',
     notNow: '稍后',
@@ -762,9 +817,25 @@ const HOME_COPY = {
   idUnique: '고유 ID',
   loginPassword: '로그인 비밀번호',
   passwordManaged: '비밀번호는 Supabase Auth에서 안전하게 관리됩니다',
+  passwordNotViewable: '저장된 비밀번호 원문은 볼 수 없습니다. 현재 비밀번호로 새 비밀번호를 설정할 수 있습니다.',
+  changePassword: '비밀번호 변경',
+  currentPassword: '현재 비밀번호',
+  newPassword: '새 비밀번호',
+  confirmPassword: '새 비밀번호 확인',
+  savePassword: '비밀번호 저장',
+  changingPassword: '변경 중...',
+  passwordChanged: '비밀번호를 변경했습니다',
+  passwordMismatch: '새 비밀번호가 일치하지 않습니다',
+  currentPasswordWrong: '현재 비밀번호가 올바르지 않습니다',
   showPassword: '비밀번호 보기',
   hidePassword: '비밀번호 숨기기',
   accountAccess: '계정 접근',
+  uploadPhotoLocation: '사진 GPS로 별표 만들기',
+  photoLocationLoading: '사진 위치 읽는 중...',
+  photoLocationCreated: '사진 위치로 별표를 만들었습니다',
+  photoLocationNoGps: '이 사진에는 사용할 수 있는 GPS가 없습니다',
+  photoLocationFailed: '이 사진을 읽을 수 없습니다',
+  photoGpsNoteTitle: '사진 위치',
     loginTitle: '계정 로그인',
     registerTitle: '계정 가입',
     loginHint: '등록한 ID와 비밀번호로 로그인하세요.',
@@ -792,6 +863,13 @@ const HOME_COPY = {
     userManual: '사용 설명서',
     openManual: '열어 보기',
     closeManual: '설명서 닫기',
+    exportData: '데이터 내보내기',
+    exportDataHint: '모든 위치, 노트, 경로, 설정, 이미지를 JSON으로 저장',
+    exportJson: 'JSON 내보내기',
+    exportingData: '내보내는 중...',
+    exportDataReady: 'JSON을 내보냈습니다',
+    exportDataPartial: 'JSON을 내보냈습니다. 일부 이미지는 포함하지 못했습니다.',
+    exportDataFailed: '데이터를 내보내지 못했습니다',
     initialPermissionsTitle: '위치 권한',
     initialPermissionsBody: '위치를 허용하면 지도가 현재 위치로 이동하고 원점이 업데이트됩니다.',
     notNow: '나중에',
@@ -954,6 +1032,158 @@ const dataUrlToFile = async (dataUrl: string, fileName: string) => {
   return new File([blob], fileName, { type: blob.type || 'image/jpeg' });
 };
 
+const TIFF_TYPE_SIZES: Record<number, number> = {
+  1: 1,
+  2: 1,
+  3: 2,
+  4: 4,
+  5: 8,
+  7: 1,
+  9: 4,
+  10: 8,
+};
+
+type TiffEntry = {
+  type: number;
+  count: number;
+  valueOffset: number;
+  entryOffset: number;
+};
+
+const readExifGpsFromArrayBuffer = (buffer: ArrayBuffer): [number, number] | null => {
+  const view = new DataView(buffer);
+  if (view.byteLength < 14 || view.getUint16(0) !== 0xffd8) return null;
+
+  let offset = 2;
+  while (offset + 4 < view.byteLength) {
+    if (view.getUint8(offset) !== 0xff) {
+      offset += 1;
+      continue;
+    }
+
+    const marker = view.getUint8(offset + 1);
+    if (marker === 0xda || marker === 0xd9) break;
+    const segmentLength = view.getUint16(offset + 2, false);
+    const segmentStart = offset + 4;
+    const segmentEnd = offset + 2 + segmentLength;
+
+    if (
+      marker === 0xe1 &&
+      segmentStart + 14 < view.byteLength &&
+      view.getUint8(segmentStart) === 0x45 &&
+      view.getUint8(segmentStart + 1) === 0x78 &&
+      view.getUint8(segmentStart + 2) === 0x69 &&
+      view.getUint8(segmentStart + 3) === 0x66
+    ) {
+      const tiffStart = segmentStart + 6;
+      const byteOrder = view.getUint16(tiffStart, false);
+      const littleEndian = byteOrder === 0x4949;
+      if (!littleEndian && byteOrder !== 0x4d4d) return null;
+      if (view.getUint16(tiffStart + 2, littleEndian) !== 42) return null;
+
+      const readIfd = (ifdOffset: number) => {
+        const entries = new Map<number, TiffEntry>();
+        const absoluteOffset = tiffStart + ifdOffset;
+        if (absoluteOffset < tiffStart || absoluteOffset + 2 > view.byteLength) return entries;
+        const count = view.getUint16(absoluteOffset, littleEndian);
+        for (let index = 0; index < count; index += 1) {
+          const entryOffset = absoluteOffset + 2 + index * 12;
+          if (entryOffset + 12 > view.byteLength) break;
+          const tag = view.getUint16(entryOffset, littleEndian);
+          entries.set(tag, {
+            type: view.getUint16(entryOffset + 2, littleEndian),
+            count: view.getUint32(entryOffset + 4, littleEndian),
+            valueOffset: view.getUint32(entryOffset + 8, littleEndian),
+            entryOffset,
+          });
+        }
+        return entries;
+      };
+
+      const entryValueOffset = (entry?: TiffEntry) => {
+        if (!entry) return -1;
+        const byteLength = (TIFF_TYPE_SIZES[entry.type] || 1) * entry.count;
+        return byteLength <= 4 ? entry.entryOffset + 8 : tiffStart + entry.valueOffset;
+      };
+
+      const readAscii = (entry?: TiffEntry) => {
+        const valueOffset = entryValueOffset(entry);
+        if (!entry || valueOffset < 0 || valueOffset + entry.count > view.byteLength) return '';
+        let value = '';
+        for (let index = 0; index < entry.count; index += 1) {
+          const code = view.getUint8(valueOffset + index);
+          if (code === 0) break;
+          value += String.fromCharCode(code);
+        }
+        return value.trim();
+      };
+
+      const readRationalArray = (entry?: TiffEntry) => {
+        const valueOffset = entryValueOffset(entry);
+        if (!entry || valueOffset < 0 || valueOffset + entry.count * 8 > view.byteLength) return [];
+        const values: number[] = [];
+        for (let index = 0; index < entry.count; index += 1) {
+          const numerator = view.getUint32(valueOffset + index * 8, littleEndian);
+          const denominator = view.getUint32(valueOffset + index * 8 + 4, littleEndian);
+          values.push(denominator ? numerator / denominator : 0);
+        }
+        return values;
+      };
+
+      const firstIfdOffset = view.getUint32(tiffStart + 4, littleEndian);
+      const ifd0 = readIfd(firstIfdOffset);
+      const gpsIfdPointer = ifd0.get(0x8825);
+      if (!gpsIfdPointer) return null;
+      const gpsIfd = readIfd(gpsIfdPointer.valueOffset);
+      const latRef = readAscii(gpsIfd.get(0x0001));
+      const latValues = readRationalArray(gpsIfd.get(0x0002));
+      const lngRef = readAscii(gpsIfd.get(0x0003));
+      const lngValues = readRationalArray(gpsIfd.get(0x0004));
+      if (latValues.length < 3 || lngValues.length < 3) return null;
+
+      const toDecimal = (values: number[], ref: string) => {
+        const decimal = values[0] + values[1] / 60 + values[2] / 3600;
+        return ['S', 'W'].includes(ref.toUpperCase()) ? -decimal : decimal;
+      };
+
+      const lat = toDecimal(latValues, latRef);
+      const lng = toDecimal(lngValues, lngRef);
+      return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+        ? [lat, lng]
+        : null;
+    }
+
+    if (segmentLength < 2 || segmentEnd <= offset) break;
+    offset = segmentEnd;
+  }
+
+  return null;
+};
+
+const readPhotoGpsCoordinates = async (file: File): Promise<[number, number] | null> => {
+  try {
+    const gps = await exifr.gps(file);
+    if (
+      gps &&
+      Number.isFinite(gps.latitude) &&
+      Number.isFinite(gps.longitude) &&
+      Math.abs(gps.latitude) <= 90 &&
+      Math.abs(gps.longitude) <= 180
+    ) {
+      return [gps.latitude, gps.longitude];
+    }
+  } catch {
+    // Fall back to the lightweight JPEG parser below.
+  }
+
+  try {
+    const buffer = await file.arrayBuffer();
+    return readExifGpsFromArrayBuffer(buffer);
+  } catch {
+    return null;
+  }
+};
+
 const extractImagesFromHtml = (html?: string) => {
   if (!html || typeof document === 'undefined') return [];
   const container = document.createElement('div');
@@ -984,6 +1214,117 @@ const getStoredImagesFromNote = (note?: NoteData) => (
     ...extractStoredImagesFromHtml(note?.contentHtml),
   ])
 );
+
+type ExportedImageData = {
+  source: string;
+  provider: 'supabase' | 'inline' | 'external';
+  bucket?: string;
+  key?: string;
+  path?: string;
+  src?: string;
+  mimeType?: string;
+  size?: number;
+  createdAt?: number;
+  dataUrl?: string;
+  exportError?: string;
+};
+
+const getDataUrlMimeType = (dataUrl: string) => (
+  dataUrl.match(/^data:([^;,]+)/)?.[1] || 'application/octet-stream'
+);
+
+const getDataUrlApproxSize = (dataUrl: string) => {
+  const base64 = dataUrl.split(',')[1] || '';
+  return Math.max(0, Math.floor((base64.length * 3) / 4));
+};
+
+const fetchImageAsDataUrl = async (src: string) => {
+  if (src.startsWith('data:')) {
+    return {
+      dataUrl: src,
+      mimeType: getDataUrlMimeType(src),
+      size: getDataUrlApproxSize(src),
+    };
+  }
+
+  const response = await fetch(src);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const blob = await response.blob();
+  return {
+    dataUrl: await imageBlobToDataUrl(blob),
+    mimeType: blob.type || 'image/jpeg',
+    size: blob.size,
+  };
+};
+
+const exportImageSource = async (src: string, source: string): Promise<ExportedImageData | null> => {
+  if (!src || src.startsWith('storage://')) return null;
+
+  try {
+    const imageData = await fetchImageAsDataUrl(src);
+    return {
+      source,
+      provider: src.startsWith('data:') ? 'inline' : 'external',
+      src,
+      ...imageData,
+    };
+  } catch (error) {
+    return {
+      source,
+      provider: 'external',
+      src,
+      exportError: error instanceof Error ? error.message : String(error),
+    };
+  }
+};
+
+const exportStoredImage = async (metadata: StoredImageMetadata, source: string): Promise<ExportedImageData> => {
+  const baseImage = {
+    source,
+    provider: 'supabase' as const,
+    bucket: metadata.bucket,
+    key: metadata.key,
+    path: metadata.path,
+    mimeType: metadata.mimeType,
+    size: metadata.size,
+    createdAt: metadata.createdAt,
+  };
+
+  try {
+    const signedUrl = await createSignedImageUrl(metadata);
+    const imageData = signedUrl ? await fetchImageAsDataUrl(signedUrl) : null;
+    return {
+      ...baseImage,
+      src: storagePlaceholderSrc(metadata),
+      ...(imageData || {}),
+    };
+  } catch (error) {
+    return {
+      ...baseImage,
+      src: storagePlaceholderSrc(metadata),
+      exportError: error instanceof Error ? error.message : String(error),
+    };
+  }
+};
+
+const getInlineExportImageSources = (note?: NoteData) => {
+  const storedPlaceholders = new Set(getStoredImagesFromNote(note).map(storagePlaceholderSrc));
+  const sources = [
+    ...extractImagesFromHtml(note?.contentHtml),
+    ...getLegacyNoteImages(note),
+  ];
+
+  return Array.from(new Set(sources)).filter(src => (
+    Boolean(src) && !storedPlaceholders.has(src) && !src.startsWith('storage://')
+  ));
+};
+
+const hasImageExportError = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.some(hasImageExportError);
+  if (!value || typeof value !== 'object') return false;
+  if ('exportError' in value && Boolean((value as { exportError?: unknown }).exportError)) return true;
+  return Object.values(value).some(hasImageExportError);
+};
 
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
@@ -1607,6 +1948,16 @@ export default function App() {
   const [isPasswordRevealed, setIsPasswordRevealed] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
+  const [isExportingData, setIsExportingData] = useState(false);
+  const [exportDataStatus, setExportDataStatus] = useState('');
+  const [isPasswordChangeOpen, setIsPasswordChangeOpen] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordChangeStatus, setPasswordChangeStatus] = useState('');
+  const [isReadingPhotoLocation, setIsReadingPhotoLocation] = useState(false);
+  const [photoLocationStatus, setPhotoLocationStatus] = useState('');
   const [permissionRequestState, setPermissionRequestState] = useState<'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported'>('idle');
   const [language, setLanguage] = useState(() => (
     initialLanguage
@@ -1618,6 +1969,7 @@ export default function App() {
     return normalizedAccount ? `${prefix}${normalizedAccount}` : prefix.trim();
   }, [language]);
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
+  const photoLocationInputRef = React.useRef<HTMLInputElement>(null);
   const homeScrollRef = React.useRef<HTMLDivElement>(null);
 
   const position: [number, number] = DEFAULT_USER_LOCATION;
@@ -1682,6 +2034,7 @@ export default function App() {
   const cloudReadyToSaveRef = React.useRef(!isCloudBackendEnabled);
   const cloudRegistrationInProgressRef = React.useRef(false);
   const cloudSaveTimerRef = React.useRef<number | null>(null);
+  const photoLocationStatusTimerRef = React.useRef<number | null>(null);
 
   const trackingStateRef = React.useRef({ isTracking, isPaused });
   useEffect(() => {
@@ -1978,6 +2331,13 @@ export default function App() {
     if (activeHomePanel !== 'settings') {
       setIsUserManualOpen(false);
     }
+    if (activeHomePanel !== 'profile') {
+      setIsPasswordChangeOpen(false);
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+      setPasswordChangeStatus('');
+    }
   }, [activeHomePanel]);
 
   useEffect(() => {
@@ -2102,6 +2462,9 @@ export default function App() {
   useEffect(() => () => {
     stopGpsWatch();
     stopHeadingWatch();
+    if (photoLocationStatusTimerRef.current !== null) {
+      window.clearTimeout(photoLocationStatusTimerRef.current);
+    }
   }, [stopGpsWatch, stopHeadingWatch]);
 
   // Remove the useEffect that depends on userLocation, we will update trackPaths directly in drag handlers
@@ -2140,8 +2503,11 @@ export default function App() {
     mapInstanceRef.current = map;
   }, []);
 
-  const addStarAtLatLng = React.useCallback((lat: number, lng: number) => {
-    setStars(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), lat, lng, createdAt: Date.now() }]);
+  const addStarAtLatLng = React.useCallback((lat: number, lng: number, starData: Partial<StarData> = {}) => {
+    const id = starData.id || createClientId();
+    const createdAt = starData.createdAt || Date.now();
+    setStars(prev => [...prev, { ...starData, id, lat, lng, createdAt }]);
+    return id;
   }, []);
 
   const addStarAtUserLocation = React.useCallback(() => {
@@ -2230,6 +2596,11 @@ export default function App() {
   };
 
   const onStarClick = (id: string, e: any) => {
+    const clickedStar = stars.find(s => s.id === id);
+    if (clickedStar) {
+      setFlyTarget([clickedStar.lat, clickedStar.lng]);
+    }
+
     if (tagMode === 'add') {
       setStars(prev => {
         const star = prev.find(s => s.id === id);
@@ -2252,7 +2623,7 @@ export default function App() {
         });
       });
     } else {
-      const star = stars.find(s => s.id === id);
+      const star = clickedStar;
       if (star) {
         setSelectedStarId(id);
         if (star.tagOrder && star.tagGroupId !== undefined) {
@@ -3121,6 +3492,262 @@ export default function App() {
     link.remove();
   };
 
+  const showPhotoLocationStatus = React.useCallback((message: string, durationMs = 500) => {
+    if (photoLocationStatusTimerRef.current !== null) {
+      window.clearTimeout(photoLocationStatusTimerRef.current);
+      photoLocationStatusTimerRef.current = null;
+    }
+    setPhotoLocationStatus(message);
+    if (durationMs > 0) {
+      photoLocationStatusTimerRef.current = window.setTimeout(() => {
+        setPhotoLocationStatus('');
+        photoLocationStatusTimerRef.current = null;
+      }, durationMs);
+    }
+  }, []);
+
+  const handlePhotoLocationInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const looksLikeImage = file.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|webp)$/i.test(file.name);
+    if (!looksLikeImage) return;
+    if (isReadingPhotoLocation) return;
+
+    setIsReadingPhotoLocation(true);
+    showPhotoLocationStatus(homeCopy.photoLocationLoading, 0);
+
+    try {
+      const coordinates = await readPhotoGpsCoordinates(file);
+      if (!coordinates) {
+        showPhotoLocationStatus(homeCopy.photoLocationNoGps, 500);
+        return;
+      }
+
+      const [lat, lng] = coordinates;
+      const timestamp = Date.now();
+      const starId = createClientId();
+      const noteId = createClientId();
+      const imageUrl = await compressImageFileToDataUrl(file);
+      let imageHtml = imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage);
+      let imageMetadata: StoredImageMetadata | undefined;
+
+      if (isSupabaseMediaEnabled) {
+        try {
+          const compressedFile = await dataUrlToFile(imageUrl, file.name || `${timestamp}.jpg`);
+          const uploaded = await uploadImageToStorage(compressedFile, {
+            noteId,
+            folder: 'notes',
+            fileName: compressedFile.name,
+          });
+          if (uploaded.metadata) {
+            imageMetadata = uploaded.metadata;
+            imageHtml = imageToReaderHtml(uploaded.src, homeCopy.noteImageAlt, homeCopy.removeImage, uploaded.metadata);
+          }
+        } catch (error) {
+          console.warn('Supabase Storage photo GPS upload failed, using data URL fallback:', error);
+        }
+      }
+
+      const contentHtml = dehydrateStorageMediaHtml(`${imageHtml}${readerEditableTailHtml}`);
+      const title = homeCopy.photoGpsNoteTitle;
+      const note: NoteData = {
+        id: noteId,
+        title,
+        titleHtml: escapeHtml(title),
+        content: '',
+        contentHtml,
+        images: imageMetadata ? [imageMetadata] : undefined,
+        fontSize: 18,
+        titleFontSize: 18,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        color: '#D2936D',
+      };
+
+      addStarAtLatLng(lat, lng, {
+        id: starId,
+        createdAt: timestamp,
+        color: '#EDC727',
+        notes: [note],
+      });
+      setSelectedStarId(starId);
+      setActiveTag(null);
+      setFlyTarget([lat, lng]);
+      setIsMenuOpen(false);
+      showPhotoLocationStatus(homeCopy.photoLocationCreated, 500);
+    } catch (error) {
+      console.error('Could not create star from photo GPS:', error);
+      showPhotoLocationStatus(homeCopy.photoLocationFailed, 500);
+    } finally {
+      setIsReadingPhotoLocation(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (isChangingPassword) return;
+
+    const currentPassword = currentPasswordInput;
+    const newPassword = newPasswordInput;
+    const confirmPassword = confirmPasswordInput;
+
+    if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+      setPasswordChangeStatus(homeCopy.loginMissing);
+      return;
+    }
+    if (newPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
+      setPasswordChangeStatus(homeCopy.passwordTooShort);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordChangeStatus(homeCopy.passwordMismatch);
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setPasswordChangeStatus('');
+
+    try {
+      await updateCloudPassword({
+        account: profile.account,
+        currentPassword,
+        newPassword,
+      });
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+      setIsPasswordChangeOpen(false);
+      setPasswordChangeStatus(homeCopy.passwordChanged);
+    } catch (error) {
+      console.error('Could not change password:', error);
+      if (error instanceof CloudAuthError && error.code === 'invalid_credentials') {
+        setPasswordChangeStatus(homeCopy.currentPasswordWrong);
+      } else if (error instanceof CloudAuthError && error.code === 'weak_password') {
+        setPasswordChangeStatus(homeCopy.passwordTooShort);
+      } else {
+        setPasswordChangeStatus(getCloudAuthErrorMessage(error, 'login'));
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const handleExportUserData = async () => {
+    if (isExportingData) return;
+
+    setIsExportingData(true);
+    setExportDataStatus('');
+
+    try {
+      const exportedAt = new Date().toISOString();
+      const avatar = profile.avatarImage
+        ? await exportStoredImage(profile.avatarImage, 'profile.avatar')
+        : profile.avatarUrl
+          ? await exportImageSource(profile.avatarUrl, 'profile.avatar')
+          : null;
+
+      const locations = await Promise.all(stars.map(async (star, starIndex) => {
+        const notes = await Promise.all((star.notes || []).map(async (note, noteIndex) => {
+          const timestamp = getNoteTimestamp(note);
+          const storedImages = await Promise.all(
+            getStoredImagesFromNote(note).map((metadata, imageIndex) => (
+              exportStoredImage(metadata, `locations.${starIndex}.notes.${noteIndex}.images.${imageIndex}`)
+            ))
+          );
+          const inlineImages = await Promise.all(
+            getInlineExportImageSources(note).map((src, imageIndex) => (
+              exportImageSource(src, `locations.${starIndex}.notes.${noteIndex}.inlineImages.${imageIndex}`)
+            ))
+          );
+          const images = [
+            ...storedImages,
+            ...inlineImages.filter((image): image is ExportedImageData => Boolean(image)),
+          ];
+
+          return {
+            id: note.id,
+            title: htmlToText(note.titleHtml) || note.title || `${homeCopy.noteLabel} ${noteIndex + 1}`,
+            titleHtml: note.titleHtml || '',
+            content: note.content || '',
+            contentHtml: note.contentHtml || '',
+            text: htmlToText(note.contentHtml) || note.content || '',
+            timestamp,
+            timestampIso: new Date(timestamp).toISOString(),
+            createdAt: note.createdAt || timestamp,
+            createdAtIso: new Date(note.createdAt || timestamp).toISOString(),
+            updatedAt: note.updatedAt || null,
+            updatedAtIso: note.updatedAt ? new Date(note.updatedAt).toISOString() : null,
+            color: note.color || star.color || null,
+            fontSize: note.fontSize || null,
+            titleFontSize: note.titleFontSize || null,
+            images,
+          };
+        }));
+
+        return {
+          id: star.id,
+          index: starIndex + 1,
+          coordinates: {
+            lat: star.lat,
+            lng: star.lng,
+          },
+          createdAt: star.createdAt || null,
+          createdAtIso: star.createdAt ? new Date(star.createdAt).toISOString() : null,
+          color: star.color || null,
+          tagOrder: star.tagOrder ?? null,
+          tagGroupId: star.tagGroupId ?? null,
+          notes,
+        };
+      }));
+
+      const exportPayload = {
+        schema: 'my-life-memory-export-v1',
+        exportedAt,
+        app: 'My Life Memory',
+        account: normalizeAccountId(profile.account),
+        profile: {
+          name: profile.name,
+          account: normalizeAccountId(profile.account),
+          avatar,
+        },
+        settings: {
+          language,
+          mapStyle,
+          systemTheme,
+        },
+        currentLocation: {
+          coordinates: {
+            lat: userLocation[0],
+            lng: userLocation[1],
+          },
+          deviceHeading,
+        },
+        locations,
+        routes: savedTracks,
+        rawAppState: createAppStateSnapshot(),
+      };
+
+      const jsonText = JSON.stringify(exportPayload, null, 2);
+      const blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
+      const objectUrl = URL.createObjectURL(blob);
+      const accountSlug = normalizeAccountId(profile.account) || 'user';
+      const dateSlug = exportedAt.slice(0, 10);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `my-life-memory-${accountSlug}-${dateSlug}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      setExportDataStatus(hasImageExportError(exportPayload) ? homeCopy.exportDataPartial : homeCopy.exportDataReady);
+    } catch (error) {
+      console.error('Could not export user data:', error);
+      setExportDataStatus(homeCopy.exportDataFailed);
+    } finally {
+      setIsExportingData(false);
+    }
+  };
+
   const homeMenuItems: { panel: Exclude<HomePanel, null>; label: string; icon: React.ReactNode }[] = [
     { panel: 'profile', label: homeCopy.modify, icon: <Database size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'theme', label: homeCopy.theme, icon: <Palette size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
@@ -3665,6 +4292,13 @@ export default function App() {
 
   return (
     <div className="relative w-[100dvw] h-[100dvh] overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
+      <input
+        ref={photoLocationInputRef}
+        type="file"
+        accept="image/*,.heic,.heif"
+        className="hidden"
+        onChange={handlePhotoLocationInput}
+      />
       
       {/* Background Map */}
       <div className={`absolute inset-0 z-0 bg-[#e5e5e5] ${mapStyle === 'dark' ? 'theme-dark' : ''} ${mapStyle === 'light' ? 'theme-light' : ''}`}>
@@ -3806,6 +4440,20 @@ export default function App() {
           <Star size={34} strokeWidth={2.4} fill="currentColor" />
         </div>
       )}
+
+      <AnimatePresence>
+        {photoLocationStatus && activeView === 'map' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.12 }}
+            className="pointer-events-none fixed left-1/2 top-[calc(env(safe-area-inset-top)+5rem)] z-[2500] max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full bg-black/75 px-4 py-2 text-center text-[13px] font-medium text-white shadow-lg"
+          >
+            {photoLocationStatus}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Top Right Menu */}
       {activeView === 'map' && !isTracking && (
@@ -3978,6 +4626,18 @@ export default function App() {
                   }}
                 >
                   <Star size={24} strokeWidth={2} fill="none" />
+                </button>
+
+                {/* Photo GPS */}
+                <button
+                  type="button"
+                  className={`${btnClass} ${isReadingPhotoLocation ? 'opacity-60' : ''}`}
+                  onClick={() => photoLocationInputRef.current?.click()}
+                  disabled={isReadingPhotoLocation}
+                  aria-label={homeCopy.uploadPhotoLocation}
+                  title={homeCopy.uploadPhotoLocation}
+                >
+                  <ImageIcon size={23} strokeWidth={2.1} />
                 </button>
               </motion.div>
             )}
@@ -4559,11 +5219,80 @@ export default function App() {
                         />
                       </label>
                       {isCloudBackendEnabled ? (
-                        <div className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                          <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                          <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-black/45">
-                            {homeCopy.passwordManaged}
-                          </span>
+                        <div className="rounded-[12px] bg-[var(--app-soft-surface)] p-3 text-black">
+                          <div className="flex min-h-11 items-center gap-3">
+                            <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                            <span className="min-w-0 flex-1 text-[15px] font-medium leading-snug text-black/45">
+                              {homeCopy.passwordManaged}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsPasswordChangeOpen(prev => !prev);
+                                setPasswordChangeStatus('');
+                              }}
+                              className="shrink-0 rounded-full bg-[var(--app-card)] px-3 py-1.5 text-[12px] font-medium text-black transition-transform active:scale-95"
+                            >
+                              {homeCopy.changePassword}
+                            </button>
+                          </div>
+                          <div className="mt-1 pl-9 text-[11px] font-medium leading-snug text-black/40">
+                            {homeCopy.passwordNotViewable}
+                          </div>
+                          <AnimatePresence initial={false}>
+                            {isPasswordChangeOpen && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.18 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="mt-3 space-y-2">
+                                  <input
+                                    value={currentPasswordInput}
+                                    onChange={event => setCurrentPasswordInput(event.target.value)}
+                                    type="password"
+                                    autoComplete="current-password"
+                                    className="h-10 w-full rounded-[10px] bg-[var(--app-card)] px-3 text-[14px] font-medium outline-none placeholder:text-black/30"
+                                    placeholder={homeCopy.currentPassword}
+                                    aria-label={homeCopy.currentPassword}
+                                  />
+                                  <input
+                                    value={newPasswordInput}
+                                    onChange={event => setNewPasswordInput(event.target.value)}
+                                    type="password"
+                                    autoComplete="new-password"
+                                    className="h-10 w-full rounded-[10px] bg-[var(--app-card)] px-3 text-[14px] font-medium outline-none placeholder:text-black/30"
+                                    placeholder={homeCopy.newPassword}
+                                    aria-label={homeCopy.newPassword}
+                                  />
+                                  <input
+                                    value={confirmPasswordInput}
+                                    onChange={event => setConfirmPasswordInput(event.target.value)}
+                                    type="password"
+                                    autoComplete="new-password"
+                                    className="h-10 w-full rounded-[10px] bg-[var(--app-card)] px-3 text-[14px] font-medium outline-none placeholder:text-black/30"
+                                    placeholder={homeCopy.confirmPassword}
+                                    aria-label={homeCopy.confirmPassword}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleChangePassword}
+                                    disabled={isChangingPassword}
+                                    className="h-10 w-full rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
+                                  >
+                                    {isChangingPassword ? homeCopy.changingPassword : homeCopy.savePassword}
+                                  </button>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                          {passwordChangeStatus && (
+                            <div className="mt-2 pl-9 text-[12px] font-medium leading-snug text-black/45">
+                              {passwordChangeStatus}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
@@ -4784,6 +5513,28 @@ export default function App() {
                       >
                         {homeCopy.openManual}
                       </button>
+                    </div>
+                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                        <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                        {homeCopy.exportData}
+                      </div>
+                      <div className="mb-2 px-1 text-[12px] font-medium leading-snug text-black/45">
+                        {homeCopy.exportDataHint}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleExportUserData}
+                        disabled={isExportingData}
+                        className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
+                      >
+                        {isExportingData ? homeCopy.exportingData : homeCopy.exportJson}
+                      </button>
+                      {exportDataStatus && (
+                        <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
+                          {exportDataStatus}
+                        </div>
+                      )}
                     </div>
                     <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
