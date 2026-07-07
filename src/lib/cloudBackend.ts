@@ -36,6 +36,20 @@ const requireSupabase = () => {
   return supabase;
 };
 
+const activateCloudSession = async (session: CloudSession | null) => {
+  const client = requireSupabase();
+  if (!session?.access_token || !session.refresh_token) {
+    throw new CloudAuthError('registration_disabled', 'A login session was not returned by Supabase.');
+  }
+
+  const { error } = await client.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  });
+
+  if (error) throw error;
+};
+
 export const normalizeAccountId = (accountId: string) => accountId.trim().toLowerCase();
 
 export const accountIdToAuthEmail = (accountId: string) => {
@@ -209,6 +223,7 @@ export const loginCloudAccount = async ({
   if (signInResult.error || !user) {
     throw new CloudAuthError('invalid_credentials', 'Invalid account or password.');
   }
+  await activateCloudSession(signInResult.data.session);
 
   try {
     const initialData = buildInitialCloudData({
@@ -266,6 +281,7 @@ export const registerCloudAccount = async ({
     if (!signUpResult.data.session || !signUpResult.data.user) {
       throw new CloudAuthError('registration_disabled', 'Supabase email confirmation must be disabled for ID-only login.');
     }
+    await activateCloudSession(signUpResult.data.session);
 
     const initialData = buildInitialCloudData({
       account: normalizedAccount,
