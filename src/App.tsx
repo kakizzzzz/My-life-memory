@@ -247,6 +247,7 @@ const DEFAULT_USER_LOCATION: [number, number] = [31.2304, 121.4737];
 const DEFAULT_RECORD_STAR_LOCATION: [number, number] = [31.2312, 121.4744];
 const LEGACY_RECORD_STAR_LOCATION: [number, number] = [36.36705, 127.34425];
 const APP_STORAGE_KEY = 'campus-map-app-state-v1';
+const INITIAL_PERMISSION_PROMPT_KEY = 'my-life-memory-initial-permission-prompt-v1';
 const GEOLOCATION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
   maximumAge: 0,
@@ -419,6 +420,26 @@ const readPersistedAppState = (): PersistedAppState | null => {
   }
 };
 
+const readInitialPermissionPromptSeen = () => {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    return window.localStorage.getItem(INITIAL_PERMISSION_PROMPT_KEY) === 'seen';
+  } catch {
+    return false;
+  }
+};
+
+const markInitialPermissionPromptSeen = () => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(INITIAL_PERMISSION_PROMPT_KEY, 'seen');
+  } catch {
+    // Ignore storage failures; the prompt should still be dismissible.
+  }
+};
+
 const getPublicProfileSnapshot = (profile?: Partial<UserProfile>): Partial<UserProfile> => ({
   name: profile?.name || '',
   account: profile?.account || '',
@@ -527,8 +548,8 @@ const HOME_COPY = {
     userManual: 'User manual',
     openManual: 'Open manual',
     closeManual: 'Close manual',
-    initialPermissionsTitle: 'Enable location and direction',
-    initialPermissionsBody: 'To center the map on you, move the default star nearby, rotate the origin probe, and record walking routes, the app needs browser location and device direction permission. You can skip this and open permissions later in Settings.',
+    initialPermissionsTitle: 'Location permission',
+    initialPermissionsBody: 'Allow location to center the map on your current position and update the origin marker.',
     notNow: 'Later',
     manualIntro: 'My life memory is a private life map. It starts from your current location, lets you place stars for meaningful places, and connects notes, photos, walking routes, coordinates, and statistics into one personal memory space.',
     manualSections: [
@@ -649,8 +670,8 @@ const HOME_COPY = {
     userManual: '用户手册',
     openManual: '打开查阅',
     closeManual: '关闭手册',
-    initialPermissionsTitle: '开启定位与方向',
-    initialPermissionsBody: '为了把地图居中到你、把默认星星放到附近、让原点探头随手机方向旋转，并记录步行路线，需要浏览器定位和设备方向权限。你也可以先跳过，之后在设置里再打开权限。',
+    initialPermissionsTitle: '定位权限',
+    initialPermissionsBody: '允许定位后，地图会回到你当前的位置，并更新原点。',
     notNow: '稍后',
     manualIntro: 'My life memory 是一个私人生活地图。它从你的当前位置出发，用星星记录重要地点，再把文字、图片、步行路线、坐标和统计放进同一个记忆空间里。',
     manualSections: [
@@ -771,8 +792,8 @@ const HOME_COPY = {
     userManual: '사용 설명서',
     openManual: '열어 보기',
     closeManual: '설명서 닫기',
-    initialPermissionsTitle: '위치와 방향 켜기',
-    initialPermissionsBody: '지도를 현재 위치로 맞추고, 기본 별표를 근처에 두며, 원점 방향 표시를 회전시키고 도보 경로를 기록하려면 브라우저 위치와 기기 방향 권한이 필요합니다. 지금 건너뛰고 나중에 설정에서 열 수도 있습니다.',
+    initialPermissionsTitle: '위치 권한',
+    initialPermissionsBody: '위치를 허용하면 지도가 현재 위치로 이동하고 원점이 업데이트됩니다.',
     notNow: '나중에',
     manualIntro: 'My life memory는 현재 위치에서 시작해 별표로 중요한 장소를 남기고, 글, 사진, 도보 경로, 좌표, 통계를 하나의 개인 기억 지도에 연결하는 앱입니다.',
     manualSections: [
@@ -1557,6 +1578,9 @@ export default function App() {
   const [activeHomePanel, setActiveHomePanel] = useState<HomePanel>(null);
   const [isUserManualOpen, setIsUserManualOpen] = useState(false);
   const [isInitialPermissionPromptOpen, setIsInitialPermissionPromptOpen] = useState(false);
+  const [hasSeenInitialPermissionPrompt, setHasSeenInitialPermissionPrompt] = useState(() => (
+    readInitialPermissionPromptSeen()
+  ));
   const [recordsFilter, setRecordsFilter] = useState<RecordsFilter>('all');
   const [selectedRecordsDateKey, setSelectedRecordsDateKey] = useState<string | null>(null);
   const [isRecordsMenuOpen, setIsRecordsMenuOpen] = useState(false);
@@ -1653,7 +1677,6 @@ export default function App() {
   const trackingStartedAtRef = React.useRef(0);
   const lastCompassHeadingAtRef = React.useRef(0);
   const isRequestingHeadingPermissionRef = React.useRef(false);
-  const hasShownInitialPermissionPromptRef = React.useRef(false);
   const hasSyncedDefaultStarToGpsRef = React.useRef(false);
   const isApplyingCloudStateRef = React.useRef(false);
   const cloudReadyToSaveRef = React.useRef(!isCloudBackendEnabled);
@@ -1909,6 +1932,10 @@ export default function App() {
   const handleOpenPermissions = React.useCallback(async () => {
     if (typeof window === 'undefined') return;
 
+    markInitialPermissionPromptSeen();
+    setHasSeenInitialPermissionPrompt(true);
+    setIsInitialPermissionPromptOpen(false);
+
     const canRequestLocation = canUseBrowserGeolocation();
     const canRequestHeading = Boolean(window.DeviceOrientationEvent);
 
@@ -1929,13 +1956,19 @@ export default function App() {
     setPermissionRequestState(headingReady || locationReady ? 'ready' : 'denied');
   }, [requestLocationPermissionOnce, startHeadingWatch]);
 
-  const handleInitialPermissionRequest = React.useCallback(async () => {
+  const closeInitialPermissionPrompt = React.useCallback(() => {
+    markInitialPermissionPromptSeen();
+    setHasSeenInitialPermissionPrompt(true);
     setIsInitialPermissionPromptOpen(false);
+  }, []);
+
+  const handleInitialPermissionRequest = React.useCallback(async () => {
+    closeInitialPermissionPrompt();
     await handleOpenPermissions();
     if (lastGpsLocationRef.current) {
       setFlyTarget(lastGpsLocationRef.current);
     }
-  }, [handleOpenPermissions]);
+  }, [closeInitialPermissionPrompt, handleOpenPermissions]);
 
   useEffect(() => {
     if (activeHomePanel !== 'theme') {
@@ -1964,6 +1997,7 @@ export default function App() {
 
   useEffect(() => {
     if (isSignedIn) return;
+    hasSyncedDefaultStarToGpsRef.current = false;
     setActiveView('home');
     setActiveHomePanel(null);
     setIsUserManualOpen(false);
@@ -1980,10 +2014,11 @@ export default function App() {
 
   useEffect(() => {
     if (!isSignedIn || activeView !== 'map' || permissionRequestState === 'ready') return;
-    if (hasShownInitialPermissionPromptRef.current) return;
-    hasShownInitialPermissionPromptRef.current = true;
+    if (hasSeenInitialPermissionPrompt) return;
+    markInitialPermissionPromptSeen();
+    setHasSeenInitialPermissionPrompt(true);
     setIsInitialPermissionPromptOpen(true);
-  }, [activeView, isSignedIn, permissionRequestState]);
+  }, [activeView, hasSeenInitialPermissionPrompt, isSignedIn, permissionRequestState]);
 
   useEffect(() => {
     if (isCloudBackendEnabled) {
@@ -2334,6 +2369,7 @@ export default function App() {
       : undefined;
     isApplyingCloudStateRef.current = true;
     cloudReadyToSaveRef.current = false;
+    hasSyncedDefaultStarToGpsRef.current = false;
 
     if (isMapStyle(remoteState.mapStyle)) setMapStyle(remoteState.mapStyle);
     setSystemTheme({
@@ -4796,7 +4832,7 @@ export default function App() {
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsInitialPermissionPromptOpen(false)}
+                  onClick={closeInitialPermissionPrompt}
                   className="h-11 rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
                 >
                   {homeCopy.notNow}
