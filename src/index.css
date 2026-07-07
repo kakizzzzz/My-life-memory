@@ -115,7 +115,7 @@ html, body {
 }
 
 .record-preview-card {
-  height: 132px;
+  height: 116px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -127,13 +127,13 @@ html, body {
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   overflow-wrap: anywhere;
 }
 
 .record-preview-time {
   flex: 0 0 auto;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .note-title-editor {

@@ -42,7 +42,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background-color: #0f172a;
+      background-color: transparent;
       touch-action: none;
     }
     #mapCanvas {
@@ -75,7 +75,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
 
       isInitialized = true;
 
-      const ctx = canvas.getContext('2d', { alpha: false });
+      const ctx = canvas.getContext('2d', { alpha: true });
       const isFullscreen = window.IS_FULLSCREEN === true;
       canvas.style.cursor = isFullscreen ? 'grab' : 'default';
 
@@ -391,8 +391,12 @@ const mosaicMapHtml = `<!DOCTYPE html>
       }
 
       function draw(now = performance.now()) {
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (isFullscreen) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        } else {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         if (isFullscreen) {
           const actualWidth = (mapBounds.maxX - mapBounds.minX) * scale;
