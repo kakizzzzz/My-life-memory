@@ -1503,7 +1503,7 @@ export default function App() {
   useEffect(() => {
     if (hasRequestedInitialLocationRef.current) return;
     hasRequestedInitialLocationRef.current = true;
-    requestUserLocation(false);
+    requestUserLocation(true);
   }, [requestUserLocation]);
 
   useEffect(() => {
