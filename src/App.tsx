@@ -2669,7 +2669,7 @@ export default function App() {
   const selectedFontScale = LANGUAGE_FONT_SCALE[language] || LANGUAGE_FONT_SCALE.en;
   const permissionStatusText = (
     permissionRequestState === 'requesting' ? homeCopy.permissionRequesting :
-    permissionRequestState === 'ready' ? homeCopy.permissionReady :
+    permissionRequestState === 'ready' ? '' :
     permissionRequestState === 'denied' ? homeCopy.permissionDenied :
     permissionRequestState === 'unsupported' ? homeCopy.permissionUnsupported :
     ''
@@ -4222,7 +4222,7 @@ export default function App() {
                 >
                   <div className="relative flex w-full flex-col items-center">
                     <div className="relative z-10 mb-8 w-full text-center">
-                      <h1 className="font-sans text-[36px] font-bold leading-none tracking-tight text-black">
+                      <h1 className="app-display-title text-[36px] font-bold leading-none text-black">
                         My life memory
                       </h1>
                     </div>
