@@ -619,9 +619,10 @@ const formatChartValue = (value: number) => {
 };
 
 export function TripStatisticsView({ activityPoints = [], activityCount = 0, textRankings = [], language = 'en' }: TripStatisticsViewProps) {
-  const [rankingPage, setRankingPage] = React.useState(0);
+  const [rankingScrollState, setRankingScrollState] = React.useState({ canLeft: false, canRight: false });
   const [expandedMapKey, setExpandedMapKey] = React.useState(0);
   const [isExpandedMapOpen, setIsExpandedMapOpen] = React.useState(false);
+  const rankingScrollRef = React.useRef<HTMLDivElement>(null);
   const fullscreenMapRef = React.useRef<HTMLDivElement>(null);
   const mapSessionKey = React.useMemo(() => Date.now(), []);
   const copy = TRIP_COPY[language as keyof typeof TRIP_COPY] || TRIP_COPY.en;
@@ -634,17 +635,44 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     [activityPoints, copy]
   );
   const markedCount = Math.max(0, Math.round(activityCount));
-  const rankingPageSize = 7;
-  const maxRankingPage = Math.max(0, Math.ceil(textRankings.length / rankingPageSize) - 1);
-  const chartItems = textRankings.slice(
-    rankingPage * rankingPageSize,
-    rankingPage * rankingPageSize + rankingPageSize
-  );
-  const maxChartValue = Math.max(1, ...chartItems.map(item => item.value));
+  const maxChartValue = Math.max(1, ...textRankings.map(item => item.value));
+
+  const updateRankingScrollState = React.useCallback(() => {
+    const el = rankingScrollRef.current;
+    if (!el) return;
+
+    const maxScrollLeft = el.scrollWidth - el.clientWidth;
+    setRankingScrollState({
+      canLeft: el.scrollLeft > 1,
+      canRight: el.scrollLeft < maxScrollLeft - 1,
+    });
+  }, []);
 
   React.useEffect(() => {
-    setRankingPage(0);
-  }, [textRankings]);
+    const el = rankingScrollRef.current;
+    if (!el) return;
+
+    el.scrollTo({ left: 0 });
+    requestAnimationFrame(updateRankingScrollState);
+  }, [textRankings, updateRankingScrollState]);
+
+  React.useEffect(() => {
+    const update = () => requestAnimationFrame(updateRankingScrollState);
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [updateRankingScrollState]);
+
+  const scrollRanking = React.useCallback((direction: -1 | 1) => {
+    const el = rankingScrollRef.current;
+    if (!el) return;
+
+    el.scrollBy({
+      left: direction * Math.max(72, el.clientWidth * 0.62),
+      behavior: 'smooth',
+    });
+    window.setTimeout(updateRankingScrollState, 360);
+  }, [updateRankingScrollState]);
 
   const openExpandedMap = React.useCallback(() => {
     setExpandedMapKey(key => key + 1);
@@ -711,15 +739,19 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
 
           <div className="mt-1 flex min-h-0 flex-1 -translate-y-1 items-end justify-center px-8">
             <button
-              onClick={() => setRankingPage(page => page <= 0 ? maxRankingPage : page - 1)}
-              className={`absolute left-3 top-[58%] -translate-y-1/2 text-gray-300 transition-colors hover:text-gray-500 ${maxRankingPage === 0 ? 'pointer-events-none opacity-0' : ''}`}
+              onClick={() => scrollRanking(-1)}
+              className={`absolute left-2 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.previousRanking}
             >
               <ChevronLeft size={28} />
             </button>
 
-            <div className="flex h-full min-h-0 w-full items-end justify-center gap-2 pb-0 pt-4">
-              {chartItems.map((item, index) => (
+            <div
+              ref={rankingScrollRef}
+              onScroll={updateRankingScrollState}
+              className="flex h-full min-h-0 w-full items-end gap-2 overflow-x-auto px-10 pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {textRankings.map((item, index) => (
                 <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
                   <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
                   <span
@@ -734,8 +766,8 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             </div>
 
             <button
-              onClick={() => setRankingPage(page => page >= maxRankingPage ? 0 : page + 1)}
-              className={`absolute right-3 top-[58%] -translate-y-1/2 text-gray-300 transition-colors hover:text-gray-500 ${maxRankingPage === 0 ? 'pointer-events-none opacity-0' : ''}`}
+              onClick={() => scrollRanking(1)}
+              className={`absolute right-2 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.nextRanking}
             >
               <ChevronRight size={28} />
