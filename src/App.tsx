@@ -147,8 +147,8 @@ const THEME_PRESETS: { label: Record<string, string>; theme: SystemTheme }[] = [
 ];
 
 const THEME_PICKER_COLORS = [
-  '#B98A78', '#A994AA', '#D8C66C', '#88AA9A', '#C4D4C5', '#D0D5C1',
-  '#D7E7EE', '#8AAEBC', '#E8DAE8', '#FAF4F0', '#28292B', '#5C5C5C'
+  '#D2936D', '#B6A5B9', '#EDC727', '#88AA9A', '#C4D4C5', '#D0D5C1',
+  '#CBE0E8', '#80AACD', '#D3CCE3', '#F0EBE1', '#28292B'
 ];
 
 const READER_TEXT_COLORS = [
@@ -3677,7 +3677,7 @@ export default function App() {
                                     className="w-[20px] h-[20px] rounded-[6px] relative overflow-hidden"
                                     style={{ boxShadow: showThemeCustomPicker || !THEME_PICKER_COLORS.includes(systemTheme[control.key]) ? '0 0 0 1.5px white' : 'none' }}
                                   >
-                                    <div className="w-full h-full bg-gradient-to-br from-[#b98a78] via-[#a994aa] to-[#8aaebc] absolute inset-0 pointer-events-none" />
+                                    <div className="w-full h-full bg-gradient-to-br from-[#12c2e9] via-[#c471ed] to-[#f64f59] absolute inset-0 pointer-events-none" />
                                   </button>
                                 </div>
                               </div>
