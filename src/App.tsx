@@ -201,6 +201,12 @@ const LANGUAGE_OPTIONS = [
   { label: '한국어', value: 'ko' },
 ];
 
+const LOGIN_LANGUAGE_LABELS: Record<string, string> = {
+  zh: '中',
+  en: 'EN',
+  ko: '한',
+};
+
 const LANGUAGE_FONT_FAMILIES: Record<string, string> = {
   en: '"Afacad", ui-sans-serif, system-ui, sans-serif',
   zh: '"Noto Serif SC", "Songti SC", serif',
@@ -2220,7 +2226,6 @@ export default function App() {
       password: visiblePassword,
       avatarUrl: cloudProfile.avatarUrl || remoteState.profile?.avatarUrl || prev.avatarUrl || '',
     }));
-    if (isLanguage(remoteState.language)) setLanguage(remoteState.language);
     setStars(normalizeInitialStars(remoteState.stars) || [createDefaultRecordStar()]);
     setSavedTracks(Array.isArray(remoteState.savedTracks) ? remoteState.savedTracks : []);
     setIsSignedIn(true);
@@ -4104,6 +4109,19 @@ export default function App() {
               {!isSignedIn ? (
                 <>
                 <LoginWorldMapBackground />
+                <div className="absolute right-3 top-4 z-20 flex rounded-full bg-[var(--app-card)] p-1 shadow-sm">
+                  {LANGUAGE_OPTIONS.map(option => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      onClick={() => setLanguage(option.value)}
+                      className={`h-8 min-w-8 rounded-full px-2 text-[12px] font-semibold transition-colors ${language === option.value ? 'bg-[var(--app-dark)] text-white' : 'text-black/55'}`}
+                      aria-label={option.label}
+                    >
+                      {LOGIN_LANGUAGE_LABELS[option.value] || option.label}
+                    </button>
+                  ))}
+                </div>
                 <form
                   onSubmit={handleLogin}
                   className="relative z-10 flex min-h-full flex-col items-center justify-center"
