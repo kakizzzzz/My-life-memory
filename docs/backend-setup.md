@@ -1,9 +1,9 @@
 # Backend Setup
 
-This app can run in two modes:
+My Life Memory can run in two modes:
 
 - Without Supabase env vars: local-only fallback using browser storage.
-- With Supabase env vars: Supabase Auth + private per-user cloud sync.
+- With Supabase env vars: Supabase Auth, per-user app state sync, and private Storage images.
 
 ## Supabase Steps
 
@@ -13,47 +13,61 @@ This app can run in two modes:
    This creates:
    - `profiles`
    - `app_states`
-   - the private `life-media` Storage bucket
-   - RLS policies for per-user rows and per-user storage folders
-4. If you get a permission/setup error, check the debug details in the app login card (code / status / postgres message) first; then run these grants once if needed:
-
-```sql
-grant usage on schema public to authenticated;
-grant select, insert, update on public.profiles to authenticated;
-grant select, insert, update on public.app_states to authenticated;
-```
-
-If the error still shows after grants, open a real row in your app (not production cache) and check debug info:
-
-1. Open the login page in Dev mode.
-2. Use the same account/password that fails.
-3. In the red error area, expand the technical debug block and confirm both:
-   - `details.clientProjectRef` matches your configured `VITE_SUPABASE_URL` project ref.
-   - `details.tokenRef` matches the same project ref.
-
-If they differ, you are likely pointing to the wrong Supabase project URL/key pair.
-
-You can also run `supabase/verify-cloud-backend.sql` in SQL Editor after sign-in flow to inspect permissions/policies by project.
-
-5. Copy `.env.example` to `.env.local`.
+   - private Storage bucket `life-media`
+   - RLS policies for per-user rows
+   - Storage policies for per-user image paths
+4. Copy `.env.example` to `.env.local`.
 5. Fill:
 
 ```bash
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 ```
 
 6. Restart the dev server.
 
-## Data Model
+## Storage Rules
 
-- Supabase Auth stores the password and session.
-- `profiles.account_id` is unique, so duplicate app IDs cannot be created.
-- `app_states.state` stores the user's private app state.
-- Password fields are stripped before app state is saved.
-- `life-media` is a private Storage bucket. User media paths should live under `<auth.uid()>/...`.
-- Row Level Security is enabled so users can only read/write their own rows.
+The app uploads avatars and note images to the private `life-media` bucket. Object paths always start with the authenticated user ID:
 
-## Current Limit
+```text
+authUserId/avatars/profile/imageId.jpg
+authUserId/notes/noteId/imageId.jpg
+```
 
-The Storage bucket and RLS policies are prepared. The remaining migration is frontend media handling: upload avatars and note images to `life-media`, save only file paths in `app_states.state`, and generate signed URLs when rendering private images.
+The app state stores only image metadata:
+
+```json
+{
+  "provider": "supabase",
+  "bucket": "life-media",
+  "path": "authUserId/notes/noteId/imageId.jpg",
+  "mimeType": "image/jpeg",
+  "size": 102400,
+  "createdAt": 1783430000000
+}
+```
+
+Private images render through short-lived Supabase signed URLs. Signed URLs are cached in memory and are not saved to `app_states.state`.
+
+## Verification
+
+Run `supabase/verify-cloud-backend.sql` in SQL Editor to inspect:
+
+- tables
+- grants
+- RLS policies
+- `life-media` bucket
+- Storage object policies
+- legacy password leakage in `app_states`
+
+If the app says cloud setup is blocked, run `supabase/fix-permissions.sql` once, then run the verification SQL again.
+
+## Security Checklist
+
+- Never commit `.env.local`.
+- Never put `service_role`, `DATABASE_URL`, or database password in frontend code.
+- The frontend should use only the Supabase publishable/anon key.
+- Keep `life-media` private.
+- Keep Storage object policies scoped to `auth.uid()` path prefixes.
+- Do not store image data URLs in cloud state except as a temporary legacy fallback.

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { MapContainer, TileLayer, Marker, useMap, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
-import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Languages, Download, CalendarDays, Camera, Eye, EyeOff } from 'lucide-react';
+import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Languages, Download, CalendarDays, Camera, Eye, EyeOff, Underline } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import { StarActionOverlay } from './StarActionOverlay';
@@ -10,6 +10,19 @@ import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
 import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
 import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
+import {
+  buildStorageImageSrc,
+  dehydrateStorageMediaHtml,
+  deleteImageFromStorage,
+  hydrateStorageMediaHtml,
+  imageMetadataFromElement,
+  isSupabaseMediaEnabled,
+  storageImageAttrsHtml,
+  storagePlaceholderSrc,
+  uploadImageToStorage,
+  warmStorageImageUrls,
+  type StoredImageMetadata,
+} from './lib/mediaStorage';
 import {
   getCloudSession,
   loadCloudAccountData,
@@ -60,6 +73,7 @@ type NoteData = {
   contentHtml?: string;
   imageUrl?: string;
   imageUrls?: string[];
+  images?: StoredImageMetadata[];
   fontSize?: number;
   titleFontSize?: number;
   createdAt?: number;
@@ -105,6 +119,7 @@ type UserProfile = {
   account: string;
   password: string;
   avatarUrl: string;
+  avatarImage?: StoredImageMetadata;
 };
 
 type UploadedImage = {
@@ -387,6 +402,10 @@ const hasLoginAccount = (profile: UserProfile) => (
   profile.account.trim().length > 0
 );
 
+const getPersistableAvatarUrl = (profile?: Partial<UserProfile>) => (
+  profile?.avatarImage ? storagePlaceholderSrc(profile.avatarImage) : profile?.avatarUrl || ''
+);
+
 const readPersistedAppState = (): PersistedAppState | null => {
   if (typeof window === 'undefined') return null;
 
@@ -403,7 +422,8 @@ const readPersistedAppState = (): PersistedAppState | null => {
 const getPublicProfileSnapshot = (profile?: Partial<UserProfile>): Partial<UserProfile> => ({
   name: profile?.name || '',
   account: profile?.account || '',
-  avatarUrl: profile?.avatarUrl || '',
+  avatarUrl: getPersistableAvatarUrl(profile),
+  avatarImage: profile?.avatarImage,
 });
 
 const writePersistedAppState = (state: PersistedAppState) => {
@@ -561,6 +581,7 @@ const HOME_COPY = {
     readerMissing: 'This record is no longer available',
     readerEdit: 'Save record',
     readerReadingSize: 'Change reading size',
+    readerUnderline: 'Underline text',
     readerAddPhoto: 'Add photo',
     readerJumpImage: 'Add image',
     readerEditColor: 'Edit color',
@@ -682,6 +703,7 @@ const HOME_COPY = {
     readerMissing: '这条记录已不可用',
     readerEdit: '保存记录',
     readerReadingSize: '调整阅读字号',
+    readerUnderline: '添加下划线',
     readerAddPhoto: '添加照片',
     readerJumpImage: '添加图片',
     readerEditColor: '编辑颜色',
@@ -803,6 +825,7 @@ const HOME_COPY = {
     readerMissing: '이 기록은 더 이상 사용할 수 없습니다',
     readerEdit: '기록 저장',
     readerReadingSize: '읽기 글자 크기 변경',
+    readerUnderline: '밑줄',
     readerAddPhoto: '사진 추가',
     readerJumpImage: '이미지 추가',
     readerEditColor: '색상 편집',
@@ -904,6 +927,12 @@ const compressImageFileToDataUrl = async (file: File) => {
   return imageBlobToDataUrl(lastBlob);
 };
 
+const dataUrlToFile = async (dataUrl: string, fileName: string) => {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+};
+
 const extractImagesFromHtml = (html?: string) => {
   if (!html || typeof document === 'undefined') return [];
   const container = document.createElement('div');
@@ -911,6 +940,34 @@ const extractImagesFromHtml = (html?: string) => {
   return Array.from(container.querySelectorAll('img'))
     .map(image => image.getAttribute('src'))
     .filter((src): src is string => Boolean(src));
+};
+
+const extractStoredImagesFromHtml = (html?: string) => {
+  if (!html || typeof document === 'undefined') return [];
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  return Array.from(container.querySelectorAll('[data-note-image="true"]'))
+    .map(figure => imageMetadataFromElement(figure))
+    .filter((metadata): metadata is StoredImageMetadata => Boolean(metadata));
+};
+
+const uniqueStoredImages = (metadataList: StoredImageMetadata[]) => (
+  metadataList.filter((metadata, index, list) => (
+    list.findIndex(item => item.bucket === metadata.bucket && item.path === metadata.path) === index
+  ))
+);
+
+const getStoredImagesFromNote = (note?: NoteData) => (
+  uniqueStoredImages([
+    ...(note?.images || []),
+    ...extractStoredImagesFromHtml(note?.contentHtml),
+  ])
+);
+
+const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
+  uniqueStoredImages(metadataList).forEach(metadata => {
+    void deleteImageFromStorage(metadata);
+  });
 };
 
 const htmlToText = (html?: string) => {
@@ -950,12 +1007,21 @@ const readerRemoveImageButtonHtml = (label = 'Remove image') => (
   `</button>`
 );
 
-const imageToReaderHtml = (src: string, altText = 'Note attachment', removeImageText = 'Remove image') => (
+const imageToReaderHtml = (
+  src: string,
+  altText = 'Note attachment',
+  removeImageText = 'Remove image',
+  metadata?: StoredImageMetadata | null
+) => {
+  const mediaAttrs = metadata ? ` ${storageImageAttrsHtml(metadata)}` : '';
+  const imageSrc = metadata ? (src || storagePlaceholderSrc(metadata)) : src;
+  return (
   `<figure class="note-inline-image" contenteditable="false" data-note-image="true">` +
-    `<img src="${escapeHtml(src)}" alt="${escapeHtml(altText)}" />` +
+    `<img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(altText)}"${mediaAttrs} />` +
     readerRemoveImageButtonHtml(removeImageText) +
   `</figure>`
-);
+  );
+};
 
 const readerEditableTailHtml = '<p data-note-tail="true"><br></p>';
 
@@ -1039,7 +1105,7 @@ const cleanReaderHtml = (html: string, imageAltText?: string, removeImageText?: 
       image.alt = imageAltText;
     });
   }
-  return container.innerHTML;
+  return dehydrateStorageMediaHtml(container.innerHTML);
 };
 
 const getReadableNoteHtml = (note?: NoteData, imageAltText = 'Note attachment', removeImageText = 'Remove image') => {
@@ -1047,7 +1113,7 @@ const getReadableNoteHtml = (note?: NoteData, imageAltText = 'Note attachment', 
   const legacyImages = getLegacyNoteImages(note);
   const legacyImageHtml = legacyImages.map(src => imageToReaderHtml(src, imageAltText, removeImageText)).join('');
   const html = note.contentHtml ?? `${textToParagraphHtml(note.content || '')}${legacyImageHtml}`;
-  return cleanReaderHtml(html, imageAltText, removeImageText);
+  return hydrateStorageMediaHtml(cleanReaderHtml(html, imageAltText, removeImageText));
 };
 
 const getReadableTitleHtml = (note?: NoteData, fallbackTitle = 'Untitled note') => (
@@ -1510,6 +1576,7 @@ export default function App() {
   const [galleryPreviewImage, setGalleryPreviewImage] = useState<UploadedImage | null>(null);
   const [profile, setProfile] = useState<UserProfile>(() => initialProfile);
   const [isSignedIn, setIsSignedIn] = useState(initialSignedIn);
+  const [mediaRefreshKey, setMediaRefreshKey] = useState(0);
   const [authMode, setAuthMode] = useState<CloudAuthAction>('login');
   const [loginAccount, setLoginAccount] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -1546,6 +1613,7 @@ export default function App() {
   const [readerActiveTextTarget, setReaderActiveTextTarget] = useState<'title' | 'content'>('content');
   const [readerSelectedFontSize, setReaderSelectedFontSize] = useState(18);
   const [readerSelectedColor, setReaderSelectedColor] = useState('#D2936D');
+  const [readerSelectedUnderline, setReaderSelectedUnderline] = useState(false);
   const [readerShowCustomPicker, setReaderShowCustomPicker] = useState(false);
   const readerTitleRef = React.useRef<HTMLHeadingElement>(null);
   const readerContentRef = React.useRef<HTMLDivElement>(null);
@@ -2170,6 +2238,11 @@ export default function App() {
   }, []);
 
   const onDeleteStar = (id: string) => {
+    const deletedStar = stars.find(star => star.id === id);
+    if (deletedStar) {
+      deleteStoredImages((deletedStar.notes || []).flatMap(note => getStoredImagesFromNote(note)));
+    }
+
     setStars(prev => {
       const star = prev.find(s => s.id === id);
       if (star && star.tagOrder) {
@@ -2255,6 +2328,10 @@ export default function App() {
 
   const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null) => {
     const remoteState = (cloudState || {}) as PersistedAppState;
+    const remoteProfile = remoteState.profile || {};
+    const avatarImage = remoteProfile.avatarImage?.provider === 'supabase' && remoteProfile.avatarImage.path
+      ? remoteProfile.avatarImage
+      : undefined;
     isApplyingCloudStateRef.current = true;
     cloudReadyToSaveRef.current = false;
 
@@ -2265,11 +2342,12 @@ export default function App() {
     });
     setProfile(prev => ({
       ...DEFAULT_PROFILE,
-      ...(remoteState.profile || {}),
-      name: cloudProfile.name || remoteState.profile?.name || buildDefaultProfileName(cloudProfile.account) || prev.name,
+      ...remoteProfile,
+      name: cloudProfile.name || remoteProfile.name || buildDefaultProfileName(cloudProfile.account) || prev.name,
       account: cloudProfile.account,
       password: '',
-      avatarUrl: cloudProfile.avatarUrl || remoteState.profile?.avatarUrl || prev.avatarUrl || '',
+      avatarUrl: avatarImage ? storagePlaceholderSrc(avatarImage) : cloudProfile.avatarUrl || remoteProfile.avatarUrl || prev.avatarUrl || '',
+      avatarImage,
     }));
     setStars(normalizeInitialStars(remoteState.stars) || [createDefaultRecordStar()]);
     if (lastGpsLocationRef.current) {
@@ -2514,6 +2592,26 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isSupabaseMediaEnabled || !isSignedIn) return;
+
+    let isMounted = true;
+    const metadataList = [
+      profile.avatarImage,
+      ...stars.flatMap(star => (
+        (star.notes || []).flatMap(note => getStoredImagesFromNote(note))
+      )),
+    ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata));
+
+    void warmStorageImageUrls(metadataList).then(() => {
+      if (isMounted) setMediaRefreshKey(key => key + 1);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isSignedIn, profile.avatarImage, profile.account, stars]);
+
+  useEffect(() => {
     if (!isCloudBackendEnabled) return;
 
     let isMounted = true;
@@ -2544,7 +2642,7 @@ export default function App() {
     const cloudProfile: CloudProfile = {
       account: normalizeAccountId(profile.account),
       name: profile.name,
-      avatarUrl: profile.avatarUrl,
+      avatarUrl: getPersistableAvatarUrl(profile),
     };
 
     cloudSaveTimerRef.current = window.setTimeout(() => {
@@ -2561,7 +2659,7 @@ export default function App() {
         window.clearTimeout(cloudSaveTimerRef.current);
       }
     };
-  }, [createAppStateSnapshot, isSignedIn, profile.account, profile.avatarUrl, profile.name]);
+  }, [createAppStateSnapshot, isSignedIn, profile.account, profile.avatarImage, profile.avatarUrl, profile.name]);
 
   const closeHomePanel = React.useCallback(() => {
     if (homeScrollRef.current) {
@@ -2672,12 +2770,23 @@ export default function App() {
     '--app-font-scale': selectedFontScale,
   } as React.CSSProperties;
 
+  const profileAvatarSrc = React.useMemo(() => (
+    profile.avatarImage
+      ? buildStorageImageSrc(profile.avatarImage) || storagePlaceholderSrc(profile.avatarImage)
+      : profile.avatarUrl
+  ), [mediaRefreshKey, profile.avatarImage, profile.avatarUrl]);
+
   const uploadedImages = React.useMemo<UploadedImage[]>(() => {
     const images: UploadedImage[] = [];
     stars.forEach((star, starIndex) => {
       (star.notes || []).forEach((note, noteIndex) => {
+        const hydratedContentHtml = hydrateStorageMediaHtml(note.contentHtml || '');
+        const metadataSources = (note.images || [])
+          .map(metadata => buildStorageImageSrc(metadata))
+          .filter((src): src is string => Boolean(src));
         const sources = [
-          ...extractImagesFromHtml(note.contentHtml),
+          ...extractImagesFromHtml(hydratedContentHtml),
+          ...metadataSources,
           ...(Array.isArray(note.imageUrls) ? note.imageUrls : []),
           ...(note.imageUrl ? [note.imageUrl] : []),
         ];
@@ -2691,7 +2800,7 @@ export default function App() {
       });
     });
     return images;
-  }, [homeCopy.noteLabel, homeCopy.starLabel, stars]);
+  }, [homeCopy.noteLabel, homeCopy.starLabel, mediaRefreshKey, stars]);
 
   const noteRecords = React.useMemo(() => {
     const now = new Date();
@@ -2935,7 +3044,31 @@ export default function App() {
     const file = event.target.files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
     const imageUrl = await compressImageFileToDataUrl(file);
-    setProfile(prev => ({ ...prev, avatarUrl: imageUrl }));
+    const previousAvatarImage = profile.avatarImage;
+    let avatarUrl = imageUrl;
+    let avatarImage: StoredImageMetadata | undefined;
+
+    if (isSupabaseMediaEnabled) {
+      try {
+        const compressedFile = await dataUrlToFile(imageUrl, `avatar-${Date.now()}.jpg`);
+        const uploaded = await uploadImageToStorage(compressedFile, {
+          folder: 'avatars',
+          noteId: 'profile',
+          fileName: compressedFile.name,
+        });
+        if (uploaded.metadata) {
+          avatarUrl = storagePlaceholderSrc(uploaded.metadata);
+          avatarImage = uploaded.metadata;
+        }
+      } catch (error) {
+        console.warn('Supabase Storage avatar upload failed, using data URL fallback:', error);
+      }
+    }
+
+    setProfile(prev => ({ ...prev, avatarUrl, avatarImage }));
+    if (previousAvatarImage && previousAvatarImage.key !== avatarImage?.key) {
+      void deleteImageFromStorage(previousAvatarImage);
+    }
     event.target.value = '';
   };
 
@@ -3002,7 +3135,7 @@ export default function App() {
       titleHtml: getReadableTitleHtml(note, homeCopy.untitledNote),
       contentHtml: getReadableNoteHtml(note, homeCopy.noteImageAlt, homeCopy.removeImage),
     };
-  }, [homeCopy.noteImageAlt, homeCopy.removeImage, homeCopy.untitledNote, readingNoteTarget, stars]);
+  }, [homeCopy.noteImageAlt, homeCopy.removeImage, homeCopy.untitledNote, mediaRefreshKey, readingNoteTarget, stars]);
   const readerRecordKey = readerRecord ? `${readerRecord.star.id}-${readerRecord.note.id}` : null;
 
   React.useLayoutEffect(() => {
@@ -3022,16 +3155,19 @@ export default function App() {
     readerSavedRangeRef.current = null;
     readerPendingTitleStylesRef.current = {};
     readerPendingContentStylesRef.current = {};
+    setReaderSelectedUnderline(false);
   }, [activeView, readerRecordKey, readerRecord?.titleHtml, readerRecord?.contentHtml]);
 
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
     if (!readerRecord) return;
     if (readerContentRef.current) ensureReaderEditableTailAfterMedia(readerContentRef.current);
     const titleHtml = readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml;
-    const contentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
+    const rawContentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
+    const contentHtml = dehydrateStorageMediaHtml(rawContentHtml);
     const title = htmlToText(titleHtml);
     const content = htmlToText(contentHtml);
     const timestamp = Date.now();
+    const images = extractStoredImagesFromHtml(contentHtml);
 
     setStars(prev => prev.map(star => {
       if (star.id !== readerRecord.star.id) return star;
@@ -3045,6 +3181,7 @@ export default function App() {
                 titleHtml,
                 content,
                 contentHtml,
+                images,
                 imageUrl: undefined,
                 imageUrls: undefined,
                 updatedAt: timestamp,
@@ -3182,6 +3319,11 @@ export default function App() {
     return candidate instanceof HTMLElement && element.contains(candidate) ? candidate : element;
   };
 
+  const getReaderUnderlineFromElement = (element: HTMLElement) => {
+    const decorationLine = window.getComputedStyle(element).textDecorationLine;
+    return decorationLine.includes('underline') || Boolean(element.closest('u'));
+  };
+
   const syncReaderToolbarFromRange = React.useCallback((range: Range) => {
     const target = getReaderTargetFromRange(range);
     if (!target) return;
@@ -3194,6 +3336,7 @@ export default function App() {
     setReaderActiveTextTarget(target);
     setReaderSelectedFontSize(Number.isFinite(fontSize) ? normalizeReaderFontSize(fontSize) : 18);
     setReaderSelectedColor(cssColorToHex(computedStyle.color, readerRecord?.note.color || '#D2936D'));
+    setReaderSelectedUnderline(getReaderUnderlineFromElement(computedElement));
   }, [getReaderElementForTarget, getReaderTargetFromRange, getReaderTextNodeInRange, readerRecord?.note.color]);
 
   const saveReaderSelection = React.useCallback(() => {
@@ -3359,6 +3502,13 @@ export default function App() {
     applyReaderStyleToSelection({ color });
   }, [applyReaderStyleToSelection]);
 
+  const handleReaderUnderline = React.useCallback(() => {
+    const nextUnderline = !readerSelectedUnderline;
+    setReaderSelectedUnderline(nextUnderline);
+    setReaderActivePanel(null);
+    applyReaderStyleToSelection({ 'text-decoration-line': nextUnderline ? 'underline' : 'none' });
+  }, [applyReaderStyleToSelection, readerSelectedUnderline]);
+
   const insertStyledReaderText = React.useCallback((
     element: HTMLElement,
     range: Range | null,
@@ -3411,7 +3561,10 @@ export default function App() {
     const removeButton = target.closest('[data-remove-image="true"]');
     if (removeButton) {
       event.preventDefault();
-      removeButton.closest('[data-note-image="true"]')?.remove();
+      const figure = removeButton.closest('[data-note-image="true"]');
+      const metadata = imageMetadataFromElement(figure);
+      if (metadata) void deleteImageFromStorage(metadata);
+      figure?.remove();
       if (editor) ensureReaderEditableTailAfterMedia(editor);
       return;
     }
@@ -3441,10 +3594,26 @@ export default function App() {
     const imageUrl = await compressImageFileToDataUrl(file);
     const editor = readerContentRef.current;
     if (!editor) return;
-    editor.insertAdjacentHTML('beforeend', `${imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage)}${readerEditableTailHtml}`);
+    let imageHtml = imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage);
+
+    if (isSupabaseMediaEnabled) {
+      try {
+        const compressedFile = await dataUrlToFile(imageUrl, `${Date.now()}.jpg`);
+        const uploaded = await uploadImageToStorage(compressedFile, {
+          noteId: readerRecord?.note.id,
+          folder: 'notes',
+          fileName: compressedFile.name,
+        });
+        imageHtml = imageToReaderHtml(uploaded.src, homeCopy.noteImageAlt, homeCopy.removeImage, uploaded.metadata);
+      } catch (error) {
+        console.warn('Supabase Storage upload failed, using data URL fallback:', error);
+      }
+    }
+
+    editor.insertAdjacentHTML('beforeend', `${imageHtml}${readerEditableTailHtml}`);
     ensureReaderEditableTailAfterMedia(editor);
     moveReaderCaretToContentEnd();
-  }, [homeCopy.noteImageAlt, homeCopy.removeImage, moveReaderCaretToContentEnd]);
+  }, [homeCopy.noteImageAlt, homeCopy.removeImage, moveReaderCaretToContentEnd, readerRecord?.note.id]);
 
   const handleReaderImageInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -4269,8 +4438,8 @@ export default function App() {
                   className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[18px] bg-[var(--app-card)] text-black"
                   aria-label={homeCopy.uploadAvatar}
                 >
-                  {profile.avatarUrl ? (
-                    <img src={profile.avatarUrl} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
+                  {profileAvatarSrc ? (
+                    <img src={profileAvatarSrc} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-[var(--app-card)]">
                       <UserRound size={42} strokeWidth={2} />
@@ -4335,8 +4504,8 @@ export default function App() {
                       className="mb-4 h-24 w-24 overflow-hidden rounded-[18px] bg-[var(--app-soft-surface)] text-black"
                       aria-label={homeCopy.uploadAvatar}
                     >
-                      {profile.avatarUrl ? (
-                        <img src={profile.avatarUrl} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
+                      {profileAvatarSrc ? (
+                        <img src={profileAvatarSrc} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
                           <UserRound size={42} strokeWidth={2} />
@@ -4856,6 +5025,16 @@ export default function App() {
                           </div>
                         )}
                       </div>
+                      <button
+                        className={`${readerToolButtonClass} ${readerSelectedUnderline ? 'bg-[var(--app-dark)] text-white' : ''}`}
+                        onPointerDown={event => {
+                          keepReaderSelectionPointerDown(event);
+                          handleReaderUnderline();
+                        }}
+                        aria-label={homeCopy.readerUnderline}
+                      >
+                        <Underline size={24} strokeWidth={2.4} />
+                      </button>
                       <button className={readerToolButtonClass} onClick={() => readerCameraInputRef.current?.click()} aria-label={homeCopy.readerAddPhoto}>
                         <Camera size={24} strokeWidth={2.4} />
                       </button>
@@ -5107,6 +5286,7 @@ export default function App() {
              star={editingStar}
              initialNoteId={editingNoteTarget.noteId}
              language={language}
+             mediaRefreshKey={mediaRefreshKey}
              onClose={() => setEditingNoteTarget(null)}
              onSave={(notes) => {
                setStars(prev => prev.map(s => s.id === editingNoteTarget.starId ? { ...s, notes } : s));

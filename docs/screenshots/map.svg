@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-label="Map screen preview">
+  <rect width="390" height="844" fill="#e5e5e5"/>
+  <path d="M0 120 C70 90 120 160 190 128 C260 96 318 132 390 102" fill="none" stroke="#cfcfcf" stroke-width="18" opacity="0.7"/>
+  <path d="M0 360 C88 318 132 406 210 370 C270 342 332 362 390 330" fill="none" stroke="#d7d7d7" stroke-width="22" opacity="0.8"/>
+  <path d="M50 0 C70 140 92 240 78 390 C66 520 96 652 118 844" fill="none" stroke="#cccccc" stroke-width="12" opacity="0.75"/>
+  <path d="M292 0 C278 154 300 268 282 410 C264 546 280 690 246 844" fill="none" stroke="#d2d2d2" stroke-width="10" opacity="0.85"/>
+  <g transform="translate(202 374)">
+    <path d="M0 -18 L5 -5 L19 -5 L8 3 L12 17 L0 9 L-12 17 L-8 3 L-19 -5 L-5 -5 Z" fill="#edc727"/>
+  </g>
+  <g transform="translate(154 424)">
+    <circle r="12" fill="#000"/>
+    <circle r="18" fill="none" stroke="#c3c3c3" stroke-width="6"/>
+    <path d="M0 0 L-70 -22 L-70 22 Z" fill="#c3c3c3" opacity="0.28"/>
+  </g>
+  <rect x="62" y="714" width="266" height="70" rx="35" fill="#fff" stroke="#d0d0d0"/>
+  <circle cx="112" cy="749" r="18" fill="#f3f3f3"/>
+  <circle cx="166" cy="749" r="18" fill="#f3f3f3"/>
+  <circle cx="224" cy="749" r="25" fill="#5c5c5c"/>
+  <circle cx="280" cy="749" r="18" fill="#f3f3f3"/>
+</svg>

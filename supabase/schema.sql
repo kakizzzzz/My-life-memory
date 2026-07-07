@@ -84,8 +84,8 @@ using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
 -- Private image storage.
--- File paths should live under the authenticated user's UUID folder:
---   <auth.uid()>/<folder>/<filename>
+-- File paths must live under the authenticated user's UUID folder:
+--   <auth.uid()>/<folder>/<record-id>/<image-id>.jpg
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'life-media',

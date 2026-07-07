@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-label="Login screen preview">
+  <rect width="390" height="844" fill="#f3f3f3"/>
+  <g fill="#d2d2d2">
+    <circle cx="44" cy="578" r="2"/><circle cx="64" cy="572" r="2"/><circle cx="84" cy="568" r="2"/><circle cx="104" cy="574" r="2"/>
+    <circle cx="126" cy="586" r="2"/><circle cx="148" cy="592" r="2"/><circle cx="170" cy="590" r="2"/><circle cx="192" cy="584" r="2"/>
+    <circle cx="214" cy="580" r="2"/><circle cx="236" cy="584" r="2"/><circle cx="258" cy="594" r="2"/><circle cx="280" cy="604" r="2"/>
+    <circle cx="302" cy="606" r="2"/><circle cx="324" cy="598" r="2"/><circle cx="346" cy="590" r="2"/>
+  </g>
+  <text x="195" y="252" text-anchor="middle" fill="#111" font-family="Georgia, serif" font-size="34" font-weight="700">My life memory</text>
+  <rect x="48" y="294" width="294" height="218" rx="20" fill="#ffffff" opacity="0.88"/>
+  <rect x="78" y="342" width="234" height="48" rx="24" fill="#e4e4e4"/>
+  <rect x="78" y="408" width="234" height="48" rx="24" fill="#e4e4e4"/>
+  <rect x="78" y="474" width="108" height="44" rx="22" fill="#5c5c5c"/>
+  <rect x="204" y="474" width="108" height="44" rx="22" fill="#d9d9d9"/>
+  <text x="132" y="502" text-anchor="middle" fill="#fff" font-family="Arial, sans-serif" font-size="16">Login</text>
+  <text x="258" y="502" text-anchor="middle" fill="#111" font-family="Arial, sans-serif" font-size="16">Register</text>
+</svg>

@@ -3,11 +3,23 @@ import { motion } from 'motion/react';
 import { X, Palette, ImageIcon, Camera, Check, ChevronsLeft, ChevronsRight, Plus, Trash2, Underline } from 'lucide-react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import { StarData } from './App';
+import {
+  dehydrateStorageMediaHtml,
+  deleteImageFromStorage,
+  hydrateStorageMediaHtml,
+  imageMetadataFromElement,
+  isSupabaseMediaEnabled,
+  storageImageAttrsHtml,
+  storagePlaceholderSrc,
+  uploadImageToStorage,
+  type StoredImageMetadata,
+} from './lib/mediaStorage';
 
 type NoteData = NonNullable<StarData['notes']>[number] & {
   titleHtml?: string;
   contentHtml?: string;
   imageUrls?: string[];
+  images?: StoredImageMetadata[];
   titleFontSize?: number;
 };
 
@@ -15,6 +27,7 @@ interface NoteEditorModalProps {
   star: StarData;
   initialNoteId?: string;
   language?: string;
+  mediaRefreshKey?: number;
   onClose: () => void;
   onSave: (notes: NoteData[]) => void;
 }
@@ -160,9 +173,12 @@ const getNoteImages = (note: NoteData | undefined) => {
   return [...imageUrls, ...legacyImageUrl];
 };
 
-const imageToHtml = (imageUrl: string, copy: NoteEditorCopy = NOTE_EDITOR_COPY.en) => (
+const imageToHtml = (imageUrl: string, copy: NoteEditorCopy = NOTE_EDITOR_COPY.en, metadata?: StoredImageMetadata | null) => {
+  const mediaAttrs = metadata ? ` ${storageImageAttrsHtml(metadata)}` : '';
+  const src = metadata ? (imageUrl || storagePlaceholderSrc(metadata)) : imageUrl;
+  return (
   `<figure class="note-inline-image" contenteditable="false" data-note-image="true">` +
-    `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(copy.noteAttachmentAlt)}" />` +
+    `<img src="${escapeHtml(src)}" alt="${escapeHtml(copy.noteAttachmentAlt)}"${mediaAttrs} />` +
     `<button type="button" data-remove-image="true" aria-label="${escapeHtml(copy.removeImage)}">` +
       `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>` +
     `</button>` +
@@ -170,7 +186,8 @@ const imageToHtml = (imageUrl: string, copy: NoteEditorCopy = NOTE_EDITOR_COPY.e
       `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>` +
     `</button>` +
   `</figure>`
-);
+  );
+};
 
 const localizeNoteImageControls = (html: string, copy: NoteEditorCopy) => {
   if (!html || typeof document === 'undefined') return html;
@@ -206,7 +223,7 @@ const localizeNoteImageControls = (html: string, copy: NoteEditorCopy) => {
   container.querySelectorAll<HTMLElement>('[data-preview-image="true"]').forEach(button => {
     button.setAttribute('aria-label', copy.viewLargerImage);
   });
-  return container.innerHTML;
+  return hydrateStorageMediaHtml(container.innerHTML);
 };
 
 const isOldDefaultNote = (note: NoteData) => (
@@ -413,7 +430,41 @@ const compressImageToDataUrl = async (file: File) => {
   return blobToDataUrl(lastBlob);
 };
 
-export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose, onSave }: NoteEditorModalProps) {
+const dataUrlToFile = async (dataUrl: string, fileName: string) => {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+};
+
+const extractStoredImagesFromHtml = (html: string) => {
+  if (!html || typeof document === 'undefined') return [];
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  return Array.from(container.querySelectorAll('[data-note-image="true"]'))
+    .map(figure => imageMetadataFromElement(figure))
+    .filter((metadata): metadata is StoredImageMetadata => Boolean(metadata));
+};
+
+const uniqueStoredImages = (metadataList: StoredImageMetadata[]) => (
+  metadataList.filter((metadata, index, list) => (
+    list.findIndex(item => item.bucket === metadata.bucket && item.path === metadata.path) === index
+  ))
+);
+
+const getStoredImagesFromNote = (note?: NoteData) => (
+  uniqueStoredImages([
+    ...(note?.images || []),
+    ...extractStoredImagesFromHtml(note?.contentHtml || ''),
+  ])
+);
+
+const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
+  uniqueStoredImages(metadataList).forEach(metadata => {
+    void deleteImageFromStorage(metadata);
+  });
+};
+
+export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRefreshKey = 0, onClose, onSave }: NoteEditorModalProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const titleEditorRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -485,10 +536,12 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     setEditorEmpty(plainText.length === 0 && !hasImages);
     setNotes(prev => {
       const next = [...prev];
+      const contentHtml = dehydrateStorageMediaHtml(editor.innerHTML);
       next[currentIndex] = {
         ...next[currentIndex],
         content: plainText,
-        contentHtml: editor.innerHTML,
+        contentHtml,
+        images: extractStoredImagesFromHtml(contentHtml),
         imageUrl: undefined,
         imageUrls: undefined,
       };
@@ -501,7 +554,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     const titleEditor = titleEditorRef.current;
     if (!editor || !titleEditor || !currentNote) return;
     titleEditor.innerHTML = currentNote.titleHtml ?? escapeHtml(currentNote.title || '');
-    editor.innerHTML = currentNote.contentHtml || '';
+    editor.innerHTML = hydrateStorageMediaHtml(currentNote.contentHtml || '');
     ensureEditableTailAfterMedia(editor);
     setEditorEmpty(getEditorPlainText().length === 0 && !editor.querySelector('img'));
     setActivePanel(null);
@@ -510,7 +563,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     setSelectedFontSize(currentNote.fontSize || 18);
     setSelectedUnderline(false);
     setSelectedColor(currentNote.color || '#D2936D');
-  }, [currentIndex, currentNote?.id]);
+  }, [currentIndex, currentNote?.id, mediaRefreshKey]);
 
   useEffect(() => {
     if (!isCameraOpen || !videoRef.current || !cameraStreamRef.current) return;
@@ -1165,12 +1218,12 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     element.dataset.noteTail = 'true';
   };
 
-  const insertImageIntoEditor = (imageUrl: string) => {
+  const insertImageIntoEditor = (imageUrl: string, metadata?: StoredImageMetadata | null) => {
     const editor = editorRef.current;
     if (!editor) return;
 
     const template = document.createElement('template');
-    template.innerHTML = `${imageToHtml(imageUrl, copy)}<p><br></p>`;
+    template.innerHTML = `${imageToHtml(imageUrl, copy, metadata)}<p><br></p>`;
     const nodes = Array.from(template.content.childNodes);
     const savedRange = savedRangeRef.current;
 
@@ -1221,6 +1274,20 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     try {
       for (const file of imageFiles) {
         const imageUrl = await compressImageToDataUrl(file);
+        if (isSupabaseMediaEnabled) {
+          try {
+            const compressedFile = await dataUrlToFile(imageUrl, `${Date.now()}.jpg`);
+            const uploaded = await uploadImageToStorage(compressedFile, {
+              noteId: currentNote?.id,
+              folder: 'notes',
+              fileName: compressedFile.name,
+            });
+            insertImageIntoEditor(uploaded.src, uploaded.metadata);
+            continue;
+          } catch (error) {
+            console.warn('Supabase Storage upload failed, using data URL fallback:', error);
+          }
+        }
         insertImageIntoEditor(imageUrl);
       }
     } finally {
@@ -1274,6 +1341,21 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
       const blob = await canvasToBlob(canvas, 'image/jpeg', 0.92);
       const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
       const imageUrl = await compressImageToDataUrl(file);
+      if (isSupabaseMediaEnabled) {
+        try {
+          const compressedFile = await dataUrlToFile(imageUrl, file.name);
+          const uploaded = await uploadImageToStorage(compressedFile, {
+            noteId: currentNote?.id,
+            folder: 'notes',
+            fileName: compressedFile.name,
+          });
+          insertImageIntoEditor(uploaded.src, uploaded.metadata);
+          stopCamera();
+          return;
+        } catch (error) {
+          console.warn('Supabase Storage upload failed, using data URL fallback:', error);
+        }
+      }
       insertImageIntoEditor(imageUrl);
       stopCamera();
     } finally {
@@ -1293,7 +1375,10 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     const removeButton = target.closest('[data-remove-image="true"]');
     if (removeButton) {
       e.preventDefault();
-      removeButton.closest('[data-note-image="true"]')?.remove();
+      const figure = removeButton.closest('[data-note-image="true"]');
+      const metadata = imageMetadataFromElement(figure);
+      if (metadata) void deleteImageFromStorage(metadata);
+      figure?.remove();
       syncEditorContent();
       return;
     }
@@ -1341,6 +1426,8 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
   };
 
   const handleDeleteNote = () => {
+    deleteStoredImages(getStoredImagesFromNote(notes[currentIndex]));
+
     if (notes.length === 1) {
       setNotes([{
         id: Date.now().toString(),
@@ -1370,17 +1457,27 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', onClose,
     const savedAt = Date.now();
     if (editor) ensureEditableTailAfterMedia(editor);
     const savedNotes = editor ? notes.map((note, idx) => {
-      if (idx !== currentIndex) return note;
+      if (idx !== currentIndex) {
+        const contentHtml = dehydrateStorageMediaHtml(note.contentHtml || '');
+        return {
+          ...note,
+          contentHtml,
+          images: extractStoredImagesFromHtml(contentHtml),
+        };
+      }
       const clone = editor.cloneNode(true) as HTMLElement;
       const noteIdTimestamp = Number(note.id);
       const createdAt = note.createdAt || (Number.isFinite(noteIdTimestamp) && noteIdTimestamp > 0 ? noteIdTimestamp : savedAt);
       clone.querySelectorAll('[data-remove-image="true"]').forEach(button => button.remove());
+      clone.querySelectorAll('[data-preview-image="true"]').forEach(button => button.remove());
+      const contentHtml = dehydrateStorageMediaHtml(clone.innerHTML);
       return {
         ...note,
         title: titleEditor ? getTitlePlainText(titleEditor) : note.title,
         titleHtml: titleEditor ? titleEditor.innerHTML : note.titleHtml,
         content: clone.innerText.trim(),
-        contentHtml: editor.innerHTML,
+        contentHtml,
+        images: extractStoredImagesFromHtml(contentHtml),
         createdAt,
         updatedAt: savedAt,
         imageUrl: undefined,

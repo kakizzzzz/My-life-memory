@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-label="Records screen preview">
+  <rect width="390" height="844" fill="#f3f3f3"/>
+  <text x="48" y="128" fill="#111" font-family="Georgia, serif" font-size="46" font-weight="700">My records</text>
+  <rect x="48" y="166" width="72" height="42" rx="21" fill="#5c5c5c"/>
+  <rect x="136" y="166" width="78" height="42" rx="21" fill="#d9d9d9"/>
+  <rect x="230" y="166" width="78" height="42" rx="21" fill="#d9d9d9"/>
+  <text x="84" y="192" text-anchor="middle" fill="#fff" font-family="Arial, sans-serif" font-size="14">All</text>
+  <text x="175" y="192" text-anchor="middle" fill="#111" font-family="Arial, sans-serif" font-size="14">Month</text>
+  <text x="269" y="192" text-anchor="middle" fill="#111" font-family="Arial, sans-serif" font-size="14">Year</text>
+  <line x1="58" y1="266" x2="58" y2="570" stroke="#d9d9d9" stroke-width="3"/>
+  <circle cx="58" cy="364" r="8" fill="#edc727"/>
+  <text x="90" y="286" fill="#111" font-family="Georgia, serif" font-size="46" font-weight="700">7</text>
+  <text x="142" y="285" fill="#9a9a9a" font-family="Arial, sans-serif" font-size="18">2026/07</text>
+  <rect x="92" y="318" width="250" height="164" rx="18" fill="#ffffff" stroke="#e4e4e4"/>
+  <text x="120" y="364" fill="#111" font-family="Georgia, serif" font-size="21">A quiet place memory</text>
+  <text x="120" y="398" fill="#333" font-family="Georgia, serif" font-size="17">Saved text, photos, and</text>
+  <text x="120" y="424" fill="#333" font-family="Georgia, serif" font-size="17">coordinates stay together.</text>
+  <text x="292" y="456" fill="#8a8a8a" font-family="Arial, sans-serif" font-size="16">18:34</text>
+  <rect x="62" y="714" width="266" height="70" rx="35" fill="#fff" stroke="#d0d0d0"/>
+  <circle cx="112" cy="749" r="18" fill="#f3f3f3"/>
+  <circle cx="166" cy="749" r="18" fill="#f3f3f3"/>
+  <circle cx="224" cy="749" r="25" fill="#5c5c5c"/>
+  <circle cx="280" cy="749" r="18" fill="#f3f3f3"/>
+</svg>
