@@ -88,7 +88,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let maxBlockActivityWeight = 0;
 
       const config = {
-        blockSize: isFullscreen ? 6 : 5,
+        blockSize: 4,
         cornerRadius: 2,
         gap: 1
       };
@@ -148,7 +148,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
           colorToFeature.clear();
 
           const baseScale = isFullscreen
-            ? Math.max(canvas.width, canvas.height) / 3.1
+            ? Math.max(canvas.width, canvas.height) / 2.5
             : canvas.width / 6.5;
           const mapWidth = isFullscreen ? baseScale * Math.PI * 2 : canvas.width;
           const mapHeight = isFullscreen ? baseScale * Math.PI * 2 : canvas.height;
@@ -162,7 +162,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
             .translate(isFullscreen ? [mapWidth / 2, mapHeight / 2] : [canvas.width / 2, canvas.height / 1.6]);
 
           const path = d3.geoPath().projection(projection).context(offscreenCtx);
-          const heatRadius = isFullscreen ? Math.max(16, baseScale * 0.06) : Math.max(7, baseScale * 0.14);
+          const heatRadius = isFullscreen ? Math.max(16, baseScale * 0.045) : Math.max(7, baseScale * 0.14);
           const heatRadiusSq = heatRadius * heatRadius;
           const projectedActivityPoints = activityPoints
             .map(point => {
