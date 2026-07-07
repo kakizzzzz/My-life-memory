@@ -40,6 +40,14 @@ type AppStateRow = {
   state: CloudAppState | null;
 };
 
+const SENSITIVE_CLOUD_STATE_KEYS = new Set([
+  'password',
+  'loginpassword',
+  'registerpassword',
+  'currentpassword',
+  'newpassword',
+]);
+
 export type CloudAuthAction = 'login' | 'register';
 
 export class CloudAuthError extends Error {
@@ -119,6 +127,27 @@ const rowToProfile = (row: ProfileRow, fallbackAccount = ''): CloudProfile => ({
   name: row.name || '',
   avatarUrl: row.avatar_url || '',
 });
+
+const sanitizeCloudValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(item => sanitizeCloudValue(item));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  Object.entries(value as Record<string, unknown>).forEach(([key, entry]) => {
+    if (SENSITIVE_CLOUD_STATE_KEYS.has(key.toLowerCase())) return;
+    sanitized[key] = sanitizeCloudValue(entry);
+  });
+  return sanitized;
+};
+
+const sanitizeCloudAppState = (state: CloudAppState | null): CloudAppState | null => (
+  state ? sanitizeCloudValue(state) as CloudAppState : null
+);
 
 const isCloudSetupError = (error: unknown) => {
   if (!error || typeof error !== 'object') return false;
@@ -341,7 +370,7 @@ export const loadCloudAccountData = async (user: User): Promise<{ profile: Cloud
 
   return {
     profile,
-    state: stateRow?.state || null,
+    state: sanitizeCloudAppState(stateRow?.state || null),
   };
 };
 
@@ -717,11 +746,12 @@ export const saveCloudAppState = async (state: CloudAppState) => {
   const user = userData.user;
   if (!user) throw new Error('No active cloud session.');
 
+  const sanitizedState = sanitizeCloudAppState(state) || {};
   const { error } = await client
     .from('app_states')
     .upsert({
       user_id: user.id,
-      state,
+      state: sanitizedState,
     }, { onConflict: 'user_id' });
 
   if (error) throw error;

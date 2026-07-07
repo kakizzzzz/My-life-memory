@@ -10,6 +10,11 @@ This app can run in two modes:
 1. Create a Supabase project.
 2. In Authentication settings, disable email confirmation for the current ID-only login flow.
 3. Open SQL Editor and run `supabase/schema.sql`.
+   This creates:
+   - `profiles`
+   - `app_states`
+   - the private `life-media` Storage bucket
+   - RLS policies for per-user rows and per-user storage folders
 4. If you get a permission/setup error, check the debug details in the app login card (code / status / postgres message) first; then run these grants once if needed:
 
 ```sql
@@ -45,8 +50,10 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 - Supabase Auth stores the password and session.
 - `profiles.account_id` is unique, so duplicate app IDs cannot be created.
 - `app_states.state` stores the user's private app state.
+- Password fields are stripped before app state is saved.
+- `life-media` is a private Storage bucket. User media paths should live under `<auth.uid()>/...`.
 - Row Level Security is enabled so users can only read/write their own rows.
 
 ## Current Limit
 
-Images are still stored inside the app state as data URLs. This works for small testing, but the next backend step should move avatars and note images into a private Supabase Storage bucket.
+The Storage bucket and RLS policies are prepared. The remaining migration is frontend media handling: upload avatars and note images to `life-media`, save only file paths in `app_states.state`, and generate signed URLs when rendering private images.

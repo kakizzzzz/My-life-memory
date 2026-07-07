@@ -4,3 +4,5 @@
 grant usage on schema public to authenticated;
 grant select, insert, update on public.profiles to authenticated;
 grant select, insert, update on public.app_states to authenticated;
+grant usage on schema storage to authenticated;
+grant select, insert, update, delete on storage.objects to authenticated;

@@ -244,7 +244,6 @@ const TRACK_MAX_SPEED_MPS = 4.5;
 const TRACK_MIN_POINT_INTERVAL_MS = 500;
 const TRACK_STALE_POSITION_GRACE_MS = 2000;
 const CLOUD_PASSWORD_MIN_LENGTH = 6;
-const CLOUD_SESSION_PASSWORD_KEY_PREFIX = `${APP_STORAGE_KEY}:cloud-session-password`;
 
 const isInsideRotatedEllipse = (
   x: number,
@@ -401,6 +400,12 @@ const readPersistedAppState = (): PersistedAppState | null => {
   }
 };
 
+const getPublicProfileSnapshot = (profile?: Partial<UserProfile>): Partial<UserProfile> => ({
+  name: profile?.name || '',
+  account: profile?.account || '',
+  avatarUrl: profile?.avatarUrl || '',
+});
+
 const writePersistedAppState = (state: PersistedAppState) => {
   if (typeof window === 'undefined') return;
 
@@ -408,36 +413,6 @@ const writePersistedAppState = (state: PersistedAppState) => {
     window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
   } catch {
     // Storage can fail when image-heavy notes exceed the browser quota.
-  }
-};
-
-const getCloudSessionPasswordKey = (account = '') => {
-  const normalizedAccount = normalizeAccountId(account);
-  return normalizedAccount ? `${CLOUD_SESSION_PASSWORD_KEY_PREFIX}:${normalizedAccount}` : CLOUD_SESSION_PASSWORD_KEY_PREFIX;
-};
-
-const readCloudSessionPassword = (account = '') => {
-  if (typeof window === 'undefined') return '';
-
-  try {
-    return window.sessionStorage.getItem(getCloudSessionPasswordKey(account)) || '';
-  } catch {
-    return '';
-  }
-};
-
-const writeCloudSessionPassword = (password: string, account = '') => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    const key = getCloudSessionPasswordKey(account);
-    if (password) {
-      window.sessionStorage.setItem(key, password);
-    } else {
-      window.sessionStorage.removeItem(key);
-    }
-  } catch {
-    // Session storage can be unavailable in private browsing.
   }
 };
 
@@ -501,6 +476,7 @@ const HOME_COPY = {
   account: 'Account',
   idUnique: 'Unique ID',
   loginPassword: 'Login password',
+  passwordManaged: 'Password is protected by Supabase Auth',
   showPassword: 'Show password',
   hidePassword: 'Hide password',
   accountAccess: 'Account access',
@@ -621,6 +597,7 @@ const HOME_COPY = {
   account: '账号',
   idUnique: 'ID唯一',
   loginPassword: '登录密码',
+  passwordManaged: '密码由 Supabase Auth 安全保存',
   showPassword: '查看密码',
   hidePassword: '隐藏密码',
   accountAccess: '账号访问',
@@ -741,6 +718,7 @@ const HOME_COPY = {
   account: '계정',
   idUnique: '고유 ID',
   loginPassword: '로그인 비밀번호',
+  passwordManaged: '비밀번호는 Supabase Auth에서 안전하게 관리됩니다',
   showPassword: '비밀번호 보기',
   hidePassword: '비밀번호 숨기기',
   accountAccess: '계정 접근',
@@ -1496,7 +1474,7 @@ export default function App() {
     ...(persistedPrivateState?.profile || {}),
     name: (persistedPrivateState?.profile?.name || '').trim()
       || (persistedAccount ? `${DEFAULT_NAME_PREFIX[initialLanguage]}${persistedAccount}` : DEFAULT_NAME_PREFIX[initialLanguage].trim()),
-    password: persistedPrivateState?.profile?.password || DEFAULT_PROFILE.password,
+    password: DEFAULT_PROFILE.password,
   };
   const initialSignedIn = (
     !isCloudBackendEnabled &&
@@ -1953,10 +1931,7 @@ export default function App() {
     writePersistedAppState({
       mapStyle,
       systemTheme,
-      profile: {
-        ...profile,
-        password: profile.password,
-      },
+      profile: getPublicProfileSnapshot(profile),
       isSignedIn,
       language,
       stars,
@@ -2256,12 +2231,7 @@ export default function App() {
     return {
       mapStyle,
       systemTheme,
-      profile: {
-        name: snapshotProfile.name,
-        account: snapshotProfile.account,
-        password: snapshotProfile.password,
-        avatarUrl: snapshotProfile.avatarUrl,
-      },
+      profile: getPublicProfileSnapshot(snapshotProfile),
       isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
       language,
       stars,
@@ -2269,14 +2239,13 @@ export default function App() {
     };
   }, [isSignedIn, language, mapStyle, profile, savedTracks, stars, systemTheme]);
 
-  const createCleanCloudInitialState = React.useCallback((account: string, password: string): PersistedAppState => ({
+  const createCleanCloudInitialState = React.useCallback((account: string): PersistedAppState => ({
     mapStyle: 'light',
     systemTheme: DEFAULT_SYSTEM_THEME,
     profile: {
-      ...DEFAULT_PROFILE,
       account,
-      password,
       name: buildDefaultProfileName(account),
+      avatarUrl: '',
     },
     isSignedIn: false,
     language,
@@ -2284,11 +2253,10 @@ export default function App() {
     savedTracks: [],
   }), [buildDefaultProfileName, language]);
 
-  const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null, sessionPassword = '') => {
+  const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null) => {
     const remoteState = (cloudState || {}) as PersistedAppState;
     isApplyingCloudStateRef.current = true;
     cloudReadyToSaveRef.current = false;
-    const visiblePassword = sessionPassword || remoteState.profile?.password || readCloudSessionPassword(cloudProfile.account);
 
     if (isMapStyle(remoteState.mapStyle)) setMapStyle(remoteState.mapStyle);
     setSystemTheme({
@@ -2300,7 +2268,7 @@ export default function App() {
       ...(remoteState.profile || {}),
       name: cloudProfile.name || remoteState.profile?.name || buildDefaultProfileName(cloudProfile.account) || prev.name,
       account: cloudProfile.account,
-      password: visiblePassword,
+      password: '',
       avatarUrl: cloudProfile.avatarUrl || remoteState.profile?.avatarUrl || prev.avatarUrl || '',
     }));
     setStars(normalizeInitialStars(remoteState.stars) || [createDefaultRecordStar()]);
@@ -2386,7 +2354,7 @@ export default function App() {
       name: buildDefaultProfileName(normalizedAccount),
       avatarUrl: '',
     };
-    const initialState = createCleanCloudInitialState(normalizedAccount, enteredPassword) as CloudAppState;
+    const initialState = createCleanCloudInitialState(normalizedAccount) as CloudAppState;
 
     return {
       normalizedAccount,
@@ -2434,8 +2402,7 @@ export default function App() {
           initialState,
         });
 
-        writeCloudSessionPassword(loginPassword, normalizedAccount);
-        applyCloudSnapshot(result.profile, result.state, loginPassword);
+        applyCloudSnapshot(result.profile, result.state);
       } catch (error) {
         console.error('Cloud login failed:', error);
         cloudReadyToSaveRef.current = false;
@@ -2539,7 +2506,6 @@ export default function App() {
       void signOutCloudAccount();
     }
     setActiveHomePanel(null);
-    writeCloudSessionPassword('', profile.account);
     setIsSignedIn(false);
     setLoginAccount('');
     setLoginPassword('');
@@ -4340,12 +4306,13 @@ export default function App() {
 
               {isSignedIn && activeHomePanel && (
                 <button
+                  type="button"
                   onClick={closeHomePanel}
-                  className="mb-5 flex h-11 items-center gap-2 rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black"
+                  className="mb-5 isolate flex h-11 items-center gap-2 overflow-hidden rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black no-underline outline-none"
                   aria-label={homeCopy.back}
                 >
                   <ChevronLeft size={24} strokeWidth={2} />
-                  <span className="leading-tight">{activeHomeTitle}</span>
+                  <span className="block translate-y-[-1px] leading-none no-underline [text-decoration:none]">{activeHomeTitle}</span>
                 </button>
               )}
 
@@ -4386,32 +4353,41 @@ export default function App() {
                           placeholder={homeCopy.userName}
                         />
                       </label>
-                      <div className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                        <input
-                          value={profile.password}
-                          onChange={event => {
-                            setProfile(prev => ({ ...prev, password: event.target.value }));
-                          }}
-                          type={isPasswordRevealed ? 'text' : 'password'}
-                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
-                          placeholder={homeCopy.loginPassword}
-                          aria-label={homeCopy.loginPassword}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setIsPasswordRevealed(prev => !prev)}
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--app-card)] text-black transition-transform active:scale-95"
-                          aria-label={isPasswordRevealed ? homeCopy.hidePassword : homeCopy.showPassword}
-                          title={isPasswordRevealed ? homeCopy.hidePassword : homeCopy.showPassword}
-                        >
-                          {isPasswordRevealed ? (
-                            <EyeOff size={18} strokeWidth={2.1} />
-                          ) : (
-                            <Eye size={18} strokeWidth={2.1} />
-                          )}
-                        </button>
-                      </div>
+                      {isCloudBackendEnabled ? (
+                        <div className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                          <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-black/45">
+                            {homeCopy.passwordManaged}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                          <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                          <input
+                            value={profile.password}
+                            onChange={event => {
+                              setProfile(prev => ({ ...prev, password: event.target.value }));
+                            }}
+                            type={isPasswordRevealed ? 'text' : 'password'}
+                            className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                            placeholder={homeCopy.loginPassword}
+                            aria-label={homeCopy.loginPassword}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setIsPasswordRevealed(prev => !prev)}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--app-card)] text-black transition-transform active:scale-95"
+                            aria-label={isPasswordRevealed ? homeCopy.hidePassword : homeCopy.showPassword}
+                            title={isPasswordRevealed ? homeCopy.hidePassword : homeCopy.showPassword}
+                          >
+                            {isPasswordRevealed ? (
+                              <EyeOff size={18} strokeWidth={2.1} />
+                            ) : (
+                              <Eye size={18} strokeWidth={2.1} />
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
