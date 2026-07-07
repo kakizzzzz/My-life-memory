@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { MapContainer, TileLayer, Marker, useMap, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
-import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Languages, Download, CalendarDays, Camera, Shield } from 'lucide-react';
+import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Languages, Download, CalendarDays, Camera, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import { StarActionOverlay } from './StarActionOverlay';
@@ -104,8 +104,6 @@ type UserProfile = {
   name: string;
   account: string;
   password: string;
-  securityQuestion: string;
-  securityAnswer: string;
   avatarUrl: string;
 };
 
@@ -155,8 +153,6 @@ const DEFAULT_PROFILE: UserProfile = {
   name: '',
   account: '',
   password: '',
-  securityQuestion: '',
-  securityAnswer: '',
   avatarUrl: '',
 };
 
@@ -385,8 +381,6 @@ const hasLoginAccount = (profile: UserProfile) => (
   profile.account.trim().length > 0
 );
 
-const normalizeSecurityValue = (value: string) => value.trim().toLowerCase();
-
 const readPersistedAppState = (): PersistedAppState | null => {
   if (typeof window === 'undefined') return null;
 
@@ -470,15 +464,8 @@ const HOME_COPY = {
   account: 'Account',
   idUnique: 'Unique ID',
   loginPassword: 'Login password',
-  securityQuestion: 'Set security question',
-  securityAnswer: 'Security answer',
-  securityRevealAction: 'Show password',
-  securityQuestionHint: 'Set a security question and answer to reveal password in local mode.',
-  securityAnswerHint: 'Answer your security question to reveal your password',
-  securityQuestionNotSet: 'No security question set yet',
-  securityQuestionMismatch: 'Security question does not match',
-  securityAnswerRequired: 'Please answer the security question',
-  securityAnswerIncorrect: 'Security answer is not correct',
+  showPassword: 'Show password',
+  hidePassword: 'Hide password',
   accountAccess: 'Account access',
     loginTitle: 'Account login',
     registerTitle: 'Account registration',
@@ -491,7 +478,6 @@ const HOME_COPY = {
     loginMissing: 'Enter an account and password',
     registerMissing: 'Set an account and password',
   passwordTooShort: 'Password must be at least 6 characters',
-  securityQuestionRequired: 'Security question and answer are required to set',
   loginError: 'Account or password is incorrect',
     registerError: 'Could not register this account',
     accountExists: 'This account already exists',
@@ -569,15 +555,8 @@ const HOME_COPY = {
   account: '账号',
   idUnique: 'ID唯一',
   loginPassword: '登录密码',
-  securityQuestion: '设置密保问题',
-  securityAnswer: '密保答案',
-  securityRevealAction: '查看密码',
-  securityQuestionHint: '设置后可在下方验证答案并自动显示密码',
-  securityAnswerHint: '输入密保问题答案',
-  securityQuestionNotSet: '还未设置密保问题',
-  securityQuestionMismatch: '密保问题不一致',
-  securityAnswerRequired: '请输入密保答案',
-  securityAnswerIncorrect: '密保答案不正确',
+  showPassword: '查看密码',
+  hidePassword: '隐藏密码',
   accountAccess: '账号访问',
     loginTitle: '账号登录',
     registerTitle: '账号注册',
@@ -590,7 +569,6 @@ const HOME_COPY = {
     loginMissing: '请输入账号和密码',
     registerMissing: '请设置账号和密码',
   passwordTooShort: '密码至少需要 6 位',
-  securityQuestionRequired: '请填写并配对密保问题与答案',
   loginError: '账号或密码不正确',
     registerError: '无法注册这个账号',
     accountExists: '这个账号已经存在',
@@ -668,15 +646,8 @@ const HOME_COPY = {
   account: '계정',
   idUnique: '고유 ID',
   loginPassword: '로그인 비밀번호',
-  securityQuestion: '보안 질문 설정',
-  securityAnswer: '보안 답변',
-  securityRevealAction: '비밀번호 보기',
-  securityQuestionHint: '계정 비밀번호를 표시하려면 보안 질문과 답변을 설정하세요',
-  securityAnswerHint: '보안 질문 답변을 입력하세요',
-  securityQuestionNotSet: '보안 질문이 설정되지 않았습니다',
-  securityQuestionMismatch: '보안 질문이 일치하지 않습니다',
-  securityAnswerRequired: '보안 답변을 입력하세요',
-  securityAnswerIncorrect: '보안 답변이 맞지 않습니다',
+  showPassword: '비밀번호 보기',
+  hidePassword: '비밀번호 숨기기',
   accountAccess: '계정 접근',
     loginTitle: '계정 로그인',
     registerTitle: '계정 가입',
@@ -689,7 +660,6 @@ const HOME_COPY = {
     loginMissing: '계정과 비밀번호를 입력하세요',
     registerMissing: '계정과 비밀번호를 설정하세요',
   passwordTooShort: '비밀번호는 최소 6자여야 합니다',
-  securityQuestionRequired: '보안 질문과 답변을 모두 입력하세요',
   loginError: '계정 또는 비밀번호가 올바르지 않습니다',
     registerError: '이 계정을 등록할 수 없습니다',
     accountExists: '이미 존재하는 계정입니다',
@@ -1440,8 +1410,6 @@ export default function App() {
   const [loginAccount, setLoginAccount] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isPasswordRevealed, setIsPasswordRevealed] = useState(false);
-  const [securityRevealMessage, setSecurityRevealMessage] = useState('');
-  const [securityRevealAnswer, setSecurityRevealAnswer] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginDebug, setLoginDebug] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
@@ -2180,8 +2148,6 @@ export default function App() {
         account: snapshotProfile.account,
         password: isCloudBackendEnabled ? '' : snapshotProfile.password,
         avatarUrl: snapshotProfile.avatarUrl,
-        securityQuestion: isCloudBackendEnabled ? '' : snapshotProfile.securityQuestion || '',
-        securityAnswer: isCloudBackendEnabled ? '' : snapshotProfile.securityAnswer || '',
       },
       isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
       language,
@@ -2207,8 +2173,6 @@ export default function App() {
       account: cloudProfile.account,
       password: '',
       avatarUrl: cloudProfile.avatarUrl || remoteState.profile?.avatarUrl || prev.avatarUrl || '',
-      securityQuestion: '',
-      securityAnswer: '',
     }));
     if (isLanguage(remoteState.language)) setLanguage(remoteState.language);
     setStars(normalizeInitialStars(remoteState.stars) || [createDefaultRecordStar()]);
@@ -2330,46 +2294,14 @@ export default function App() {
   }, [createAppStateSnapshot, profile.avatarUrl, profile.name, buildDefaultProfileName]);
 
   React.useEffect(() => {
-    setSecurityRevealMessage('');
     setIsPasswordRevealed(false);
-    setSecurityRevealAnswer('');
   }, [authMode, activeHomePanel]);
-
-  const handleRevealPasswordBySecurity = () => {
-    if (isCloudBackendEnabled) {
-      setSecurityRevealMessage(homeCopy.securityQuestionHint);
-      return;
-    }
-
-    const normalizedStoredQuestion = normalizeSecurityValue(profile.securityQuestion);
-    const normalizedStoredAnswer = normalizeSecurityValue(profile.securityAnswer);
-    const normalizedRevealAnswer = normalizeSecurityValue(securityRevealAnswer);
-
-    if (!normalizedStoredQuestion || !normalizedStoredAnswer) {
-      setSecurityRevealMessage(homeCopy.securityQuestionNotSet);
-      return;
-    }
-
-    if (!normalizedRevealAnswer) {
-      setSecurityRevealMessage(homeCopy.securityAnswerRequired);
-      return;
-    }
-
-    if (normalizedRevealAnswer !== normalizedStoredAnswer) {
-      setSecurityRevealMessage(homeCopy.securityAnswerIncorrect);
-      return;
-    }
-
-    setIsPasswordRevealed(true);
-    setSecurityRevealMessage('');
-  };
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const enteredAccount = loginAccount.trim();
     setAuthMode('login');
     setLoginDebug('');
-    setSecurityRevealMessage('');
     setIsPasswordRevealed(false);
 
     if (isAuthBusy) return;
@@ -2438,7 +2370,6 @@ export default function App() {
   const handleRegister = async () => {
     const enteredAccount = loginAccount.trim();
     setAuthMode('register');
-    setSecurityRevealMessage('');
     setIsPasswordRevealed(false);
     if (isAuthBusy) return;
 
@@ -2466,8 +2397,6 @@ export default function App() {
         name: prev.name || buildDefaultProfileName(enteredAccount),
         account: enteredAccount,
         password: loginPassword,
-        securityQuestion: '',
-        securityAnswer: '',
       }));
       setIsSignedIn(false);
       setAuthMode('login');
@@ -2523,7 +2452,6 @@ export default function App() {
     setLoginAccount('');
     setLoginPassword('');
     setIsPasswordRevealed(false);
-    setSecurityRevealMessage('');
     setLoginError('');
     setLoginDebug('');
   };
@@ -4204,7 +4132,6 @@ export default function App() {
                             setLoginError('');
                             setLoginDebug('');
                             setIsPasswordRevealed(false);
-                            setSecurityRevealMessage('');
                           }}
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
                           placeholder={homeCopy.account}
@@ -4349,77 +4276,32 @@ export default function App() {
                           placeholder={homeCopy.userName}
                         />
                       </label>
-                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                      <div className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
                         <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
                         <input
                           value={profile.password}
                           onChange={event => {
                             setProfile(prev => ({ ...prev, password: event.target.value }));
-                            setIsPasswordRevealed(false);
-                            setSecurityRevealMessage('');
-                            setSecurityRevealAnswer('');
                           }}
                           type={isPasswordRevealed ? 'text' : 'password'}
                           className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
                           placeholder={homeCopy.loginPassword}
-                        />
-                      </label>
-                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                        <Shield size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                        <input
-                          value={profile.securityQuestion}
-                          onChange={event => {
-                            setProfile(prev => ({ ...prev, securityQuestion: event.target.value }));
-                            setIsPasswordRevealed(false);
-                            setSecurityRevealMessage('');
-                            setSecurityRevealAnswer('');
-                          }}
-                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
-                          placeholder={homeCopy.securityQuestion}
-                        />
-                      </label>
-                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                        <input
-                          value={profile.securityAnswer}
-                          onChange={event => {
-                            setProfile(prev => ({ ...prev, securityAnswer: event.target.value }));
-                            setIsPasswordRevealed(false);
-                            setSecurityRevealMessage('');
-                            setSecurityRevealAnswer('');
-                          }}
-                          type="password"
-                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
-                          placeholder={homeCopy.securityAnswer}
-                        />
-                      </label>
-                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                        <input
-                          value={securityRevealAnswer}
-                          onChange={event => {
-                            setSecurityRevealAnswer(event.target.value);
-                            setSecurityRevealMessage('');
-                            setIsPasswordRevealed(false);
-                          }}
-                          type={isPasswordRevealed ? 'text' : 'password'}
-                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
-                          placeholder={homeCopy.securityAnswerHint}
+                          aria-label={homeCopy.loginPassword}
                         />
                         <button
                           type="button"
-                          onClick={handleRevealPasswordBySecurity}
-                          disabled={isCloudBackendEnabled || isPasswordRevealed}
-                          className="rounded-full bg-[var(--app-card)] px-2 py-1 text-xs font-medium text-black disabled:opacity-45"
+                          onClick={() => setIsPasswordRevealed(prev => !prev)}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--app-card)] text-black transition-transform active:scale-95"
+                          aria-label={isPasswordRevealed ? homeCopy.hidePassword : homeCopy.showPassword}
+                          title={isPasswordRevealed ? homeCopy.hidePassword : homeCopy.showPassword}
                         >
-                          {homeCopy.securityRevealAction}
+                          {isPasswordRevealed ? (
+                            <EyeOff size={18} strokeWidth={2.1} />
+                          ) : (
+                            <Eye size={18} strokeWidth={2.1} />
+                          )}
                         </button>
-                      </label>
-                      {securityRevealMessage && (
-                        <div className="mt-2 text-[12px] leading-5 text-black/50">
-                          {securityRevealMessage}
-                        </div>
-                      )}
+                      </div>
                     </div>
                   </motion.div>
                 )}
