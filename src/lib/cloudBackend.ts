@@ -51,14 +51,18 @@ const rowToProfile = (row: ProfileRow, fallbackAccount = ''): CloudProfile => ({
   avatarUrl: row.avatar_url || '',
 });
 
-const isMissingTableError = (error: unknown) => (
-  Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === 'PGRST205')
-);
+const isCloudSetupError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? (error as { code?: string }).code : '';
+  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
+
+  return code === 'PGRST205' || code === '42501' || message.toLowerCase().includes('permission denied');
+};
 
 const toCloudAuthError = (error: unknown, fallback: CloudAuthError['code'] = 'unknown') => {
   if (error instanceof CloudAuthError) return error;
-  if (isMissingTableError(error)) {
-    return new CloudAuthError('setup_required', 'Supabase tables are missing.');
+  if (isCloudSetupError(error)) {
+    return new CloudAuthError('setup_required', 'Supabase database setup is incomplete.');
   }
   return new CloudAuthError(fallback, error instanceof Error ? error.message : 'Cloud auth failed.');
 };
