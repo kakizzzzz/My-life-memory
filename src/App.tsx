@@ -348,6 +348,12 @@ const HOME_COPY = {
     login: 'Log in',
     loginError: 'Account or password is incorrect',
     noImages: 'No uploaded images yet',
+    openPermissions: 'Open permissions',
+    openPermissionsHint: 'Request location and direction access again',
+    permissionRequesting: 'Requesting permissions...',
+    permissionReady: 'Permissions requested',
+    permissionDenied: 'Could not open permissions. Check browser site settings.',
+    permissionUnsupported: 'Browser permissions are unavailable',
     language: 'Language',
     exit: 'Exit Account',
     base: 'Page background',
@@ -416,6 +422,12 @@ const HOME_COPY = {
     login: '登录',
     loginError: '账号或密码不正确',
     noImages: '还没有上传过图片',
+    openPermissions: '打开权限',
+    openPermissionsHint: '重新请求定位与方向权限',
+    permissionRequesting: '正在请求权限...',
+    permissionReady: '已请求权限',
+    permissionDenied: '无法打开权限，请检查浏览器网站设置',
+    permissionUnsupported: '当前浏览器不可用',
     language: '语言',
     exit: '退出账号',
     base: '页面背景',
@@ -484,6 +496,12 @@ const HOME_COPY = {
     login: '로그인',
     loginError: '계정 또는 비밀번호가 올바르지 않습니다',
     noImages: '업로드한 이미지가 없습니다',
+    openPermissions: '권한 열기',
+    openPermissionsHint: '위치 및 방향 권한 다시 요청',
+    permissionRequesting: '권한 요청 중...',
+    permissionReady: '권한을 요청했습니다',
+    permissionDenied: '권한을 열 수 없습니다. 브라우저 사이트 설정을 확인하세요.',
+    permissionUnsupported: '이 브라우저에서는 권한을 사용할 수 없습니다',
     language: '언어',
     exit: '로그아웃',
     base: '화면 배경',
@@ -1207,6 +1225,7 @@ export default function App() {
   const [loginAccount, setLoginAccount] = useState(() => initialProfile.account);
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [permissionRequestState, setPermissionRequestState] = useState<'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported'>('idle');
   const [language, setLanguage] = useState(() => (
     isLanguage(persistedAppState?.language) ? persistedAppState.language : 'en'
   ));
@@ -1459,6 +1478,51 @@ export default function App() {
     );
     return true;
   }, [applyGpsPosition, userLocation]);
+
+  const requestLocationPermissionOnce = React.useCallback(() => new Promise<boolean>(resolve => {
+    if (!canUseBrowserGeolocation()) {
+      resolve(false);
+      return;
+    }
+
+    setIsWatchingUserLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        applyGpsPosition(position, false);
+        resolve(true);
+      },
+      error => {
+        if (error.code === error.PERMISSION_DENIED && !trackingStateRef.current.isTracking) {
+          setIsWatchingUserLocation(false);
+        }
+        resolve(false);
+      },
+      GEOLOCATION_OPTIONS
+    );
+  }), [applyGpsPosition]);
+
+  const handleOpenPermissions = React.useCallback(async () => {
+    if (typeof window === 'undefined') return;
+
+    const canRequestLocation = canUseBrowserGeolocation();
+    const canRequestHeading = Boolean(window.DeviceOrientationEvent);
+
+    if (!canRequestLocation && !canRequestHeading) {
+      setPermissionRequestState('unsupported');
+      return;
+    }
+
+    setPermissionRequestState('requesting');
+    const headingRequest = canRequestHeading
+      ? startHeadingWatch(true).then(() => Boolean(headingWatchCleanupRef.current)).catch(() => false)
+      : Promise.resolve(false);
+    const locationRequest = canRequestLocation
+      ? requestLocationPermissionOnce()
+      : Promise.resolve(false);
+
+    const [headingReady, locationReady] = await Promise.all([headingRequest, locationRequest]);
+    setPermissionRequestState(headingReady || locationReady ? 'ready' : 'denied');
+  }, [requestLocationPermissionOnce, startHeadingWatch]);
 
   useEffect(() => {
     if (activeHomePanel !== 'theme') {
@@ -1930,6 +1994,13 @@ export default function App() {
   const languageLocale = LANGUAGE_LOCALES[language] || LANGUAGE_LOCALES.en;
   const selectedFontFamily = LANGUAGE_FONT_FAMILIES[language] || LANGUAGE_FONT_FAMILIES.en;
   const selectedFontScale = LANGUAGE_FONT_SCALE[language] || LANGUAGE_FONT_SCALE.en;
+  const permissionStatusText = (
+    permissionRequestState === 'requesting' ? homeCopy.permissionRequesting :
+    permissionRequestState === 'ready' ? homeCopy.permissionReady :
+    permissionRequestState === 'denied' ? homeCopy.permissionDenied :
+    permissionRequestState === 'unsupported' ? homeCopy.permissionUnsupported :
+    homeCopy.openPermissionsHint
+  );
   const isOriginalSystemTheme = (Object.keys(DEFAULT_SYSTEM_THEME) as (keyof SystemTheme)[]).every(
     key => systemTheme[key].toLowerCase() === DEFAULT_SYSTEM_THEME[key].toLowerCase()
   );
@@ -3736,6 +3807,22 @@ export default function App() {
                     className="mt-4"
                   >
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                        <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                        {homeCopy.openPermissions}
+                      </div>
+                      <button
+                        onClick={handleOpenPermissions}
+                        disabled={permissionRequestState === 'requesting'}
+                        className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
+                      >
+                        {permissionRequestState === 'requesting' ? homeCopy.permissionRequesting : homeCopy.openPermissions}
+                      </button>
+                      <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
+                        {permissionStatusText}
+                      </div>
+                    </div>
+                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
                         <Languages size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
                         {homeCopy.language}
