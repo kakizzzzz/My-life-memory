@@ -37,6 +37,32 @@ html, body {
   filter: grayscale(100%) !important;
 }
 
+.app-location-div-icon,
+.app-star-div-icon {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  user-select: none;
+}
+
+.app-location-div-icon {
+  width: 80px !important;
+  height: 80px !important;
+}
+
+.app-star-div-icon {
+  width: 44px !important;
+  height: 44px !important;
+}
+
+.app-location-marker,
+.app-star-marker {
+  transform-origin: center center;
+  will-change: transform;
+}
+
 .picker-popup .react-colorful {
   width: 100%;
   height: 46px;

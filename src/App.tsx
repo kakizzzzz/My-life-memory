@@ -29,9 +29,9 @@ function createLocationIcon(mapStyle: string, iconColor = '#c3c3c3', heading = 0
   const coneRotation = Number.isFinite(heading) ? heading + 90 : 90;
   
   return new L.DivIcon({
-    className: '',
+    className: 'app-location-div-icon',
     html: `
-      <div style="position: relative; width: 80px; height: 80px; pointer-events: none;">
+      <div class="app-location-marker" style="position: relative; width: 80px; height: 80px; pointer-events: none;">
           <svg width="80" height="80" viewBox="0 0 80 80" style="position: absolute; left: 0; top: 0; z-index: 1; transform: rotate(${coneRotation}deg); transform-origin: 40px 40px; transition: transform 160ms linear;">
               <defs>
                   <linearGradient id="coneGrad" gradientUnits="userSpaceOnUse" x1="40" y1="40" x2="8" y2="40">
@@ -222,10 +222,11 @@ const GEOLOCATION_OPTIONS: PositionOptions = {
   maximumAge: 0,
   timeout: 15000,
 };
-const TRACK_MAX_ACCURACY_METERS = 45;
-const TRACK_MIN_DISTANCE_METERS = 4;
-const TRACK_MAX_SPEED_MPS = 8;
-const TRACK_MIN_POINT_INTERVAL_MS = 1000;
+const TRACK_MAX_ACCURACY_METERS = 80;
+const TRACK_MIN_DISTANCE_METERS = 1.5;
+const TRACK_FAST_SAMPLE_DISTANCE_METERS = 4;
+const TRACK_MAX_SPEED_MPS = 10;
+const TRACK_MIN_POINT_INTERVAL_MS = 500;
 
 const createDefaultRecordStar = (): StarData => {
   const timestamp = Date.now();
@@ -1061,9 +1062,9 @@ function createStarIcon(tagNumber?: number, isSelected?: boolean, colorHex?: str
   const gradientId = `starGrad_${color.replace('#','')}${isSelected ? 'Selected' : ''}`;
 
   return new L.DivIcon({
-    className: '',
+    className: 'app-star-div-icon',
     html: `
-      <div style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.15)) drop-shadow(0px 2px 4px rgba(0,0,0,0.12)); position: relative;">
+      <div class="app-star-marker" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.15)) drop-shadow(0px 2px 4px rgba(0,0,0,0.12)); position: relative;">
         <svg width="36" height="36" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="overflow: visible; ${isSelected ? 'z-index: 10;' : ''}">
           <defs>
             <linearGradient id="${gradientId}" x1="0" y1="0" x2="0" y2="24" gradientUnits="userSpaceOnUse">
@@ -1329,17 +1330,17 @@ export default function App() {
       const elapsedSeconds = elapsedMs / 1000;
       const accuracyAwareMinimum = Math.max(
         TRACK_MIN_DISTANCE_METERS,
-        Math.min(15, Math.max(accuracy || 0, previousAcceptedPoint.accuracy || 0) * 0.55)
+        Math.min(5, Math.max(accuracy || 0, previousAcceptedPoint.accuracy || 0) * 0.18)
       );
 
-      if (elapsedMs < TRACK_MIN_POINT_INTERVAL_MS && distanceMeters < 15) return;
+      if (elapsedMs < TRACK_MIN_POINT_INTERVAL_MS && distanceMeters < TRACK_FAST_SAMPLE_DISTANCE_METERS) return;
       if (distanceMeters < accuracyAwareMinimum) return;
       if (elapsedSeconds > 0 && distanceMeters / elapsedSeconds > TRACK_MAX_SPEED_MPS) return;
       if (
         typeof metadata.speed === 'number' &&
         Number.isFinite(metadata.speed) &&
         metadata.speed > TRACK_MAX_SPEED_MPS &&
-        distanceMeters > TRACK_MIN_DISTANCE_METERS
+        distanceMeters > Math.max(8, TRACK_MIN_DISTANCE_METERS)
       ) {
         return;
       }
@@ -1353,7 +1354,7 @@ export default function App() {
       const currentSegment = [...newPaths[lastIndex]];
       const lastPoint = currentSegment[currentSegment.length - 1];
 
-      if (lastPoint && L.latLng(lastPoint).distanceTo(L.latLng(newLoc)) < 1) {
+      if (lastPoint && L.latLng(lastPoint).distanceTo(L.latLng(newLoc)) < 0.75) {
         return prev;
       }
 
@@ -2525,7 +2526,6 @@ export default function App() {
     () => createLocationIcon(mapStyle, systemTheme.icon, deviceHeading),
     [deviceHeading, mapStyle, systemTheme.icon]
   );
-  const locationMarkerKey = `user-location-${mapStyle}-${systemTheme.icon}-${Math.round(deviceHeading)}`;
   const editingStar = editingNoteTarget
     ? stars.find(star => star.id === editingNoteTarget.starId)
     : null;
@@ -3014,7 +3014,6 @@ export default function App() {
             url={mapTiles[mapStyle].url}
           />
           <Marker 
-            key={locationMarkerKey}
             position={userLocation} 
             icon={locationIcon}
             draggable={false}
@@ -3280,13 +3279,16 @@ export default function App() {
                 {/* Route */}
                 <button className={btnClass} onClick={() => {
                   void startHeadingWatch();
-                  lastTrackPointRef.current = null;
+                  const liveSeedLocation = lastGpsLocationRef.current;
+                  lastTrackPointRef.current = liveSeedLocation
+                    ? { location: liveSeedLocation, timestamp: Date.now() }
+                    : null;
                   trackingStateRef.current = { isTracking: true, isPaused: false };
                   setIsTracking(true);
                   setIsPaused(false);
                   const didRequestGps = requestUserLocation(true);
-                  setTrackPaths(didRequestGps ? [] : [[userLocation]]);
-                  if (!didRequestGps) {
+                  setTrackPaths(liveSeedLocation ? [[liveSeedLocation]] : (didRequestGps ? [] : [[userLocation]]));
+                  if (!didRequestGps && !liveSeedLocation) {
                     lastTrackPointRef.current = { location: userLocation, timestamp: Date.now() };
                   }
                   setTrackTime(0);
