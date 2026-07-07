@@ -42,7 +42,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background-color: transparent;
+      background-color: #1A1A1A;
       touch-action: none;
     }
     #mapCanvas {
@@ -391,12 +391,8 @@ const mosaicMapHtml = `<!DOCTYPE html>
       }
 
       function draw(now = performance.now()) {
-        if (isFullscreen) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-        } else {
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
+        ctx.fillStyle = isFullscreen ? '#1A1A1A' : '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         if (isFullscreen) {
           const actualWidth = (mapBounds.maxX - mapBounds.minX) * scale;
@@ -845,7 +841,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
         ref={fullscreenMapRef}
         id="trip-map-fullscreen"
         popover="manual"
-        className="fixed inset-0 m-0 h-[100dvh] max-h-none w-[100dvw] max-w-none overflow-hidden border-0 bg-[#1A1A1A] p-0"
+        className="fixed inset-0 m-0 h-[100dvh] max-h-none w-[100dvw] max-w-none overflow-hidden border-0 bg-transparent p-0 backdrop:bg-transparent"
       >
         {isExpandedMapOpen && (
           <iframe
