@@ -283,14 +283,30 @@ const LOGIN_WORLD_MAP_DOTS = Array.from({ length: 64 }).flatMap((_, row) => (
 
 function LoginWorldMapBackground() {
   return (
-    <div className="pointer-events-none absolute left-1/2 top-[calc(100%+14px)] z-0 h-[190px] w-[660px] -translate-x-1/2 overflow-visible opacity-100">
+    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
       <svg
         viewBox="0 0 690 304"
         className="h-full w-full"
+        preserveAspectRatio="none"
         style={{ color: 'var(--app-dark)' }}
         aria-hidden="true"
       >
-        <g>
+        <defs>
+          <pattern id="login-background-dot-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="0.9" fill="currentColor" opacity="0.075" />
+          </pattern>
+          <linearGradient id="login-map-fade" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="white" stopOpacity="0.22" />
+            <stop offset="20%" stopColor="white" stopOpacity="0.72" />
+            <stop offset="78%" stopColor="white" stopOpacity="0.86" />
+            <stop offset="100%" stopColor="white" stopOpacity="0.28" />
+          </linearGradient>
+          <mask id="login-map-mask">
+            <rect width="690" height="304" fill="url(#login-map-fade)" />
+          </mask>
+        </defs>
+        <rect width="690" height="304" fill="url(#login-background-dot-grid)" />
+        <g mask="url(#login-map-mask)">
           {LOGIN_WORLD_MAP_DOTS.map(dot => (
             <circle
               key={`${dot.x}-${dot.y}`}
@@ -3922,8 +3938,8 @@ export default function App() {
                   onSubmit={handleLogin}
                   className="relative flex min-h-full flex-col items-center justify-center overflow-hidden pt-8"
                 >
+                  <LoginWorldMapBackground />
                   <div className="relative flex w-full flex-col items-center">
-                    <LoginWorldMapBackground />
                     <div className="relative z-10 mb-8 w-full text-center">
                       <h1 className="font-sans text-[36px] font-bold leading-none tracking-tight text-black">
                         My life memory
