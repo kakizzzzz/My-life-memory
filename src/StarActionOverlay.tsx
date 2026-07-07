@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Eye, Palette, Edit2, Trash2, Copy, Share } from 'lucide-react';
+import { Eye, Palette, Edit2, Trash2, Copy, ExternalLink } from 'lucide-react';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
 
 type StarData = {
@@ -25,7 +25,7 @@ const STAR_OVERLAY_COPY = {
     editNote: 'Edit note',
     deleteStar: 'Delete marker',
     copyCoordinates: 'Copy coordinates',
-    shareCoordinates: 'Share coordinates',
+    openInMaps: 'Open in maps',
     mapLocationTitle: 'Map location',
     customColor: 'Custom color',
   },
@@ -35,7 +35,7 @@ const STAR_OVERLAY_COPY = {
     editNote: '编辑笔记',
     deleteStar: '删除标记',
     copyCoordinates: '复制坐标',
-    shareCoordinates: '分享坐标',
+    openInMaps: '用地图打开',
     mapLocationTitle: '地图位置',
     customColor: '自定义颜色',
   },
@@ -45,7 +45,7 @@ const STAR_OVERLAY_COPY = {
     editNote: '노트 편집',
     deleteStar: '마커 삭제',
     copyCoordinates: '좌표 복사',
-    shareCoordinates: '좌표 공유',
+    openInMaps: '지도에서 열기',
     mapLocationTitle: '지도 위치',
     customColor: '사용자 지정 색상',
   },
@@ -152,18 +152,37 @@ export function StarActionOverlay({
     }
   };
 
-  const shareCoords = async () => {
-    const text = `${star.lat}, ${star.lng}`;
-    const url = `https://www.google.com/maps?q=${star.lat},${star.lng}`;
+  const openNativeMaps = () => {
+    const lat = star.lat.toFixed(6);
+    const lng = star.lng.toFixed(6);
+    const userAgent = navigator.userAgent || '';
+    const isAppleDevice = /iPad|iPhone|iPod|Macintosh/i.test(userAgent);
+    const isAndroid = /Android/i.test(userAgent);
+    const fallbackUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    const nativeUrl = isAppleDevice
+      ? `maps://?q=${lat},${lng}&ll=${lat},${lng}`
+      : isAndroid
+        ? `geo:${lat},${lng}?q=${lat},${lng}`
+        : fallbackUrl;
 
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: copy.mapLocationTitle, text, url });
-      } else {
-        await navigator.clipboard.writeText(text);
-      }
-    } catch(e) {
+    if (nativeUrl === fallbackUrl) {
+      window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+      return;
     }
+
+    let shouldFallback = true;
+    const stopFallback = () => {
+      shouldFallback = false;
+      document.removeEventListener('visibilitychange', stopFallback);
+      window.removeEventListener('pagehide', stopFallback);
+    };
+
+    document.addEventListener('visibilitychange', stopFallback, { once: true });
+    window.addEventListener('pagehide', stopFallback, { once: true });
+    window.location.href = nativeUrl;
+    window.setTimeout(() => {
+      if (shouldFallback) window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+    }, 900);
   };
 
   return createPortal(
@@ -200,8 +219,8 @@ export function StarActionOverlay({
           <button onClick={copyCoords} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.copyCoordinates}>
             <Copy size={14} strokeWidth={2} />
           </button>
-          <button onClick={shareCoords} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.shareCoordinates}>
-            <Share size={14} strokeWidth={2} />
+          <button onClick={openNativeMaps} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.openInMaps}>
+            <ExternalLink size={14} strokeWidth={2} />
           </button>
         </div>
       )}

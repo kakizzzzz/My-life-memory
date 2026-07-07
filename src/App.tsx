@@ -4035,7 +4035,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.98 }}
               transition={{ duration: 0.18 }}
-              className="w-full max-w-[360px] rounded-[28px] bg-white/15 p-2 backdrop-blur-[2px]"
+              className="w-full max-w-[360px]"
               onPointerDown={event => event.stopPropagation()}
               onSubmit={event => {
                 event.preventDefault();
