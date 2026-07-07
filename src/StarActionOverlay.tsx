@@ -9,8 +9,72 @@ type StarData = {
   id: string;
   lat: number;
   lng: number;
+  createdAt?: number;
   tagOrder?: number;
   color?: string;
+};
+
+const GCJ_A = 6378245.0;
+const GCJ_EE = 0.00669342162296594323;
+const PI = Math.PI;
+
+const isOutsideChina = (lat: number, lng: number) => (
+  lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271
+);
+
+const transformLat = (x: number, y: number) => {
+  let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0;
+  ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0;
+  return ret;
+};
+
+const transformLng = (x: number, y: number) => {
+  let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0;
+  ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0;
+  return ret;
+};
+
+const wgs84ToGcj02 = (lat: number, lng: number) => {
+  if (isOutsideChina(lat, lng)) return { lat, lng };
+  let dLat = transformLat(lng - 105.0, lat - 35.0);
+  let dLng = transformLng(lng - 105.0, lat - 35.0);
+  const radLat = lat / 180.0 * PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - GCJ_EE * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / ((GCJ_A * (1 - GCJ_EE)) / (magic * sqrtMagic) * PI);
+  dLng = (dLng * 180.0) / (GCJ_A / sqrtMagic * Math.cos(radLat) * PI);
+  return { lat: lat + dLat, lng: lng + dLng };
+};
+
+const gcj02ToBd09 = (lat: number, lng: number) => {
+  const z = Math.sqrt(lng * lng + lat * lat) + 0.00002 * Math.sin(lat * PI * 3000.0 / 180.0);
+  const theta = Math.atan2(lat, lng) + 0.000003 * Math.cos(lng * PI * 3000.0 / 180.0);
+  return {
+    lat: z * Math.sin(theta) + 0.006,
+    lng: z * Math.cos(theta) + 0.0065,
+  };
+};
+
+const writeClipboardText = async (text: string) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 };
 
 const DEFAULT_COLORS = [
@@ -25,7 +89,13 @@ const STAR_OVERLAY_COPY = {
     editNote: 'Edit note',
     deleteStar: 'Delete marker',
     copyCoordinates: 'Copy coordinates',
+    copied: 'Copied',
     openInMaps: 'Open in maps',
+    chooseMap: 'Choose map',
+    appleMaps: 'Apple',
+    amapMaps: 'Amap',
+    baiduMaps: 'Baidu',
+    googleMaps: 'Google',
     mapLocationTitle: 'Map location',
     customColor: 'Custom color',
   },
@@ -35,7 +105,13 @@ const STAR_OVERLAY_COPY = {
     editNote: '编辑笔记',
     deleteStar: '删除标记',
     copyCoordinates: '复制坐标',
+    copied: '已复制',
     openInMaps: '用地图打开',
+    chooseMap: '选择地图',
+    appleMaps: '苹果',
+    amapMaps: '高德',
+    baiduMaps: '百度',
+    googleMaps: '谷歌',
     mapLocationTitle: '地图位置',
     customColor: '自定义颜色',
   },
@@ -45,7 +121,13 @@ const STAR_OVERLAY_COPY = {
     editNote: '노트 편집',
     deleteStar: '마커 삭제',
     copyCoordinates: '좌표 복사',
+    copied: '복사됨',
     openInMaps: '지도에서 열기',
+    chooseMap: '지도 선택',
+    appleMaps: 'Apple',
+    amapMaps: 'Amap',
+    baiduMaps: 'Baidu',
+    googleMaps: 'Google',
     mapLocationTitle: '지도 위치',
     customColor: '사용자 지정 색상',
   },
@@ -73,11 +155,16 @@ export function StarActionOverlay({
   
   const [activeTab, setActiveTab] = useState<'eye'|'color'|'edit'|'trash'|null>(null);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [isMapChoiceOpen, setIsMapChoiceOpen] = useState(false);
+  const [copyStatus, setCopyStatus] = useState('');
+  const copyTimerRef = React.useRef<number | null>(null);
   
   useEffect(() => {
     if (selectedStarId) {
       setActiveTab(null); // Reset when a new star is selected
       setShowCustomPicker(false);
+      setIsMapChoiceOpen(false);
+      setCopyStatus('');
       setOffset({ x: 0, y: 0 });
     }
   }, [selectedStarId]);
@@ -86,7 +173,17 @@ export function StarActionOverlay({
     if (activeTab !== 'color') {
       setShowCustomPicker(false);
     }
+    if (activeTab !== 'eye') {
+      setIsMapChoiceOpen(false);
+      setCopyStatus('');
+    }
   }, [activeTab]);
+
+  useEffect(() => () => {
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedStarId) return;
@@ -147,42 +244,45 @@ export function StarActionOverlay({
 
   const copyCoords = async () => {
     try {
-      await navigator.clipboard.writeText(`${star.lat}, ${star.lng}`);
+      await writeClipboardText(`${star.lat}, ${star.lng}`);
+      setCopyStatus(copy.copied);
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => setCopyStatus(''), 1400);
     } catch(e) {
     }
   };
 
-  const openNativeMaps = () => {
-    const lat = star.lat.toFixed(6);
-    const lng = star.lng.toFixed(6);
-    const userAgent = navigator.userAgent || '';
-    const isAppleDevice = /iPad|iPhone|iPod|Macintosh/i.test(userAgent);
-    const isAndroid = /Android/i.test(userAgent);
-    const fallbackUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-    const nativeUrl = isAppleDevice
-      ? `maps://?q=${lat},${lng}&ll=${lat},${lng}`
-      : isAndroid
-        ? `geo:${lat},${lng}?q=${lat},${lng}`
-        : fallbackUrl;
+  const gcjCoords = wgs84ToGcj02(star.lat, star.lng);
+  const bdCoords = gcj02ToBd09(gcjCoords.lat, gcjCoords.lng);
+  const mapTitle = encodeURIComponent(copy.mapLocationTitle);
+  const mapOptions = [
+    {
+      key: 'apple',
+      label: copy.appleMaps,
+      url: `https://maps.apple.com/?ll=${star.lat.toFixed(6)},${star.lng.toFixed(6)}&q=${mapTitle}`,
+    },
+    {
+      key: 'amap',
+      label: copy.amapMaps,
+      url: `https://uri.amap.com/marker?position=${gcjCoords.lng.toFixed(6)},${gcjCoords.lat.toFixed(6)}&name=${mapTitle}&src=MyLifeMemory&coordinate=gaode&callnative=1`,
+    },
+    {
+      key: 'baidu',
+      label: copy.baiduMaps,
+      url: `https://api.map.baidu.com/marker?location=${bdCoords.lat.toFixed(6)},${bdCoords.lng.toFixed(6)}&title=${mapTitle}&content=${mapTitle}&output=html&src=MyLifeMemory`,
+    },
+    {
+      key: 'google',
+      label: copy.googleMaps,
+      url: `https://www.google.com/maps/search/?api=1&query=${star.lat.toFixed(6)},${star.lng.toFixed(6)}`,
+    },
+  ];
 
-    if (nativeUrl === fallbackUrl) {
-      window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
-    let shouldFallback = true;
-    const stopFallback = () => {
-      shouldFallback = false;
-      document.removeEventListener('visibilitychange', stopFallback);
-      window.removeEventListener('pagehide', stopFallback);
-    };
-
-    document.addEventListener('visibilitychange', stopFallback, { once: true });
-    window.addEventListener('pagehide', stopFallback, { once: true });
-    window.location.href = nativeUrl;
-    window.setTimeout(() => {
-      if (shouldFallback) window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
-    }, 900);
+  const openMapUrl = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setIsMapChoiceOpen(false);
   };
 
   return createPortal(
@@ -213,15 +313,42 @@ export function StarActionOverlay({
 
       {/* Detail Pill */}
       {activeTab === 'eye' && (
-        <div className="bg-[var(--app-active-surface)] rounded-[16px] px-3 py-1.5 flex items-center gap-2 shadow-lg border border-[var(--app-card)]">
-          <span className="font-sans font-medium text-[13px] text-black/90 whitespace-nowrap">{coordsText}</span>
-          <div className="w-[1px] h-3 bg-gray-300"></div>
-          <button onClick={copyCoords} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.copyCoordinates}>
-            <Copy size={14} strokeWidth={2} />
-          </button>
-          <button onClick={openNativeMaps} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.openInMaps}>
-            <ExternalLink size={14} strokeWidth={2} />
-          </button>
+        <div className="flex flex-col items-center gap-1.5">
+          <div className="bg-[var(--app-active-surface)] rounded-[16px] px-3 py-1.5 flex items-center gap-2 shadow-lg border border-[var(--app-card)]">
+            <span className="font-sans font-medium text-[13px] text-black/90 whitespace-nowrap">{coordsText}</span>
+            <div className="w-[1px] h-3 bg-gray-300"></div>
+            <button onClick={copyCoords} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.copyCoordinates}>
+              <Copy size={14} strokeWidth={2} />
+            </button>
+            {copyStatus && (
+              <span className="rounded-full bg-[var(--app-card)] px-1.5 py-0.5 text-[10px] font-medium leading-none text-black/70">
+                {copyStatus}
+              </span>
+            )}
+            <button
+              onClick={() => setIsMapChoiceOpen(open => !open)}
+              className={`text-black transition-colors hover:text-gray-500 ${isMapChoiceOpen ? 'text-black' : ''}`}
+              aria-label={copy.openInMaps}
+            >
+              <ExternalLink size={14} strokeWidth={2} />
+            </button>
+          </div>
+          {isMapChoiceOpen && (
+            <div
+              className="grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--app-card)] bg-[var(--app-active-surface)] p-1.5 shadow-lg"
+              aria-label={copy.chooseMap}
+            >
+              {mapOptions.map(option => (
+                <button
+                  key={option.key}
+                  onClick={() => openMapUrl(option.url)}
+                  className="h-8 rounded-[10px] bg-[var(--app-card)] px-3 text-[12px] font-medium text-black transition-colors hover:brightness-95"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -55,6 +55,7 @@ export type StarData = {
   id: string;
   lat: number;
   lng: number;
+  createdAt?: number;
   tagOrder?: number;
   tagGroupId?: number;
   color?: string;
@@ -219,6 +220,7 @@ const createDefaultRecordStar = (): StarData => {
     id: DEFAULT_RECORD_STAR_ID,
     lat: DEFAULT_RECORD_STAR_LOCATION[0],
     lng: DEFAULT_RECORD_STAR_LOCATION[1],
+    createdAt: timestamp,
     color: '#EDC727',
     notes: [{
       id: 'default-record-note',
@@ -1655,7 +1657,7 @@ export default function App() {
   }, []);
 
   const addStarAtLatLng = React.useCallback((lat: number, lng: number) => {
-    setStars(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), lat, lng }]);
+    setStars(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), lat, lng, createdAt: Date.now() }]);
   }, []);
 
   const addStarAtUserLocation = React.useCallback(() => {
@@ -2068,6 +2070,15 @@ export default function App() {
   const recordDateKeys = React.useMemo(() => (
     new Set(recordDateSummaries.map(date => date.dateKey))
   ), [recordDateSummaries]);
+
+  const calendarActivityDateKeys = React.useMemo(() => {
+    const keys = new Set(recordDateSummaries.map(date => date.dateKey));
+    stars.forEach(star => {
+      if (!star.createdAt) return;
+      keys.add(getCalendarDateKey(new Date(star.createdAt)));
+    });
+    return keys;
+  }, [recordDateSummaries, stars]);
 
   const mapActivity = React.useMemo(() => {
     const points: MapActivityPoint[] = [];
@@ -3361,6 +3372,7 @@ export default function App() {
                                 {recordsCalendarDays.map(day => {
                                   const dateKey = getCalendarDateKey(day);
                                   const hasRecord = recordDateKeys.has(dateKey);
+                                  const hasCalendarActivity = calendarActivityDateKeys.has(dateKey);
                                   const isToday = getCalendarDateKey(new Date()) === dateKey;
 
                                   return (
@@ -3379,8 +3391,8 @@ export default function App() {
                                       <div className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[14px] font-semibold tracking-tight transition-colors ${isToday ? 'bg-[var(--app-dark)] text-white' : 'text-gray-800 hover:bg-[var(--app-card)]'}`}>
                                         {day.getDate()}
                                       </div>
-                                      {hasRecord && (
-                                        <div className={`absolute bottom-0 h-[4px] w-[4px] rounded-full ${isToday ? 'bg-white' : 'bg-[var(--app-icon)]'}`} />
+                                      {hasCalendarActivity && !isToday && (
+                                        <div className="absolute bottom-0 h-[4px] w-[4px] rounded-full bg-[var(--app-icon)]" />
                                       )}
                                     </button>
                                   );
