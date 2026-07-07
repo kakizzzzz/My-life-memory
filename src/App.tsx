@@ -529,6 +529,11 @@ const HOME_COPY = {
     openPermissions: 'Open permissions',
     openPermissionsHint: 'Request location and direction permissions',
     userManual: 'User manual',
+    openManual: 'Open manual',
+    closeManual: 'Close manual',
+    initialPermissionsTitle: 'Enable location and direction',
+    initialPermissionsBody: 'To center the map on you, move the default star nearby, rotate the origin probe, and record walking routes, the app needs browser location and device direction permission. You can skip this and open permissions later in Settings.',
+    notNow: 'Later',
     manualIntro: 'My life memory is a private life map. It starts from your current location, lets you place stars for meaningful places, and connects notes, photos, walking routes, coordinates, and statistics into one personal memory space.',
     manualSections: [
       { title: 'Map and stars', body: 'A star is one place memory. Tap an empty spot on the map to place a star directly, or drag the star tool onto the map to create it more deliberately. After a star is placed, you can still drag it to adjust the location. Tap a star to write notes, add photos, view coordinates, copy them, or choose another map app to open the place.' },
@@ -644,6 +649,11 @@ const HOME_COPY = {
     openPermissions: '打开权限',
     openPermissionsHint: '请求定位与方向权限',
     userManual: '用户手册',
+    openManual: '打开查阅',
+    closeManual: '关闭手册',
+    initialPermissionsTitle: '开启定位与方向',
+    initialPermissionsBody: '为了把地图居中到你、把默认星星放到附近、让原点探头随手机方向旋转，并记录步行路线，需要浏览器定位和设备方向权限。你也可以先跳过，之后在设置里再打开权限。',
+    notNow: '稍后',
     manualIntro: 'My life memory 是一个私人生活地图。它从你的当前位置出发，用星星记录重要地点，再把文字、图片、步行路线、坐标和统计放进同一个记忆空间里。',
     manualSections: [
       { title: '地图与星星', body: '星星代表一个地点记忆。你可以点击地图上的空白位置直接创建星星，也可以把星星工具拖到地图上创建；星星放好以后仍然可以拖动调整位置。点开星星后，可以写笔记、添加照片、查看坐标、复制坐标，也可以选择 Apple 地图、高德、百度或 Google 地图打开这个地点。' },
@@ -759,6 +769,11 @@ const HOME_COPY = {
     openPermissions: '권한 열기',
     openPermissionsHint: '위치 및 방향 권한 요청',
     userManual: '사용 설명서',
+    openManual: '열어 보기',
+    closeManual: '설명서 닫기',
+    initialPermissionsTitle: '위치와 방향 켜기',
+    initialPermissionsBody: '지도를 현재 위치로 맞추고, 기본 별표를 근처에 두며, 원점 방향 표시를 회전시키고 도보 경로를 기록하려면 브라우저 위치와 기기 방향 권한이 필요합니다. 지금 건너뛰고 나중에 설정에서 열 수도 있습니다.',
+    notNow: '나중에',
     manualIntro: 'My life memory는 현재 위치에서 시작해 별표로 중요한 장소를 남기고, 글, 사진, 도보 경로, 좌표, 통계를 하나의 개인 기억 지도에 연결하는 앱입니다.',
     manualSections: [
       { title: '지도와 별표', body: '별표는 하나의 장소 기억입니다. 지도 빈 곳을 탭해 바로 만들 수 있고, 별표 도구를 지도 위로 끌어 더 정확히 만들 수도 있습니다. 만든 뒤에도 별표를 끌어 위치를 조정할 수 있습니다. 별표를 열면 노트 작성, 사진 추가, 좌표 보기, 좌표 복사, 다른 지도 앱에서 열기를 할 수 있습니다.' },
@@ -1497,6 +1512,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<AppView>(() => initialSignedIn ? 'map' : 'home');
   const [activeHomePanel, setActiveHomePanel] = useState<HomePanel>(null);
   const [isUserManualOpen, setIsUserManualOpen] = useState(false);
+  const [isInitialPermissionPromptOpen, setIsInitialPermissionPromptOpen] = useState(false);
   const [recordsFilter, setRecordsFilter] = useState<RecordsFilter>('all');
   const [selectedRecordsDateKey, setSelectedRecordsDateKey] = useState<string | null>(null);
   const [isRecordsMenuOpen, setIsRecordsMenuOpen] = useState(false);
@@ -1591,9 +1607,7 @@ export default function App() {
   const trackingStartedAtRef = React.useRef(0);
   const lastCompassHeadingAtRef = React.useRef(0);
   const isRequestingHeadingPermissionRef = React.useRef(false);
-  const hasRequestedInitialLocationRef = React.useRef(false);
-  const hasRequestedFirstInteractionLocationRef = React.useRef(false);
-  const hasRequestedFirstInteractionHeadingRef = React.useRef(false);
+  const hasShownInitialPermissionPromptRef = React.useRef(false);
   const hasSyncedDefaultStarToGpsRef = React.useRef(false);
   const isApplyingCloudStateRef = React.useRef(false);
   const cloudReadyToSaveRef = React.useRef(!isCloudBackendEnabled);
@@ -1685,10 +1699,10 @@ export default function App() {
     lastTrackPointRef.current = { location: newLoc, timestamp, accuracy };
   }, []);
 
-  const syncDefaultStarNearUser = React.useCallback((newLoc: [number, number]) => {
-    if (hasSyncedDefaultStarToGpsRef.current) return;
-    hasSyncedDefaultStarToGpsRef.current = true;
+  const syncDefaultStarNearUser = React.useCallback((newLoc: [number, number], force = false) => {
+    if (!force && hasSyncedDefaultStarToGpsRef.current) return;
 
+    let didChange = false;
     setStars(prev => {
       let changed = false;
       const next = prev.map(star => {
@@ -1701,12 +1715,17 @@ export default function App() {
         if (!isUntouchedDefault) return star;
 
         changed = true;
+        didChange = true;
         const [lat, lng] = getNearbyDefaultStarLocation(newLoc);
         return { ...star, lat, lng };
       });
 
       return changed ? next : prev;
     });
+
+    if (force || didChange) {
+      hasSyncedDefaultStarToGpsRef.current = true;
+    }
   }, []);
 
   const applyLocationPoint = React.useCallback((newLoc: [number, number], shouldFly = false, heading?: number | null) => {
@@ -1864,6 +1883,14 @@ export default function App() {
     setPermissionRequestState(headingReady || locationReady ? 'ready' : 'denied');
   }, [requestLocationPermissionOnce, startHeadingWatch]);
 
+  const handleInitialPermissionRequest = React.useCallback(async () => {
+    setIsInitialPermissionPromptOpen(false);
+    await handleOpenPermissions();
+    if (lastGpsLocationRef.current) {
+      setFlyTarget(lastGpsLocationRef.current);
+    }
+  }, [handleOpenPermissions]);
+
   useEffect(() => {
     if (activeHomePanel !== 'theme') {
       setActiveThemeColorKey(null);
@@ -1893,6 +1920,8 @@ export default function App() {
     if (isSignedIn) return;
     setActiveView('home');
     setActiveHomePanel(null);
+    setIsUserManualOpen(false);
+    setIsInitialPermissionPromptOpen(false);
     setIsMenuOpen(false);
     setIsMapStyleMenuOpen(false);
     setTagMenuOpen(false);
@@ -1904,39 +1933,11 @@ export default function App() {
   }, [isSignedIn]);
 
   useEffect(() => {
-    void startHeadingWatch(false);
-  }, [startHeadingWatch]);
-
-  useEffect(() => {
-    if (hasRequestedInitialLocationRef.current) return;
-    hasRequestedInitialLocationRef.current = true;
-    requestUserLocation(true);
-  }, [requestUserLocation]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (hasRequestedFirstInteractionHeadingRef.current && hasRequestedFirstInteractionLocationRef.current) return;
-
-    const requestLiveSensors = () => {
-      if (!hasRequestedFirstInteractionHeadingRef.current) {
-        hasRequestedFirstInteractionHeadingRef.current = true;
-        void startHeadingWatch(true);
-      }
-
-      if (!hasRequestedFirstInteractionLocationRef.current) {
-        hasRequestedFirstInteractionLocationRef.current = true;
-        requestUserLocation(false);
-      }
-    };
-
-    window.addEventListener('pointerdown', requestLiveSensors, { once: true, passive: true });
-    window.addEventListener('touchstart', requestLiveSensors, { once: true, passive: true });
-
-    return () => {
-      window.removeEventListener('pointerdown', requestLiveSensors);
-      window.removeEventListener('touchstart', requestLiveSensors);
-    };
-  }, [requestUserLocation, startHeadingWatch]);
+    if (!isSignedIn || activeView !== 'map' || permissionRequestState === 'ready') return;
+    if (hasShownInitialPermissionPromptRef.current) return;
+    hasShownInitialPermissionPromptRef.current = true;
+    setIsInitialPermissionPromptOpen(true);
+  }, [activeView, isSignedIn, permissionRequestState]);
 
   useEffect(() => {
     if (isCloudBackendEnabled) {
@@ -2303,6 +2304,9 @@ export default function App() {
       avatarUrl: cloudProfile.avatarUrl || remoteState.profile?.avatarUrl || prev.avatarUrl || '',
     }));
     setStars(normalizeInitialStars(remoteState.stars) || [createDefaultRecordStar()]);
+    if (lastGpsLocationRef.current) {
+      syncDefaultStarNearUser(lastGpsLocationRef.current, true);
+    }
     setSavedTracks(Array.isArray(remoteState.savedTracks) ? remoteState.savedTracks : []);
     setIsSignedIn(true);
     setLoginAccount(cloudProfile.account);
@@ -2315,7 +2319,7 @@ export default function App() {
       isApplyingCloudStateRef.current = false;
       cloudReadyToSaveRef.current = true;
     }, 0);
-  }, []);
+  }, [buildDefaultProfileName, syncDefaultStarNearUser]);
 
   const hydrateCloudSession = React.useCallback(async (session: Awaited<ReturnType<typeof getCloudSession>>) => {
     if (!isCloudBackendEnabled) return;
@@ -4588,74 +4592,17 @@ export default function App() {
                       )}
                     </div>
                     <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                        <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                        {homeCopy.userManual}
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setIsUserManualOpen(prev => !prev)}
-                        className="flex h-10 w-full items-center justify-between text-black"
+                        onClick={() => setIsUserManualOpen(true)}
+                        className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
                       >
-                        <span className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-black/60">
-                          <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                          <span className="truncate">{homeCopy.userManual}</span>
-                        </span>
-                        {isUserManualOpen ? (
-                          <ChevronUp size={22} strokeWidth={2} className="shrink-0 text-black/25" />
-                        ) : (
-                          <ChevronDown size={22} strokeWidth={2} className="shrink-0 text-black/25" />
-                        )}
+                        {homeCopy.openManual}
                       </button>
-                      <AnimatePresence initial={false}>
-                        {isUserManualOpen && (
-                          <motion.div
-                            key="settings-user-manual-detail"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.16 }}
-                            className="overflow-hidden"
-                          >
-                            <div
-                              className="max-h-[54vh] overflow-y-auto overscroll-contain pr-1"
-                              style={{ WebkitOverflowScrolling: 'touch' }}
-                            >
-                              <div className="pt-2 text-[13px] font-medium leading-snug text-black/55">
-                                {homeCopy.manualIntro}
-                              </div>
-                              <div className="mt-3 space-y-3">
-                                {homeCopy.manualSections.map(section => (
-                                  <div key={section.title}>
-                                    <div className="text-[13px] font-semibold leading-tight text-black">
-                                      {section.title}
-                                    </div>
-                                    <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
-                                      {section.body}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="mt-4 text-[13px] font-semibold leading-tight text-black">
-                                {homeCopy.manualIconsTitle}
-                              </div>
-                              <div className="mt-2 space-y-2.5">
-                                {manualIconGuide.map(item => (
-                                  <div key={`${item.label}-${item.body}`} className="flex min-w-0 items-start gap-2">
-                                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black">
-                                      {item.icon}
-                                    </span>
-                                    <span className="min-w-0">
-                                      <span className="block text-[12px] font-semibold leading-tight text-black">
-                                        {item.label}
-                                      </span>
-                                      <span className="mt-0.5 block text-[11px] font-medium leading-snug text-black/52">
-                                        {item.body}
-                                      </span>
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
                     </div>
                     <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
@@ -4675,6 +4622,124 @@ export default function App() {
               </AnimatePresence>
 
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isInitialPermissionPromptOpen && isSignedIn && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[2300] flex items-end justify-center bg-black/25 px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-6 pointer-events-auto"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 14, scale: 0.98 }}
+              transition={{ duration: 0.18 }}
+              className="w-full max-w-[360px] rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
+            >
+              <div className="mb-2 flex items-center gap-2 text-[17px] font-medium leading-tight">
+                <MapPin size={22} strokeWidth={2.2} />
+                {homeCopy.initialPermissionsTitle}
+              </div>
+              <div className="text-[13px] font-medium leading-snug text-black/55">
+                {homeCopy.initialPermissionsBody}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsInitialPermissionPromptOpen(false)}
+                  className="h-11 rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
+                >
+                  {homeCopy.notNow}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleInitialPermissionRequest}
+                  disabled={permissionRequestState === 'requesting'}
+                  className="h-11 rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
+                >
+                  {permissionRequestState === 'requesting' ? homeCopy.permissionRequesting : homeCopy.openPermissions}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isUserManualOpen && isSignedIn && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[2300] flex items-center justify-center bg-black/35 px-5 py-[calc(env(safe-area-inset-top)+1rem)] pointer-events-auto"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.18 }}
+              className="flex max-h-[82dvh] w-full max-w-[390px] flex-col rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2 text-[18px] font-medium leading-tight">
+                  <BookOpen size={24} strokeWidth={2.2} />
+                  <span className="truncate">{homeCopy.userManual}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsUserManualOpen(false)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black transition-transform active:scale-95"
+                  aria-label={homeCopy.closeManual}
+                >
+                  <X size={20} strokeWidth={2.2} />
+                </button>
+              </div>
+              <div
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
+                <div className="text-[13px] font-medium leading-snug text-black/55">
+                  {homeCopy.manualIntro}
+                </div>
+                <div className="mt-4 space-y-3">
+                  {homeCopy.manualSections.map(section => (
+                    <div key={section.title}>
+                      <div className="text-[13px] font-semibold leading-tight text-black">
+                        {section.title}
+                      </div>
+                      <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
+                        {section.body}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5 text-[13px] font-semibold leading-tight text-black">
+                  {homeCopy.manualIconsTitle}
+                </div>
+                <div className="mt-3 space-y-2.5 pb-1">
+                  {manualIconGuide.map(item => (
+                    <div key={`${item.label}-${item.body}`} className="flex min-w-0 items-start gap-2">
+                      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black">
+                        {item.icon}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[12px] font-semibold leading-tight text-black">
+                          {item.label}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] font-medium leading-snug text-black/52">
+                          {item.body}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
