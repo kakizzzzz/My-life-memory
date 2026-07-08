@@ -1,9 +1,18 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  clientIp,
+  createCorsHeaders,
+  forbiddenOriginResponse,
+  hitRateLimit,
+  isOriginAllowed,
+  rateLimitResponse,
+  sanitizeHtmlFields,
+} from '../_shared/security.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+let corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
@@ -47,7 +56,7 @@ const sanitizeCloudValue = (value: unknown): unknown => {
     if (sensitiveStateKeys.has(key.toLowerCase())) return;
     sanitized[key] = sanitizeCloudValue(entry);
   });
-  return sanitized;
+  return sanitizeHtmlFields(sanitized);
 };
 
 const getString = (value: unknown) => (
@@ -55,6 +64,17 @@ const getString = (value: unknown) => (
 );
 
 serve(async request => {
+  if (!isOriginAllowed(request)) {
+    return forbiddenOriginResponse();
+  }
+
+  corsHeaders = createCorsHeaders(request);
+
+  const ipLimit = hitRateLimit(`register:${clientIp(request)}`, 30, 60_000);
+  if (ipLimit.limited) {
+    return rateLimitResponse(corsHeaders, ipLimit.retryAfterSeconds);
+  }
+
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -89,6 +109,8 @@ serve(async request => {
     : {};
 
   if (!inviteCode || inviteCode !== inviteSecret) {
+    const failLimit = hitRateLimit(`register-invite-fail:${clientIp(request)}:${normalizedAccount || 'none'}`, 5, 10 * 60_000);
+    if (failLimit.limited) return rateLimitResponse(corsHeaders, failLimit.retryAfterSeconds);
     return jsonResponse({ error: { code: 'invalid_invite', message: 'Invite code is invalid.' } }, 403);
   }
 

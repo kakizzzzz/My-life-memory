@@ -7,6 +7,7 @@ import {
   supabasePublishableKey,
   type CloudSession,
 } from './supabaseClient';
+import { sanitizeRichHtmlFields } from './htmlSanitizer';
 
 export type CloudProfile = {
   account: string;
@@ -164,7 +165,7 @@ const sanitizeCloudValue = (value: unknown): unknown => {
 };
 
 const sanitizeCloudAppState = (state: CloudAppState | null): CloudAppState | null => (
-  state ? sanitizeCloudValue(state) as CloudAppState : null
+  state ? sanitizeRichHtmlFields(sanitizeCloudValue(state) as CloudAppState) : null
 );
 
 const isCloudSetupError = (error: unknown) => {

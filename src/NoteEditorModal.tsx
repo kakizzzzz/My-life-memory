@@ -14,6 +14,7 @@ import {
   uploadImageToStorage,
   type StoredImageMetadata,
 } from './lib/mediaStorage';
+import { sanitizeRichHtml } from './lib/htmlSanitizer';
 
 type NoteData = NonNullable<StarData['notes']>[number] & {
   titleHtml?: string;
@@ -204,7 +205,7 @@ const imageToHtml = (imageUrl: string, copy: NoteEditorCopy = NOTE_EDITOR_COPY.e
 const localizeNoteImageControls = (html: string, copy: NoteEditorCopy) => {
   if (!html || typeof document === 'undefined') return html;
   const container = document.createElement('div');
-  container.innerHTML = html;
+  container.innerHTML = sanitizeRichHtml(html);
   container.querySelectorAll<HTMLElement>('.note-inline-image, [data-note-image="true"]').forEach(figure => {
     figure.classList.add('note-inline-image');
     figure.setAttribute('contenteditable', 'false');
@@ -289,8 +290,8 @@ const normalizeNote = (note: NoteData, copy: NoteEditorCopy = NOTE_EDITOR_COPY.e
 
   return {
   ...sourceNote,
-  titleHtml: sourceNote.titleHtml ?? escapeHtml(sourceNote.title || ''),
-  contentHtml: noteToHtml(sourceNote, copy),
+  titleHtml: sanitizeRichHtml(sourceNote.titleHtml ?? escapeHtml(sourceNote.title || '')),
+  contentHtml: sanitizeRichHtml(noteToHtml(sourceNote, copy)),
   imageUrl: undefined,
   imageUrls: undefined,
   };
@@ -451,7 +452,7 @@ const dataUrlToFile = async (dataUrl: string, fileName: string) => {
 const extractStoredImagesFromHtml = (html: string) => {
   if (!html || typeof document === 'undefined') return [];
   const container = document.createElement('div');
-  container.innerHTML = html;
+  container.innerHTML = sanitizeRichHtml(html);
   return Array.from(container.querySelectorAll('[data-note-image="true"]'))
     .map(figure => imageMetadataFromElement(figure))
     .filter((metadata): metadata is StoredImageMetadata => Boolean(metadata));
@@ -539,7 +540,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
       next[currentIndex] = {
         ...next[currentIndex],
         title,
-        titleHtml: titleEditor.innerHTML,
+        titleHtml: sanitizeRichHtml(titleEditor.innerHTML),
       };
       return next;
     });
@@ -554,7 +555,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     setEditorEmpty(plainText.length === 0 && !hasImages);
     setNotes(prev => {
       const next = [...prev];
-      const contentHtml = dehydrateStorageMediaHtml(editor.innerHTML);
+      const contentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(editor.innerHTML));
       next[currentIndex] = {
         ...next[currentIndex],
         content: plainText,
@@ -571,8 +572,8 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     const editor = editorRef.current;
     const titleEditor = titleEditorRef.current;
     if (!editor || !titleEditor || !currentNote) return;
-    titleEditor.innerHTML = currentNote.titleHtml ?? escapeHtml(currentNote.title || '');
-    editor.innerHTML = hydrateStorageMediaHtml(currentNote.contentHtml || '');
+    titleEditor.innerHTML = sanitizeRichHtml(currentNote.titleHtml ?? escapeHtml(currentNote.title || ''));
+    editor.innerHTML = hydrateStorageMediaHtml(sanitizeRichHtml(currentNote.contentHtml || ''));
     ensureEditableTailAfterMedia(editor);
     setEditorEmpty(getEditorPlainText().length === 0 && !editor.querySelector('img'));
     setActivePanel(null);
@@ -1564,7 +1565,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     if (editor) ensureEditableTailAfterMedia(editor);
     const savedNotes = editor ? notes.map((note, idx) => {
       if (idx !== currentIndex) {
-        const contentHtml = dehydrateStorageMediaHtml(note.contentHtml || '');
+        const contentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(note.contentHtml || ''));
         return {
           ...note,
           contentHtml,
@@ -1576,13 +1577,13 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
       const createdAt = note.createdAt || (Number.isFinite(noteIdTimestamp) && noteIdTimestamp > 0 ? noteIdTimestamp : savedAt);
       clone.querySelectorAll('[data-remove-image="true"]').forEach(button => button.remove());
       clone.querySelectorAll('[data-preview-image="true"]').forEach(button => button.remove());
-      const contentHtml = dehydrateStorageMediaHtml(clone.innerHTML);
+      const contentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(clone.innerHTML));
       const images = extractStoredImagesFromHtml(contentHtml);
       deleteStoredImages(getRemovedStoredImages(getStoredImagesFromNote(note), images));
       return {
         ...note,
         title: titleEditor ? getTitlePlainText(titleEditor) : note.title,
-        titleHtml: titleEditor ? titleEditor.innerHTML : note.titleHtml,
+        titleHtml: sanitizeRichHtml(titleEditor ? titleEditor.innerHTML : note.titleHtml || ''),
         content: clone.innerText.trim(),
         contentHtml,
         images,

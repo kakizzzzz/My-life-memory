@@ -1,9 +1,20 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  clientIp,
+  createCorsHeaders,
+  forbiddenOriginResponse,
+  hitRateLimit,
+  isOriginAllowed,
+  rateLimitResponse,
+  sanitizeHtmlFields,
+  sanitizeRichHtml,
+  tokenPrefix,
+} from '../_shared/security.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+let corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
@@ -29,6 +40,16 @@ const writableNoteKeys = new Set([
   'color',
 ]);
 
+const writeActions = new Set([
+  'create_star',
+  'update_star',
+  'add_note_to_star',
+  'update_note',
+  'delete_note',
+  'delete_star',
+  'delete_route',
+]);
+
 const writableStarKeys = new Set([
   'lat',
   'lng',
@@ -51,6 +72,28 @@ const errorResponse = (code: string, message: string, status = 400, extra: Recor
   jsonResponse({ error: { code, message, ...extra } }, status)
 );
 
+const memoryResponse = (
+  action: string,
+  body: Record<string, unknown>,
+  meta: { count?: number; query?: string } = {},
+) => {
+  const count = Number.isFinite(meta.count) ? meta.count as number : getNumber(body.count, 0);
+  return jsonResponse({
+    ok: true,
+    source: 'my-life-memory',
+    action,
+    count,
+    query: meta.query ?? getString(body.query),
+    timestamp: new Date().toISOString(),
+    ...(count === 0 ? {
+      records: [],
+      instruction: 'No matching records. Do not infer or invent.',
+    } : {}),
+    ...body,
+    count,
+  });
+};
+
 const sanitizeValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(item => sanitizeValue(item));
   if (!value || typeof value !== 'object') return value;
@@ -60,7 +103,7 @@ const sanitizeValue = (value: unknown): unknown => {
     if (sensitiveStateKeys.has(key.toLowerCase())) return;
     sanitized[key] = sanitizeValue(entry);
   });
-  return sanitized;
+  return sanitizeHtmlFields(sanitized);
 };
 
 const getString = (value: unknown, fallback = '') => (
@@ -244,7 +287,7 @@ const collectMediaPathsFromNote = (note: Record<string, unknown>, userId: string
   });
 
   const contentHtml = getString(note.contentHtml);
-  const attrPattern = /data-storage-(?:path|key)=["']([^"']+)["']/g;
+  const attrPattern = /data-(?:media|storage)-(?:path|key)=["']([^"']+)["']/g;
   let match: RegExpExecArray | null;
   while ((match = attrPattern.exec(contentHtml)) !== null) {
     const path = match[1];
@@ -403,6 +446,17 @@ const requireDeleteIntent = (body: Record<string, unknown>) => {
 };
 
 serve(async request => {
+  if (!isOriginAllowed(request)) {
+    return forbiddenOriginResponse();
+  }
+
+  corsHeaders = createCorsHeaders(request);
+
+  const ipLimit = hitRateLimit(`memory-api:${clientIp(request)}`, 180, 60_000);
+  if (ipLimit.limited) {
+    return rateLimitResponse(corsHeaders, ipLimit.retryAfterSeconds);
+  }
+
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -436,6 +490,10 @@ serve(async request => {
     const authHeader = request.headers.get('authorization') || '';
     const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1] || '';
     const internalHeader = request.headers.get('x-memory-api-internal-token') || '';
+    const authLimit = hitRateLimit(`memory-api-auth:${clientIp(request)}:${tokenPrefix(internalHeader || token)}`, 120, 60_000);
+    if (authLimit.limited) {
+      return rateLimitResponse(corsHeaders, authLimit.retryAfterSeconds);
+    }
     let memory: Awaited<ReturnType<typeof loadMemoryForUserId>>;
     if (internalHeader) {
       if (!internalToken || internalHeader !== internalToken) {
@@ -450,15 +508,20 @@ serve(async request => {
       memory = await loadMemory(admin, token);
     }
     const action = getString(body.action);
+    if (writeActions.has(action) && (Deno.env.get('ENABLE_MEMORY_API_WRITES') || '').toLowerCase() !== 'true') {
+      return errorResponse('writes_disabled', 'Memory API write actions are disabled in production.', 403);
+    }
+
     const timeZone = getString(body.timeZone, 'Asia/Shanghai');
     const stars = getStars(memory.state);
     const tracks = getTracks(memory.state);
 
     if (action === 'list_locations') {
-      return jsonResponse({
-        ok: true,
-        locations: stars.map(starSummary),
-      });
+      const locations = stars.map(starSummary);
+      return memoryResponse(action, {
+        locations,
+        records: locations,
+      }, { count: locations.length });
     }
 
     if (action === 'search_memories') {
@@ -484,7 +547,11 @@ serve(async request => {
         );
       }).slice(0, limit);
 
-      return jsonResponse({ ok: true, query, count: results.length, results });
+      return memoryResponse(action, {
+        query,
+        results,
+        records: results,
+      }, { count: results.length, query });
     }
 
     if (action === 'get_location_memory') {
@@ -492,11 +559,12 @@ serve(async request => {
       const starIndex = stars.findIndex(star => getString(star.id) === starId);
       if (starIndex === -1) return errorResponse('not_found', 'Location was not found.', 404);
       const star = stars[starIndex];
-      return jsonResponse({
-        ok: true,
+      const notes = getNotes(star).map((note, noteIndex) => noteSummary(note, star, starIndex, noteIndex));
+      return memoryResponse(action, {
         location: starSummary(star, starIndex),
-        notes: getNotes(star).map((note, noteIndex) => noteSummary(note, star, starIndex, noteIndex)),
-      });
+        notes,
+        records: notes,
+      }, { count: notes.length });
     }
 
     if (action === 'get_day_memory') {
@@ -514,7 +582,12 @@ serve(async request => {
           getNotes(star).some(note => dateKeyFor(note.createdAt || star.createdAt, timeZone) === date)
         ))
         .map(({ star, starIndex }) => starSummary(star, starIndex));
-      return jsonResponse({ ok: true, date, locations, notes });
+      return memoryResponse(action, {
+        date,
+        locations,
+        notes,
+        records: notes,
+      }, { count: notes.length });
     }
 
     if (action === 'get_routes') {
@@ -532,7 +605,10 @@ serve(async request => {
         pointCount: getArray(track.paths).reduce((sum, segment) => sum + getArray(segment).length, 0),
         paths: getBoolean(body.includePaths) ? track.paths : undefined,
       }));
-      return jsonResponse({ ok: true, routes });
+      return memoryResponse(action, {
+        routes,
+        records: routes,
+      }, { count: routes.length });
     }
 
     if (action === 'summarize_memory_range') {
@@ -544,8 +620,15 @@ serve(async request => {
           .filter(note => !dateFrom && !dateTo ? true : isInDateRange(note.createdAt, dateFrom, dateTo, timeZone))
       ));
       const routes = tracks.filter(track => !dateFrom && !dateTo ? true : isInDateRange(track.time, dateFrom, dateTo, timeZone));
-      return jsonResponse({
-        ok: true,
+      const topLocations = stars
+        .map((star, starIndex) => ({
+          ...starSummary(star, starIndex),
+          matchedNotes: notes.filter(note => note.starId === getString(star.id)).length,
+        }))
+        .filter(location => location.matchedNotes > 0)
+        .sort((a, b) => b.matchedNotes - a.matchedNotes)
+        .slice(0, 10);
+      return memoryResponse(action, {
         range: { dateFrom: dateFrom || null, dateTo: dateTo || null, timeZone },
         totals: {
           locations: new Set(notes.map(note => note.starId)).size,
@@ -554,20 +637,13 @@ serve(async request => {
           routes: routes.length,
           routeDistanceKm: routes.reduce((sum, route) => sum + getNumber(route.distance, 0), 0),
         },
-        topLocations: stars
-          .map((star, starIndex) => ({
-            ...starSummary(star, starIndex),
-            matchedNotes: notes.filter(note => note.starId === getString(star.id)).length,
-          }))
-          .filter(location => location.matchedNotes > 0)
-          .sort((a, b) => b.matchedNotes - a.matchedNotes)
-          .slice(0, 10),
-      });
+        topLocations,
+        records: topLocations,
+      }, { count: notes.length });
     }
 
     if (action === 'export_memory_report') {
-      return jsonResponse({
-        ok: true,
+      return memoryResponse(action, {
         format: 'html',
         html: buildMemoryReportHtml({
           account: memory.account,
@@ -575,7 +651,7 @@ serve(async request => {
           stars,
           timeZone,
         }),
-      });
+      }, { count: stars.length });
     }
 
     if (action === 'create_star') {
@@ -596,7 +672,7 @@ serve(async request => {
         star.notes = [{
           id: createId('note'),
           content: getString(noteInput.content),
-          contentHtml: getString(noteInput.contentHtml),
+          contentHtml: sanitizeRichHtml(noteInput.contentHtml),
           images: getArray(noteInput.images),
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -639,7 +715,7 @@ serve(async request => {
       const note: Record<string, unknown> = {
         id: createId('note'),
         content: getString(noteInput.content),
-        contentHtml: getString(noteInput.contentHtml),
+        contentHtml: sanitizeRichHtml(noteInput.contentHtml),
         imageUrls: getArray(noteInput.imageUrls),
         images: getArray(noteInput.images),
         fontSize: noteInput.fontSize,
@@ -668,7 +744,7 @@ serve(async request => {
       const nextNote = { ...notes[noteIndex], updatedAt: Date.now() };
       Object.entries(updates).forEach(([key, value]) => {
         if (!writableNoteKeys.has(key)) return;
-        nextNote[key] = value;
+        nextNote[key] = key === 'contentHtml' ? sanitizeRichHtml(value) : value;
       });
       const nextNotes = notes.map((note, index) => index === noteIndex ? nextNote : note);
       const nextStars = stars.map((star, index) => index === starIndex ? { ...star, notes: nextNotes } : star);

@@ -113,7 +113,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('search_memories', {
     title: 'Search My Life Memory',
-    description: 'Search the user memory notes, coordinates, and location ids.',
+    description: 'Search the authenticated user memory notes, coordinates, and location ids. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       query: z.string().default(''),
       dateFrom: optionalDate,
@@ -128,7 +128,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('list_locations', {
     title: 'List Memory Locations',
-    description: 'List all saved stars with coordinates, colors, timestamps, and note counts.',
+    description: 'List saved stars for the authenticated user. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {},
     annotations: {
       readOnlyHint: true,
@@ -138,7 +138,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('get_location_memory', {
     title: 'Get Location Memory',
-    description: 'Read all notes and image metadata for one star/location.',
+    description: 'Read notes and image metadata for one authenticated-user star/location. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       starId: z.string().min(1),
     },
@@ -150,7 +150,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('get_day_memory', {
     title: 'Get Day Memory',
-    description: 'Read all memories for one local date.',
+    description: 'Read memories for one local date. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     },
@@ -162,7 +162,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('get_routes', {
     title: 'Get Routes',
-    description: 'Read saved GPS routes. Paths are omitted unless includePaths is true.',
+    description: 'Read saved GPS routes. Paths are omitted unless includePaths is true. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       dateFrom: optionalDate,
       dateTo: optionalDate,
@@ -176,7 +176,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('summarize_memory_range', {
     title: 'Summarize Memory Range',
-    description: 'Return counts and top locations for a date range. The AI client can use this data to write its own summary.',
+    description: 'Return counts and top locations for a date range. The AI client may summarize only this returned data and must not invent missing records.',
     inputSchema: {
       dateFrom: optionalDate,
       dateTo: optionalDate,
@@ -189,7 +189,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('export_memory_report', {
     title: 'Export Memory Report',
-    description: 'Generate a readable HTML report string for the authenticated user.',
+    description: 'Generate a readable HTML report string for the authenticated user using only stored My Life Memory data.',
     inputSchema: {},
     annotations: {
       readOnlyHint: true,

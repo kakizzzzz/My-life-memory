@@ -1,9 +1,18 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  clientIp,
+  createCorsHeaders,
+  forbiddenOriginResponse,
+  hitRateLimit,
+  isOriginAllowed,
+  rateLimitResponse,
+  tokenPrefix,
+} from '../_shared/security.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+let corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Expose-Headers': 'mcp-session-id',
@@ -18,7 +27,7 @@ const readTools = [
   {
     name: 'search_memories',
     title: 'Search My Life Memory',
-    description: 'Search the user memory notes, coordinates, and location ids.',
+    description: 'Search the authenticated user memory notes, coordinates, and location ids. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -33,7 +42,7 @@ const readTools = [
   {
     name: 'list_locations',
     title: 'List Memory Locations',
-    description: 'List all saved stars with coordinates, colors, timestamps, and note counts.',
+    description: 'List saved stars for the authenticated user. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -43,7 +52,7 @@ const readTools = [
   {
     name: 'get_location_memory',
     title: 'Get Location Memory',
-    description: 'Read all notes and image metadata for one star/location.',
+    description: 'Read notes and image metadata for one authenticated-user star/location. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -56,7 +65,7 @@ const readTools = [
   {
     name: 'get_day_memory',
     title: 'Get Day Memory',
-    description: 'Read all memories for one local date.',
+    description: 'Read memories for one local date. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -69,7 +78,7 @@ const readTools = [
   {
     name: 'get_routes',
     title: 'Get Routes',
-    description: 'Read saved GPS routes. Paths are omitted unless includePaths is true.',
+    description: 'Read saved GPS routes. Paths are omitted unless includePaths is true. Answer only from returned data. If count is 0, do not infer or invent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -83,7 +92,7 @@ const readTools = [
   {
     name: 'summarize_memory_range',
     title: 'Summarize Memory Range',
-    description: 'Return counts and top locations for a date range. The AI client can use this data to write its own summary.',
+    description: 'Return counts and top locations for a date range. The AI client may summarize only this returned data and must not invent missing records.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -96,7 +105,7 @@ const readTools = [
   {
     name: 'export_memory_report',
     title: 'Export Memory Report',
-    description: 'Generate a readable HTML report string for the authenticated user.',
+    description: 'Generate a readable HTML report string for the authenticated user using only stored My Life Memory data.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -175,6 +184,8 @@ const getConfig = () => {
 const authenticateMcpRequest = async (request: Request, config: ReturnType<typeof getConfig>) => {
   const token = getBearerToken(request);
   if (!token) {
+    const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
+    if (limit.limited) throw rateLimitResponse(corsHeaders, limit.retryAfterSeconds);
     throw new Response(JSON.stringify(rpcError(null, -32001, 'Unauthorized')), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -203,11 +214,19 @@ const authenticateMcpRequest = async (request: Request, config: ReturnType<typeo
   }
 
   if (!data?.user_id) {
+    const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:${tokenPrefix(token)}`, 10, 10 * 60_000);
+    if (limit.limited) throw rateLimitResponse(corsHeaders, limit.retryAfterSeconds);
     throw new Response(JSON.stringify(rpcError(null, -32001, 'Unauthorized')), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+
+  await admin
+    .from('mcp_tokens')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', data.id)
+    .catch(() => {});
 
   return {
     userId: data.user_id,
@@ -297,6 +316,22 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
 };
 
 serve(async request => {
+  if (!isOriginAllowed(request)) {
+    return forbiddenOriginResponse();
+  }
+
+  corsHeaders = createCorsHeaders(
+    request,
+    'GET, POST, OPTIONS',
+    'authorization, x-client-info, apikey, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id',
+    'mcp-session-id',
+  );
+
+  const ipLimit = hitRateLimit(`mcp:${clientIp(request)}`, 240, 60_000);
+  if (ipLimit.limited) {
+    return rateLimitResponse(corsHeaders, ipLimit.retryAfterSeconds);
+  }
+
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
   }

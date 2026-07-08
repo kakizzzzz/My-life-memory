@@ -27,6 +27,7 @@ import {
   warmStorageImageUrls,
   type StoredImageMetadata,
 } from './lib/mediaStorage';
+import { sanitizeRichHtml, sanitizeRichHtmlFields } from './lib/htmlSanitizer';
 import {
   getCloudSession,
   loadCloudAccountData,
@@ -617,7 +618,9 @@ const readPersistedAppState = (): PersistedAppState | null => {
     const raw = window.localStorage.getItem(APP_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed as PersistedAppState : null;
+    return parsed && typeof parsed === 'object'
+      ? sanitizeRichHtmlFields(parsed as PersistedAppState)
+      : null;
   } catch {
     return null;
   }
@@ -658,7 +661,7 @@ const writePersistedAppState = (state: PersistedAppState) => {
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(sanitizeRichHtmlFields(state)));
   } catch {
     // Storage can fail when image-heavy notes exceed the browser quota.
   }
@@ -1519,7 +1522,7 @@ const readPhotoGpsCoordinates = async (file: File): Promise<[number, number] | n
 const extractImagesFromHtml = (html?: string) => {
   if (!html || typeof document === 'undefined') return [];
   const container = document.createElement('div');
-  container.innerHTML = html;
+  container.innerHTML = sanitizeRichHtml(html);
   return Array.from(container.querySelectorAll('img'))
     .map(image => image.getAttribute('src'))
     .filter((src): src is string => Boolean(src));
@@ -1528,7 +1531,7 @@ const extractImagesFromHtml = (html?: string) => {
 const extractStoredImagesFromHtml = (html?: string) => {
   if (!html || typeof document === 'undefined') return [];
   const container = document.createElement('div');
-  container.innerHTML = html;
+  container.innerHTML = sanitizeRichHtml(html);
   return Array.from(container.querySelectorAll('[data-note-image="true"]'))
     .map(figure => imageMetadataFromElement(figure))
     .filter((metadata): metadata is StoredImageMetadata => Boolean(metadata));
@@ -1787,7 +1790,7 @@ const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
 const htmlToText = (html?: string) => {
   if (!html || typeof document === 'undefined') return '';
   const container = document.createElement('div');
-  container.innerHTML = html;
+  container.innerHTML = sanitizeRichHtml(html);
   return (container.textContent || '').replace(/\s+/g, ' ').trim();
 };
 
@@ -1965,7 +1968,7 @@ const ensureReaderEditableTailAfterMedia = (element: HTMLElement) => {
 const cleanReaderHtml = (html: string, imageAltText?: string, removeImageText?: string) => {
   if (!html || typeof document === 'undefined') return html;
   const container = document.createElement('div');
-  container.innerHTML = html;
+  container.innerHTML = sanitizeRichHtml(html);
   container
     .querySelectorAll('[data-remove-image="true"], [data-preview-image="true"], button')
     .forEach(element => element.remove());
@@ -2442,7 +2445,8 @@ function MapEventHandlers({
 
 export default function App() {
   const [persistedAppState] = useState<PersistedAppState | null>(() => readPersistedAppState());
-  const persistedPrivateState = isCloudBackendEnabled ? null : persistedAppState;
+  const canUseLocalAuthFallback = import.meta.env.DEV && !isCloudBackendEnabled;
+  const persistedPrivateState = canUseLocalAuthFallback ? persistedAppState : null;
   const initialLanguage = isLanguage(persistedAppState?.language) ? persistedAppState.language : 'en';
   const persistedAccount = normalizeAccountId(persistedPrivateState?.profile?.account || '');
   const initialProfile: UserProfile = {
@@ -2453,8 +2457,7 @@ export default function App() {
     password: DEFAULT_PROFILE.password,
   };
   const initialSignedIn = (
-    !isCloudBackendEnabled &&
-    !supabaseConfigMessage &&
+    canUseLocalAuthFallback &&
     persistedAppState?.isSignedIn === true &&
     hasLoginAccount(initialProfile)
   );
@@ -2551,7 +2554,7 @@ export default function App() {
   const readerPendingTitleStylesRef = React.useRef<Record<string, string>>({});
   const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
 
-  const cloudConfigError = !isCloudBackendEnabled ? supabaseConfigMessage : '';
+  const cloudConfigError = !isCloudBackendEnabled && !canUseLocalAuthFallback ? supabaseConfigMessage : '';
   
   // Tag Mode State
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
@@ -3519,7 +3522,7 @@ export default function App() {
       return;
     }
 
-    if (!isCloudBackendEnabled) {
+    if (canUseLocalAuthFallback) {
       setProfile(prev => ({
         ...prev,
         name: prev.name || buildDefaultProfileName(enteredAccount),
@@ -3834,7 +3837,7 @@ export default function App() {
     const images: UploadedImage[] = [];
     stars.forEach((star, starIndex) => {
       (star.notes || []).forEach((note, noteIndex) => {
-        const hydratedContentHtml = hydrateStorageMediaHtml(note.contentHtml || '');
+        const hydratedContentHtml = hydrateStorageMediaHtml(sanitizeRichHtml(note.contentHtml || ''));
         const metadataSources = (note.images || [])
           .map(metadata => buildStorageImageSrc(metadata))
           .filter((src): src is string => Boolean(src));
@@ -4246,12 +4249,12 @@ export default function App() {
         }
       }
 
-      const contentHtml = dehydrateStorageMediaHtml(`${imageHtml}${readerEditableTailHtml}`);
+      const contentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(`${imageHtml}${readerEditableTailHtml}`));
       const title = homeCopy.photoGpsNoteTitle;
       const note: NoteData = {
         id: noteId,
         title,
-        titleHtml: escapeHtml(title),
+        titleHtml: sanitizeRichHtml(escapeHtml(title)),
         content: '',
         contentHtml,
         images: imageMetadata ? [imageMetadata] : undefined,
@@ -4577,11 +4580,11 @@ export default function App() {
     const contentEditor = readerContentRef.current;
 
     if (titleEditor && titleEditor.innerHTML !== readerRecord.titleHtml) {
-      titleEditor.innerHTML = readerRecord.titleHtml;
+      titleEditor.innerHTML = sanitizeRichHtml(readerRecord.titleHtml);
     }
 
     if (contentEditor && contentEditor.innerHTML !== readerRecord.contentHtml) {
-      contentEditor.innerHTML = readerRecord.contentHtml;
+      contentEditor.innerHTML = sanitizeRichHtml(readerRecord.contentHtml);
     }
 
     if (contentEditor) ensureReaderEditableTailAfterMedia(contentEditor);
@@ -4594,9 +4597,9 @@ export default function App() {
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
     if (!readerRecord) return;
     if (readerContentRef.current) ensureReaderEditableTailAfterMedia(readerContentRef.current);
-    const titleHtml = readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml;
+    const titleHtml = sanitizeRichHtml(readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml);
     const rawContentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
-    const contentHtml = dehydrateStorageMediaHtml(rawContentHtml);
+    const contentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(rawContentHtml));
     const title = htmlToText(titleHtml);
     const content = htmlToText(contentHtml);
     const timestamp = Date.now();

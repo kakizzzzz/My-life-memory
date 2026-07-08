@@ -1,9 +1,18 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  clientIp,
+  createCorsHeaders,
+  forbiddenOriginResponse,
+  hitRateLimit,
+  isOriginAllowed,
+  rateLimitResponse,
+  tokenPrefix,
+} from '../_shared/security.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+let corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
@@ -56,6 +65,17 @@ const getBearerToken = (request: Request) => {
 };
 
 serve(async request => {
+  if (!isOriginAllowed(request)) {
+    return forbiddenOriginResponse();
+  }
+
+  corsHeaders = createCorsHeaders(request);
+
+  const ipLimit = hitRateLimit(`mcp-token:${clientIp(request)}`, 60, 60_000);
+  if (ipLimit.limited) {
+    return rateLimitResponse(corsHeaders, ipLimit.retryAfterSeconds);
+  }
+
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -72,6 +92,8 @@ serve(async request => {
 
   const userToken = getBearerToken(request);
   if (!userToken) {
+    const limit = hitRateLimit(`mcp-token-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
+    if (limit.limited) return rateLimitResponse(corsHeaders, limit.retryAfterSeconds);
     return errorResponse('unauthorized', 'A valid login session is required.', 401);
   }
 
@@ -91,6 +113,8 @@ serve(async request => {
 
   const { data: userData, error: userError } = await admin.auth.getUser(userToken);
   if (userError || !userData.user) {
+    const limit = hitRateLimit(`mcp-token-auth-fail:${clientIp(request)}:${tokenPrefix(userToken)}`, 10, 10 * 60_000);
+    if (limit.limited) return rateLimitResponse(corsHeaders, limit.retryAfterSeconds);
     return errorResponse('unauthorized', 'A valid login session is required.', 401);
   }
 

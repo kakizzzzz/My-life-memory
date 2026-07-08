@@ -46,6 +46,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Photo-GPS star creation uploads the selected photo through the same Storage flow, then creates a star and a note at the embedded photo coordinates. If the photo has no usable GPS metadata, no star is created.
 - Deleting an avatar, note image, star, or note queues the related Storage object for deletion. Failed deletes are retried after login, focus, or network recovery.
 - On login, the app scans only the current user's Storage folder and removes unreferenced media after a short grace window. It does not list or delete other users' files.
+- Rich note HTML is sanitized before save/load so only the note editor's small allowlist is stored.
 - Password-like fields are removed before saving cloud app state; password changes go through `supabase.auth.updateUser`.
 - Readable export intentionally omits raw app state, settings internals, and password fields. It writes a local `.html` report for the user to keep or archive.
 
@@ -63,7 +64,7 @@ Supported read actions:
 - `summarize_memory_range`
 - `export_memory_report`
 
-Authenticated direct API clients may also call these write/delete actions for future controlled integrations:
+The codebase contains these write/delete actions for future controlled integrations:
 
 - `create_star`
 - `update_star`
@@ -73,7 +74,7 @@ Authenticated direct API clients may also call these write/delete actions for fu
 - `delete_star`
 - `delete_route`
 
-Write actions require `confirmWrite: true`. Delete actions additionally require `confirm: "DELETE"` and remove referenced private Storage media only inside the current user's folder.
+In production, write/delete actions are disabled by default. They are accepted only when the Edge Function secret `ENABLE_MEMORY_API_WRITES=true` is set. Even then, write actions require `confirmWrite: true`, delete actions additionally require `confirm: "DELETE"`, rich HTML is sanitized server-side, and referenced private Storage media is removed only inside the current user's folder.
 
 The local stdio MCP server wraps this API for desktop AI apps:
 
@@ -102,6 +103,7 @@ Cloud MCP server secrets:
 
 ```bash
 MEMORY_API_INTERNAL_TOKEN=choose-a-long-random-server-token
+ALLOWED_ORIGINS=https://your-pages-domain.example,http://localhost:3000
 ```
 
 Users generate their own MCP token inside the app:
@@ -147,9 +149,11 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 5. Deploy the Supabase Edge Functions `register-with-invite`, `memory-api`, `mcp-token`, and `mcp`.
 6. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
 7. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
-8. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-9. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
-10. If table grants are missing, run `supabase/fix-permissions.sql`.
+8. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call Edge Functions, for example `https://yourname.github.io,http://localhost:3000`.
+9. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
+10. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+11. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
+12. If table grants are missing, run `supabase/fix-permissions.sql`.
 
 Storage paths are user scoped:
 
@@ -193,15 +197,17 @@ For GitHub Pages:
 - The frontend must use only the Supabase publishable/anon key.
 - `service_role` belongs only in trusted server environments and is not needed for this app.
 - Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
+- Edge Functions reject browser origins outside `ALLOWED_ORIGINS` and apply basic in-memory rate limits by IP plus account/token prefix.
 - The `memory-api` Edge Function must authenticate a real user bearer token, or a private internal MCP call with a resolved `user_id`, before reading or changing app state.
 - Cloud MCP tokens are per-user. The app shows the full token once, stores only one active hash per user in `public.mcp_tokens`, and can delete the active token from Settings.
 - The local MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.
-- MCP is read-only. Direct Memory API write/delete actions require normal user authentication and explicit confirmation fields.
+- MCP is read-only and updates `mcp_tokens.last_used_at` after successful token authentication. Direct Memory API write/delete actions are production-disabled by default and require normal user authentication, `ENABLE_MEMORY_API_WRITES=true`, and explicit confirmation fields.
+- Rich text HTML is sanitized on the client and in Memory API write paths. Stored notes allow only `p`, `br`, `span`, `u`, `figure`, and `img`, plus a small safe style/metadata allowlist.
 - The invite code must live only in Supabase Function Secrets as `INVITE_CODE`.
 - After deployment, disable public Supabase Email signup so registration cannot bypass the Edge Function.
 - RLS ensures users can read/write only their own profile, app state, and Storage objects.
 - Private images are rendered with short-lived signed URLs; signed URLs are not stored in app state.
-- App state sanitization strips password-like fields before cloud save.
+- App state sanitization strips password-like fields before cloud save. Production builds do not allow local account/password fallback when Supabase is not configured.
 - Supabase Auth passwords cannot be viewed by the app. The app supports changing passwords, not revealing saved passwords.
 - Media cleanup is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`.
 - Legacy data URL images are kept only as compatibility fallback. They should not be used as the long-term storage path for new media.
