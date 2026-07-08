@@ -102,11 +102,10 @@ Cloud MCP secrets:
 
 ```bash
 MLM_ACCOUNT=your-account-id
-MLM_PASSWORD=your-password
 MCP_AUTH_TOKEN=choose-a-long-random-token
 ```
 
-Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <MCP_AUTH_TOKEN>`. The phone never receives the Supabase URL, publishable key, account, or password; those stay in Supabase Function Secrets.
+Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <MCP_AUTH_TOKEN>`. The phone never receives the Supabase URL, publishable key, or app account ID; those stay in Supabase Function Secrets. The cloud MCP function does not store the app password.
 
 For local development or self-hosting, the Node HTTP server is also available:
 

@@ -106,7 +106,6 @@ For mobile MCP clients, deploy the cloud MCP Edge Function and use it directly:
 ```bash
 supabase functions secrets set \
   MLM_ACCOUNT=your-account-id \
-  MLM_PASSWORD=your-password \
   MCP_AUTH_TOKEN=choose-a-long-random-token
 
 supabase functions deploy mcp
@@ -138,7 +137,7 @@ Local MCP client settings:
 - URL: `http://<server-ip>:3000/mcp` or `https://<your-domain>/mcp`
 - Authorization: `Bearer <MCP_AUTH_TOKEN>`
 
-The mobile client should not receive Supabase credentials or the app account password. They stay in Supabase Function Secrets or server-side environment variables. The installed SDK supports `StreamableHTTPServerTransport`; SSE fallback is not needed for this project version.
+The mobile client should not receive Supabase credentials or the app account ID. They stay in Supabase Function Secrets or server-side environment variables. The cloud MCP function does not store the app password. The installed SDK supports `StreamableHTTPServerTransport`; SSE fallback is not needed for this project version.
 
 ## Storage Rules
 

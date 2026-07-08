@@ -276,12 +276,6 @@ const normalizeAccountId = (accountId: unknown) => (
   typeof accountId === 'string' ? accountId.trim().toLowerCase() : ''
 );
 
-const accountIdToAuthEmail = (accountId: string) => {
-  const bytes = new TextEncoder().encode(normalizeAccountId(accountId));
-  const hex = Array.from(bytes).map(byte => byte.toString(16).padStart(2, '0')).join('');
-  return `u_${hex}@accounts.my-life-memory.app`;
-};
-
 const readJsonResponse = async (response: Response) => {
   const text = await response.text();
   if (!text) return null;
@@ -296,7 +290,6 @@ const getConfig = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || Deno.env.get('MLM_SUPABASE_URL') || '';
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('MLM_SUPABASE_ANON_KEY') || '';
   const account = normalizeAccountId(Deno.env.get('MLM_ACCOUNT') || '');
-  const password = Deno.env.get('MLM_PASSWORD') || '';
   const mcpAuthToken = Deno.env.get('MCP_AUTH_TOKEN') || '';
   const memoryApiUrl = Deno.env.get('MLM_MEMORY_API_URL') || (supabaseUrl ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/memory-api` : '');
   const timeZone = Deno.env.get('MLM_TIME_ZONE') || 'Asia/Shanghai';
@@ -307,7 +300,6 @@ const getConfig = () => {
     supabaseUrl: supabaseUrl.replace(/\/$/, ''),
     supabaseAnonKey,
     account,
-    password,
     mcpAuthToken,
     memoryApiUrl,
     timeZone,
@@ -321,35 +313,16 @@ const requireAuthorized = (request: Request, mcpAuthToken: string) => {
   return Boolean(mcpAuthToken && authorization === `Bearer ${mcpAuthToken}`);
 };
 
-const getAccessToken = async (config: ReturnType<typeof getConfig>) => {
-  const response = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: {
-      apikey: config.supabaseAnonKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email: accountIdToAuthEmail(config.account),
-      password: config.password,
-    }),
-  });
-  const payload = await readJsonResponse(response);
-  if (!response.ok || !payload?.access_token) {
-    throw new Error(payload?.msg || payload?.message || payload?.error_description || 'Could not sign in to My Life Memory.');
-  }
-  return payload.access_token;
-};
-
 const callMemoryApi = async (config: ReturnType<typeof getConfig>, action: string, input: Record<string, unknown> = {}) => {
-  const token = await getAccessToken(config);
   const response = await fetch(config.memoryApiUrl, {
     method: 'POST',
     headers: {
       apikey: config.supabaseAnonKey,
-      Authorization: `Bearer ${token}`,
+      'x-memory-api-internal-token': config.mcpAuthToken,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      accountId: config.account,
       timeZone: config.timeZone,
       ...input,
       action,
@@ -442,7 +415,6 @@ serve(async request => {
     !config.supabaseUrl ||
     !config.supabaseAnonKey ||
     !config.account ||
-    !config.password ||
     !config.mcpAuthToken ||
     !config.memoryApiUrl
   ) {
