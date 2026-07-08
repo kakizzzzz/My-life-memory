@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
-import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, Camera, Underline, KeyRound, ShieldCheck } from 'lucide-react';
+import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Route, Star, X, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, Camera, Underline, KeyRound, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import * as exifr from 'exifr';
@@ -17,8 +17,8 @@ import {
   MapZoomTracker,
   StarNavigationOverlay,
 } from './MapRuntimeComponents';
-import { MapStyleThumbnail } from './MapStyleThumbnail';
 import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
+import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingControlsOverlay } from './MapControlsOverlay';
 import { SearchResultsScreen } from './SearchResultsScreen';
 import { RecordsScreen } from './RecordsScreen';
 import { HomeGalleryPanel, HomeProfilePanel, HomeThemePanel, type ThemeColorControl } from './HomePrimaryPanels';
@@ -93,6 +93,7 @@ import type {
   RecordsFilter,
   StarData,
   SystemTheme,
+  TagMode,
   TrackData,
   TrackDraftData,
   UploadedImage,
@@ -836,7 +837,7 @@ export default function App() {
   
   // Tag Mode State
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
-  const [tagMode, setTagMode] = useState<'none' | 'add' | 'remove'>('none');
+  const [tagMode, setTagMode] = useState<TagMode>('none');
   const [activeTag, setActiveTag] = useState<{ order: number, groupId: number } | null>(null);
   const [currentTagGroupId, setCurrentTagGroupId] = useState<number>(0);
 
@@ -2835,6 +2836,56 @@ export default function App() {
     }`
   );
 
+  const startTrackingRoute = () => {
+    clearTrackDraft(profile.account);
+    void startHeadingWatch();
+    const startedAt = Date.now();
+    trackingStartedAtRef.current = startedAt;
+    lastTrackPointRef.current = null;
+    trackingStateRef.current = { isTracking: true, isPaused: false };
+    setIsTracking(true);
+    setIsPaused(false);
+    const didRequestGps = requestUserLocation(true);
+    setTrackPaths(didRequestGps ? [] : [[userLocation]]);
+    if (!didRequestGps) {
+      lastTrackPointRef.current = { location: userLocation, timestamp: Date.now() };
+    }
+    setTrackTime(0);
+    setIsMenuOpen(false);
+  };
+
+  const toggleTrackingPause = () => {
+    setIsPaused(!isPaused);
+    if (isPaused) {
+      lastTrackPointRef.current = null;
+      trackingStartedAtRef.current = Date.now();
+      setTrackPaths(prev => [...prev, []]);
+    }
+  };
+
+  const stopTrackingRoute = () => {
+    lastTrackPointRef.current = null;
+    trackingStartedAtRef.current = 0;
+    clearTrackDraft(profile.account);
+    setIsTracking(false);
+    setTrackPaths([]);
+    setTrackTime(0);
+    setIsPaused(false);
+  };
+
+  const saveTrackingRoute = () => {
+    if (trackPaths.some(p => p.length > 1)) {
+      setSavedTracks(prev => [...prev, {
+        id: Math.random().toString(36).substr(2, 9),
+        paths: trackPaths.filter(p => p.length > 1),
+        color: '#EDC727',
+        time: trackTime,
+        distance: trackDistanceKm
+      }]);
+    }
+    stopTrackingRoute();
+  };
+
   const locationIcon = React.useMemo(
     () => createLocationIcon(mapStyle, systemTheme.icon, deviceHeading),
     [deviceHeading, mapStyle, systemTheme.icon]
@@ -3530,309 +3581,72 @@ export default function App() {
         </div>
       )}
 
-      <AnimatePresence>
-        {photoLocationStatus && activeView === 'map' && (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.12 }}
-            className="pointer-events-none fixed left-1/2 top-[calc(env(safe-area-inset-top)+5rem)] z-[2500] max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full bg-black/75 px-4 py-2 text-center text-[13px] font-medium text-white shadow-lg"
-          >
-            {photoLocationStatus}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {activeView === 'map' && <PhotoLocationToast status={photoLocationStatus} />}
 
-      {/* Top Right Menu */}
       {activeView === 'map' && !isTracking && (
-        <div className="absolute top-6 right-4 z-[1000] flex flex-col items-end gap-3">
-          <button 
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className={btnClass}
-          >
-            {isMenuOpen ? <ChevronDown size={28} strokeWidth={MAP_TOOL_ICON_STROKE} /> : <Menu size={24} strokeWidth={MAP_TOOL_ICON_STROKE} />}
-          </button>
-
-          <AnimatePresence>
-            {isMenuOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -20, scale: 0.8 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -20, scale: 0.8, transition: { duration: 0.2 } }}
-                className="flex flex-col items-end gap-3"
-              >
-                {/* Map Style Selector */}
-                <div className="relative flex justify-end items-center h-[48px]">
-                  <AnimatePresence mode="wait">
-                    {isMapStyleMenuOpen ? (
-                      <motion.div
-                        key="open"
-                        initial={{ opacity: 0, scale: 0.8, x: 20 }}
-                        animate={{ opacity: 1, scale: 1, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.8, x: 20 }}
-                        transition={{ duration: 0.15 }}
-                        className="h-[48px] bg-[var(--app-icon)] px-[4px] rounded-[24px] flex items-center gap-[4px] shadow-lg relative"
-                      >
-                        <div className="relative z-10 flex items-center gap-[4px]">
-                          {/* Dark Mode Option */}
-                          <button 
-                            onClick={() => { setMapStyle('dark'); setIsMapStyleMenuOpen(false); }}
-                            className={`flex items-center justify-center rounded-full transition-all focus:outline-none ${mapStyle === 'dark' ? 'w-[40px] h-[40px] border-[3px] border-black scale-100' : 'w-[40px] h-[40px] hover:opacity-80 scale-[0.85]'}`}
-                            aria-label={homeCopy.darkMapAlt}
-                          >
-                            <div className="w-full h-full rounded-full overflow-hidden relative">
-                              <MapStyleThumbnail styleName="dark" />
-                            </div>
-                          </button>
-                          
-                          {/* Aerial Mode Option */}
-                          <button 
-                            onClick={() => { setMapStyle('aerial'); setIsMapStyleMenuOpen(false); }}
-                            className={`flex items-center justify-center rounded-full transition-all focus:outline-none ${mapStyle === 'aerial' ? 'w-[40px] h-[40px] border-[3px] border-black scale-100' : 'w-[40px] h-[40px] hover:opacity-80 scale-[0.85]'}`}
-                            aria-label={homeCopy.aerialMapAlt}
-                          >
-                            <div className="w-full h-full rounded-full overflow-hidden relative">
-                              <MapStyleThumbnail styleName="aerial" />
-                            </div>
-                          </button>
-
-                          {/* Light Mode Option */}
-                          <button 
-                            onClick={() => { setMapStyle('light'); setIsMapStyleMenuOpen(false); }}
-                            className={`flex items-center justify-center rounded-full transition-all focus:outline-none ${mapStyle === 'light' ? 'w-[40px] h-[40px] border-[3px] border-black scale-100' : 'w-[40px] h-[40px] hover:opacity-80 scale-[0.85]'}`}
-                            aria-label={homeCopy.lightMapAlt}
-                          >
-                            <div className="w-full h-full rounded-full overflow-hidden relative">
-                              <MapStyleThumbnail styleName="light" />
-                            </div>
-                          </button>
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.button 
-                        key="closed"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ duration: 0.15 }}
-                        onClick={() => setIsMapStyleMenuOpen(true)}
-                        className="w-[48px] h-[48px] rounded-full bg-[var(--app-icon)] p-[6px] shadow-sm hover:opacity-90 transition-opacity focus:outline-none block"
-                        aria-label={homeCopy.currentMapStyleAlt}
-                      >
-                        <div className="w-full h-full rounded-full border-[3px] border-black overflow-hidden relative">
-                          <MapStyleThumbnail styleName={mapStyle} />
-                        </div>
-                      </motion.button>
-                    )}
-                  </AnimatePresence>
-                </div>
-                
-                {/* Map Pin */}
-                <button className={btnClass} onClick={handleLocateMe}>
-                  <MapPin size={24} strokeWidth={MAP_TOOL_ICON_STROKE} />
-                </button>
-                
-                {/* Tag */}
-                <div className="relative flex flex-col items-start h-[48px]">
-                  <AnimatePresence mode="popLayout">
-                    {tagMenuOpen ? (
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.8, x: 20 }}
-                        animate={{ opacity: 1, scale: 1, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.8, x: 20 }}
-                        transition={{ duration: 0.15 }}
-                        className="h-[48px] bg-[var(--app-icon)] px-[4px] rounded-[24px] flex items-center gap-[4px] shadow-md relative"
-                      >
-                        <button 
-                          className={`w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all ${tagMode === 'add' ? 'bg-[var(--app-dark)] text-white shadow-md' : 'text-black hover:bg-black/10'}`}
-                          onClick={() => setTagMode('add')}
-                        >
-                          <Plus size={22} strokeWidth={UI_ICON_STROKE} />
-                        </button>
-                        <button 
-                          className={`w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all ${tagMode === 'remove' ? 'bg-[var(--app-dark)] text-white shadow-md' : 'text-black hover:bg-black/10'}`}
-                          onClick={() => setTagMode('remove')}
-                        >
-                          <Minus size={22} strokeWidth={UI_ICON_STROKE} />
-                        </button>
-                        <button 
-                          className="w-[40px] h-[40px] rounded-full flex items-center justify-center transition-colors text-black hover:bg-black/10"
-                          onClick={toggleTagMenu}
-                        >
-                          <ChevronRight size={26} strokeWidth={UI_ICON_STROKE} />
-                        </button>
-                      </motion.div>
-                    ) : (
-                      <motion.button 
-                        key="closed"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ duration: 0.15 }}
-                        className="w-[48px] h-[48px] rounded-full bg-[var(--app-icon)] shadow-sm hover:brightness-95 transition-all flex items-center justify-center text-black"
-                        onClick={toggleTagMenu}
-                      >
-                        <Tag size={22} strokeWidth={MAP_TOOL_ICON_STROKE} fill="none" />
-                      </motion.button>
-                    )}
-                  </AnimatePresence>
-                </div>
-                
-                {/* Route */}
-                <button className={btnClass} onClick={() => {
-                  clearTrackDraft(profile.account);
-                  void startHeadingWatch();
-                  const startedAt = Date.now();
-                  trackingStartedAtRef.current = startedAt;
-                  lastTrackPointRef.current = null;
-                  trackingStateRef.current = { isTracking: true, isPaused: false };
-                  setIsTracking(true);
-                  setIsPaused(false);
-                  const didRequestGps = requestUserLocation(true);
-                  setTrackPaths(didRequestGps ? [] : [[userLocation]]);
-                  if (!didRequestGps) {
-                    lastTrackPointRef.current = { location: userLocation, timestamp: Date.now() };
-                  }
-                  setTrackTime(0);
-                  setIsMenuOpen(false);
-                }}>
-                  <Route size={24} strokeWidth={MAP_TOOL_ICON_STROKE} />
-                </button>
-                
-                {/* Star */}
-                <button 
-                  className={starPlacementButtonClass}
-                  aria-label={homeCopy.addStar}
-                  onPointerDown={handleStarPlacementPointerDown}
-                  onPointerMove={handleStarPlacementPointerMove}
-                  onPointerUp={finishStarPlacementPointer}
-                  onPointerCancel={cancelStarPlacementPointer}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      addStarAtUserLocation();
-                    }
-                  }}
-                >
-                  <Star size={24} strokeWidth={MAP_TOOL_ICON_STROKE} fill="none" />
-                </button>
-
-                {/* Photo GPS */}
-                <button
-                  type="button"
-                  className={`${btnClass} ${isReadingPhotoLocation ? 'opacity-60' : ''}`}
-                  onClick={() => photoLocationInputRef.current?.click()}
-                  disabled={isReadingPhotoLocation}
-                  aria-label={homeCopy.uploadPhotoLocation}
-                  title={homeCopy.uploadPhotoLocation}
-                >
-                  <PhotoGpsStarIcon size={24} strokeWidth={MAP_TOOL_ICON_STROKE} />
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        <MapControlsOverlay
+          homeCopy={homeCopy}
+          btnClass={btnClass}
+          starPlacementButtonClass={starPlacementButtonClass}
+          mapStyle={mapStyle}
+          isMenuOpen={isMenuOpen}
+          isMapStyleMenuOpen={isMapStyleMenuOpen}
+          tagMenuOpen={tagMenuOpen}
+          tagMode={tagMode}
+          isReadingPhotoLocation={isReadingPhotoLocation}
+          iconStrokeWidth={UI_ICON_STROKE}
+          mapToolIconStroke={MAP_TOOL_ICON_STROKE}
+          onToggleMenu={() => setIsMenuOpen(open => !open)}
+          onOpenMapStyleMenu={() => setIsMapStyleMenuOpen(true)}
+          onSelectMapStyle={style => {
+            setMapStyle(style);
+            setIsMapStyleMenuOpen(false);
+          }}
+          onLocateMe={handleLocateMe}
+          onToggleTagMenu={toggleTagMenu}
+          onSetTagMode={setTagMode}
+          onStartRoute={startTrackingRoute}
+          onStarPointerDown={handleStarPlacementPointerDown}
+          onStarPointerMove={handleStarPlacementPointerMove}
+          onStarPointerUp={finishStarPlacementPointer}
+          onStarPointerCancel={cancelStarPlacementPointer}
+          onStarKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              addStarAtUserLocation();
+            }
+          }}
+          onPhotoGpsClick={() => photoLocationInputRef.current?.click()}
+        />
       )}
 
       {isTracking && (
-        <>
-          {/* Tracking Top Left Card */}
-          <div className="absolute top-6 left-4 z-[1000] bg-[var(--app-active-surface)] rounded-[24px] shadow-md px-6 py-4 border border-[var(--app-card)] min-w-[160px]">
-            <div className="absolute top-3 left-3 w-2 h-2 bg-black rounded-full"></div>
-            <div className="absolute top-3 right-3 w-2 h-2 bg-black rounded-full"></div>
-            <div className="absolute bottom-3 left-3 w-2 h-2 bg-black rounded-full"></div>
-            <div className="absolute bottom-3 right-3 w-2 h-2 bg-black rounded-full"></div>
-            
-            <div className="w-full h-[3px] bg-gray-200 mt-2 mb-3 rounded-full"></div>
-            <div className="text-[40px] leading-none font-bold text-black tracking-tight text-left">
-              {activeTrackDistanceDisplay.value}<span className="text-[28px] font-bold ml-1.5">{activeTrackDistanceDisplay.unit}</span>
-            </div>
-            <div className="w-full h-[3px] bg-gray-200 my-3 rounded-full"></div>
-            <div className="text-[24px] leading-none font-semibold text-black text-left mb-1">
-              {formatTime(trackTime)}
-            </div>
-            <div className="w-full h-[3px] bg-gray-200 mt-3 mb-2 rounded-full"></div>
-          </div>
-
-          {/* Tracking Top Right */}
-          <div className="absolute top-6 right-4 z-[1000]">
-            <button 
-              className={btnClass}
-              onClick={() => {
-                setIsPaused(!isPaused);
-                if (isPaused) {
-                  // Resuming: start a new path segment
-                  lastTrackPointRef.current = null;
-                  trackingStartedAtRef.current = Date.now();
-                  setTrackPaths(prev => [...prev, []]);
-                }
-              }}
-            >
-              {isPaused ? <Play size={24} strokeWidth={UI_ICON_STROKE} /> : <Pause size={24} strokeWidth={UI_ICON_STROKE} />}
-            </button>
-          </div>
-
-          {/* Tracking Bottom Right (above Bottom Nav) */}
-          <div className="absolute bottom-28 right-4 z-[1000] flex flex-col gap-3">
-            <button 
-              className={btnClass}
-              onClick={() => {
-                lastTrackPointRef.current = null;
-                trackingStartedAtRef.current = 0;
-                clearTrackDraft(profile.account);
-                setIsTracking(false);
-                setTrackPaths([]);
-                setTrackTime(0);
-                setIsPaused(false);
-              }}
-            >
-              <X size={28} strokeWidth={UI_ICON_STROKE} />
-            </button>
-            <button 
-              className={btnClass}
-              onClick={() => {
-                if (trackPaths.some(p => p.length > 1)) {
-                  setSavedTracks(prev => [...prev, {
-                    id: Math.random().toString(36).substr(2, 9),
-                    paths: trackPaths.filter(p => p.length > 1),
-                    color: '#EDC727',
-                    time: trackTime,
-                    distance: trackDistanceKm
-                  }]);
-                }
-                lastTrackPointRef.current = null;
-                trackingStartedAtRef.current = 0;
-                clearTrackDraft(profile.account);
-                setIsTracking(false);
-                setTrackPaths([]);
-                setTrackTime(0);
-                setIsPaused(false);
-              }}
-            >
-              <Save size={24} strokeWidth={UI_ICON_STROKE} />
-            </button>
-          </div>
-        </>
+        <TrackingControlsOverlay
+          btnClass={btnClass}
+          isPaused={isPaused}
+          trackTime={trackTime}
+          activeTrackDistanceDisplay={activeTrackDistanceDisplay}
+          iconStrokeWidth={UI_ICON_STROKE}
+          onTogglePause={toggleTrackingPause}
+          onCancel={stopTrackingRoute}
+          onSave={saveTrackingRoute}
+          formatTime={formatTime}
+        />
       )}
 
-      {/* Bottom Right Search Button */}
       {activeView === 'map' && !isTracking && (
-        <div className="absolute bottom-28 right-4 z-[1000]">
-          <button
-            className={btnClass}
-            onClick={() => {
-              if (isSearchOpen) {
-                closeSearchModal();
-              } else {
-                openSearchModal('text');
-              }
-            }}
-            aria-label={homeCopy.search}
-          >
-            <Search size={24} strokeWidth={UI_ICON_STROKE} />
-          </button>
-        </div>
+        <MapSearchButton
+          btnClass={btnClass}
+          searchLabel={homeCopy.search}
+          iconStrokeWidth={UI_ICON_STROKE}
+          onClick={() => {
+            if (isSearchOpen) {
+              closeSearchModal();
+            } else {
+              openSearchModal('text');
+            }
+          }}
+        />
       )}
 
       <AnimatePresence>

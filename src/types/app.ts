@@ -46,6 +46,7 @@ export type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchR
 export type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'apiSecurity' | 'mcp' | 'export' | null;
 export type RecordsFilter = 'all' | 'monthly' | 'annual';
 export type RecordsCalendarMode = 'month' | 'year';
+export type TagMode = 'none' | 'add' | 'remove';
 
 export type SystemTheme = {
   page: string;
