@@ -31,6 +31,8 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Leaflet + React Leaflet
 - Motion for small UI transitions
 - Supabase Auth, Postgres, Row Level Security, and private Storage
+- Supabase Edge Functions for invite registration and the Memory API
+- Local Model Context Protocol (MCP) server for AI clients
 - GitHub Pages for static hosting
 
 ## Data And Storage
@@ -46,6 +48,62 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - On login, the app scans only the current user's Storage folder and removes unreferenced media after a short grace window. It does not list or delete other users' files.
 - Password-like fields are removed before saving cloud app state; password changes go through `supabase.auth.updateUser`.
 - Readable export intentionally omits raw app state, settings internals, and password fields. It writes a local `.html` report for the user to keep or archive.
+
+## Memory API And MCP
+
+My Life Memory exposes a user-scoped Memory API through the Supabase Edge Function `memory-api`. The API reads the authenticated user's `app_states` row, reshapes it into memory-focused JSON, and never exposes service-role credentials to the frontend or MCP clients.
+
+Supported read actions:
+
+- `search_memories`
+- `list_locations`
+- `get_location_memory`
+- `get_day_memory`
+- `get_routes`
+- `summarize_memory_range`
+- `export_memory_report`
+
+Supported write/delete actions are present for future use:
+
+- `create_star`
+- `update_star`
+- `add_note_to_star`
+- `update_note`
+- `delete_note`
+- `delete_star`
+- `delete_route`
+
+Write actions require `confirmWrite: true`. Delete actions additionally require `confirm: "DELETE"` and remove referenced private Storage media only inside the current user's folder.
+
+The local MCP server wraps this API for AI apps:
+
+```sh
+npm run mcp:memory
+```
+
+MCP environment variables:
+
+```bash
+MLM_SUPABASE_URL=https://your-project-ref.supabase.co
+MLM_SUPABASE_ANON_KEY=your-publishable-or-anon-key
+MLM_ACCOUNT=your-account-id
+MLM_PASSWORD=your-password
+```
+
+You can use `MLM_SUPABASE_ACCESS_TOKEN` instead of `MLM_ACCOUNT` and `MLM_PASSWORD` if an AI client or helper has already obtained a user token.
+
+By default, MCP exposes only read-only tools. To expose write tools locally:
+
+```bash
+MLM_MCP_ENABLE_WRITES=true
+```
+
+To expose destructive delete tools as well:
+
+```bash
+MLM_MCP_ENABLE_WRITES=true
+MLM_MCP_ENABLE_DELETES=true
+```
 
 ## Local Development
 
@@ -76,7 +134,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
    - `public.app_states`
    - private Storage bucket `life-media`
    - RLS policies for both tables and `storage.objects`
-5. Deploy the Supabase Edge Function `register-with-invite`.
+5. Deploy the Supabase Edge Functions `register-with-invite` and `memory-api`.
 6. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
 7. The function also requires Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 8. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
@@ -112,6 +170,8 @@ For GitHub Pages:
    - search note text and open a result from the search results page
    - change the password from the profile screen
    - export a readable HTML report
+   - call `memory-api` with a logged-in user's bearer token
+   - start the local MCP server and list read-only tools
    - reload on another device/browser
    - delete the image and confirm it disappears
 
@@ -121,6 +181,9 @@ For GitHub Pages:
 - The frontend must use only the Supabase publishable/anon key.
 - `service_role` belongs only in trusted server environments and is not needed for this app.
 - Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
+- The `memory-api` Edge Function must authenticate a real user bearer token before reading or changing app state.
+- The MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.
+- MCP write/delete tools are hidden unless explicitly enabled by local environment variables.
 - The invite code must live only in Supabase Function Secrets as `INVITE_CODE`.
 - After deployment, disable public Supabase Email signup so registration cannot bypass the Edge Function.
 - RLS ensures users can read/write only their own profile, app state, and Storage objects.
@@ -135,6 +198,7 @@ For GitHub Pages:
 
 ```sh
 npm run dev
+npm run mcp:memory
 npm run lint
 npm run build
 ```

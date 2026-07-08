@@ -8,7 +8,9 @@ My Life Memory can run in two modes:
 ## Supabase Steps
 
 1. Create a Supabase project.
-2. Deploy the Supabase Edge Function `register-with-invite`.
+2. Deploy the Supabase Edge Functions:
+   - `register-with-invite`
+   - `memory-api`
 3. Store the invite code only in Supabase Function Secrets as `INVITE_CODE`.
 4. Keep `SUPABASE_SERVICE_ROLE_KEY` only in the Edge Function/server environment.
 5. After the invite function is deployed, disable public Email signup in Authentication settings so new accounts cannot bypass the invite flow.
@@ -28,6 +30,76 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 ```
 
 9. Restart the dev server.
+
+## Memory API
+
+`memory-api` is a Supabase Edge Function for user-scoped memory data. Clients must send a normal Supabase user session token:
+
+```http
+Authorization: Bearer <user-access-token>
+```
+
+The function validates the token, loads only that user's `profiles` and `app_states` rows, then returns organized memory data. It supports read actions for search, locations, day records, routes, range summaries, and readable report export.
+
+Write actions exist for future integrations, but they require:
+
+```json
+{
+  "confirmWrite": true
+}
+```
+
+Delete actions additionally require:
+
+```json
+{
+  "confirm": "DELETE"
+}
+```
+
+When deleting notes or stars, the function removes referenced `life-media` Storage objects only if the path starts with the authenticated user's UUID.
+
+## MCP Server
+
+The local MCP server lives at `mcp/my-life-memory.mjs` and calls `memory-api`.
+
+Run it directly:
+
+```bash
+npm run mcp:memory
+```
+
+Typical MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "my-life-memory": {
+      "command": "node",
+      "args": ["/absolute/path/to/map-app/mcp/my-life-memory.mjs"],
+      "env": {
+        "MLM_SUPABASE_URL": "https://your-project-ref.supabase.co",
+        "MLM_SUPABASE_ANON_KEY": "your-publishable-or-anon-key",
+        "MLM_ACCOUNT": "your-account-id",
+        "MLM_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+For read-only AI access, do not set write flags. To intentionally expose write tools on a local trusted machine:
+
+```bash
+MLM_MCP_ENABLE_WRITES=true
+```
+
+To also expose destructive delete tools:
+
+```bash
+MLM_MCP_ENABLE_WRITES=true
+MLM_MCP_ENABLE_DELETES=true
+```
 
 ## Storage Rules
 
@@ -73,6 +145,9 @@ If the app says cloud setup is blocked, run `supabase/fix-permissions.sql` once,
 - The frontend should use only the Supabase publishable/anon key.
 - Never put the invite code in frontend code, Vite env vars, localStorage, app state, README examples, or exported files.
 - Existing accounts log in normally; only new registration goes through `register-with-invite`.
+- `memory-api` requires a user bearer token and must never accept service-role credentials from clients.
+- MCP should run locally with a normal user account or user access token, not a service-role key.
+- MCP write/delete tools are disabled by default.
 - Keep `life-media` private.
 - Keep Storage object policies scoped to `auth.uid()` path prefixes.
 - Do not store image data URLs in cloud state except as a temporary legacy fallback.
