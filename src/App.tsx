@@ -2092,6 +2092,21 @@ function getPointsEveryXMeters(path: [number, number][], intervalMeters: number)
   return points;
 }
 
+const ROUTE_DETAIL_DOT_MIN_ZOOM = 15;
+const ROUTE_DOT_INTERVAL_METERS = 100;
+
+function getVisibleRouteDots(path: [number, number][], showDetailDots: boolean) {
+  const dots = getPointsEveryXMeters(path, ROUTE_DOT_INTERVAL_METERS);
+  if (showDetailDots || dots.length <= 2) return dots;
+
+  const first = dots[0];
+  const last = dots[dots.length - 1];
+  if (!first || !last) return [];
+  if (first[0] === last[0] && first[1] === last[1]) return [first];
+
+  return [first, last];
+}
+
 const hasMeaningfulNoteContent = (note: NoteData) => {
   const title = (htmlToText(note.titleHtml) || note.title || '').trim();
   const content = (htmlToText(note.contentHtml) || note.content || '').trim();
@@ -2192,6 +2207,22 @@ function MapViewportSync({ location, shouldFollow }: { location: [number, number
       map.panTo(location, { animate: true, duration: 0.35 });
     }
   }, [location, map, shouldFollow]);
+
+  return null;
+}
+
+function MapZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const updateZoom = () => onZoomChange(map.getZoom());
+
+    updateZoom();
+    map.on('zoomend', updateZoom);
+    return () => {
+      map.off('zoomend', updateZoom);
+    };
+  }, [map, onZoomChange]);
 
   return null;
 }
@@ -2538,6 +2569,7 @@ export default function App() {
   ));
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [selectedTrackLatLng, setSelectedTrackLatLng] = useState<[number, number] | null>(null);
+  const [mapZoom, setMapZoom] = useState(16);
   const [starDragPreview, setStarDragPreview] = useState<{ x: number; y: number } | null>(null);
 
   const isLocating = React.useRef(false);
@@ -3039,6 +3071,7 @@ export default function App() {
 
   const handleMapReady = React.useCallback((map: L.Map | null) => {
     mapInstanceRef.current = map;
+    if (map) setMapZoom(map.getZoom());
   }, []);
 
   const addStarAtLatLng = React.useCallback((lat: number, lng: number, starData: Partial<StarData> = {}) => {
@@ -5029,6 +5062,8 @@ export default function App() {
     setReaderActivePanel(currentPanel => currentPanel === panel ? null : panel);
   }, [saveReaderSelection]);
 
+  const showRouteDetailDots = mapZoom >= ROUTE_DETAIL_DOT_MIN_ZOOM;
+
   return (
     <div className="relative w-[100dvw] h-[100dvh] overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
       <input
@@ -5061,6 +5096,7 @@ export default function App() {
           />
           <FlyToTarget target={flyTarget} />
           <MapViewportSync location={userLocation} shouldFollow={false} />
+          <MapZoomTracker onZoomChange={setMapZoom} />
           
           <MapEventHandlers onDrop={handleMapDrop} onMapClick={onMapClick} onMapReady={handleMapReady} />
           
@@ -5085,7 +5121,7 @@ export default function App() {
 
           {isTracking && trackPaths.map((path, idx) => {
             if (path.length < 2) return null;
-            const dots = getPointsEveryXMeters(path, 100);
+            const dots = getVisibleRouteDots(path, showRouteDetailDots);
             return (
               <React.Fragment key={`track-group-${idx}`}>
                 <Polyline 
@@ -5108,7 +5144,7 @@ export default function App() {
           {savedTracks.map(track => 
             track.paths.map((path, idx) => {
               if (path.length < 2) return null;
-              const dots = getPointsEveryXMeters(path, 100);
+              const dots = getVisibleRouteDots(path, showRouteDetailDots);
               return (
                 <React.Fragment key={`saved-track-group-${track.id}-${idx}`}>
                   {/* Invisible wider polyline to catch clicks easily */}
