@@ -1,22 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Route, Star, X, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, Camera, Underline, KeyRound, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import * as exifr from 'exifr';
-import { StarActionOverlay } from './StarActionOverlay';
-import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
 import { LoginWorldMapBackground } from './LoginWorldMapBackground';
-import {
-  FlyToTarget,
-  MapEventHandlers,
-  MapViewportSync,
-  MapZoomTracker,
-  StarNavigationOverlay,
-} from './MapRuntimeComponents';
-import { MapDataLayers } from './MapDataLayers';
+import { MapCanvas } from './MapCanvas';
 import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
 import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingControlsOverlay } from './MapControlsOverlay';
 import { SearchResultsScreen } from './SearchResultsScreen';
@@ -3438,61 +3428,43 @@ export default function App() {
         onChange={handlePhotoLocationInput}
       />
       
-      {/* Background Map */}
-      <div className={`absolute inset-0 z-0 bg-[#e5e5e5] ${mapStyle === 'dark' ? 'theme-dark' : ''} ${mapStyle === 'light' ? 'theme-light' : ''}`}>
-        <MapContainer 
-          center={position} 
-          zoom={16} 
-          scrollWheelZoom={true} 
-          className="w-full h-full absolute inset-0 z-0"
-          zoomControl={false} // Disable default zoom control to match UI
-        >
-          <TileLayer
-            attribution={mapTiles[mapStyle].attribution}
-            url={mapTiles[mapStyle].url}
-          />
-          <Marker 
-            position={userLocation} 
-            icon={locationIcon}
-            draggable={false}
-            keyboard={false}
-            interactive={false}
-          />
-          <FlyToTarget target={flyTarget} />
-          <MapViewportSync location={userLocation} shouldFollow={false} />
-          <MapZoomTracker onZoomChange={setMapZoom} />
-          
-          <MapEventHandlers onDrop={handleMapDrop} onMapClick={onMapClick} onMapReady={handleMapReady} />
-          
-          <StarNavigationOverlay activeTag={activeTag} stars={stars} onPrev={handlePrevTag} onNext={handleNextTag} />
-          <StarActionOverlay
-            selectedStarId={selectedStarId}
-            stars={stars}
-            onUpdateStar={onUpdateStar}
-            onDeleteStar={onDeleteStar}
-            onEditNote={starId => setEditingNoteTarget({ starId })}
-            language={language}
-          />
-          <TrackActionOverlay selectedTrackId={selectedTrackId} savedTracks={savedTracks} onUpdateTrack={onUpdateTrack} onDeleteTrack={onDeleteTrack} selectedLatLng={selectedTrackLatLng} language={language} />
-          <MapDataLayers
-            tagPolylines={tagPolylines}
-            isTracking={isTracking}
-            trackPaths={trackPaths}
-            savedTracks={savedTracks}
-            showRouteDetailDots={showRouteDetailDots}
-            stars={stars}
-            selectedStarId={selectedStarId}
-            mapStyle={mapStyle}
-            badgeColor={systemTheme.icon}
-            onSelectTrack={(trackId, latLng) => {
-              setSelectedTrackId(trackId);
-              if (latLng) setSelectedTrackLatLng(latLng);
-            }}
-            onSelectStar={onStarClick}
-            onMoveStar={onMoveStar}
-          />
-        </MapContainer>
-      </div>
+      <MapCanvas
+        mapStyle={mapStyle}
+        mapTiles={mapTiles}
+        position={position}
+        userLocation={userLocation}
+        locationIcon={locationIcon}
+        flyTarget={flyTarget}
+        activeTag={activeTag}
+        stars={stars}
+        selectedStarId={selectedStarId}
+        savedTracks={savedTracks}
+        selectedTrackId={selectedTrackId}
+        selectedTrackLatLng={selectedTrackLatLng}
+        language={language}
+        tagPolylines={tagPolylines}
+        isTracking={isTracking}
+        trackPaths={trackPaths}
+        showRouteDetailDots={showRouteDetailDots}
+        badgeColor={systemTheme.icon}
+        onZoomChange={setMapZoom}
+        onMapDrop={handleMapDrop}
+        onMapClick={onMapClick}
+        onMapReady={handleMapReady}
+        onPrevTag={handlePrevTag}
+        onNextTag={handleNextTag}
+        onUpdateStar={onUpdateStar}
+        onDeleteStar={onDeleteStar}
+        onEditStarNote={starId => setEditingNoteTarget({ starId })}
+        onUpdateTrack={onUpdateTrack}
+        onDeleteTrack={onDeleteTrack}
+        onSelectTrack={(trackId, latLng) => {
+          setSelectedTrackId(trackId);
+          if (latLng) setSelectedTrackLatLng(latLng);
+        }}
+        onSelectStar={onStarClick}
+        onMoveStar={onMoveStar}
+      />
 
       {starDragPreview && (
         <div

@@ -5,7 +5,7 @@ import { DraggableStarMarker } from './DraggableStarMarker';
 import { getVisibleRouteDots } from './lib/trackUtils';
 import type { MapStyle, StarData, TrackData } from './types/app';
 
-type TagPolyline = {
+export type TagPolyline = {
   groupId: number;
   color: string;
   positions: [number, number][];
