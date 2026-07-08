@@ -9,6 +9,8 @@ import * as exifr from 'exifr';
 import { StarActionOverlay } from './StarActionOverlay';
 import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
+import { LoginWorldMapBackground } from './LoginWorldMapBackground';
+import { SearchResultsScreen } from './SearchResultsScreen';
 import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
 import { isCloudBackendEnabled, supabaseConfigMessage, supabaseFunctionUrl } from './lib/supabaseClient';
 import {
@@ -362,103 +364,6 @@ const createClientId = () => (
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2, 11)
 );
-
-const isInsideRotatedEllipse = (
-  x: number,
-  y: number,
-  cx: number,
-  cy: number,
-  rx: number,
-  ry: number,
-  rotation = 0
-) => {
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  const dx = x - cx;
-  const dy = y - cy;
-  const rotatedX = dx * cos + dy * sin;
-  const rotatedY = -dx * sin + dy * cos;
-
-  return ((rotatedX * rotatedX) / (rx * rx)) + ((rotatedY * rotatedY) / (ry * ry)) <= 1;
-};
-
-const LOGIN_WORLD_MAP_WIDTH = 430;
-const LOGIN_WORLD_MAP_HEIGHT = 932;
-const LOGIN_WORLD_MAP_DOT_SPACING = 7;
-
-const isLoginWorldMapLand = (x: number, y: number) => (
-  isInsideRotatedEllipse(x, y, 0.10, 0.25, 0.18, 0.08, -0.25) ||
-  isInsideRotatedEllipse(x, y, 0.20, 0.34, 0.15, 0.12, 0.08) ||
-  isInsideRotatedEllipse(x, y, 0.30, 0.44, 0.08, 0.04, 0.25) ||
-  isInsideRotatedEllipse(x, y, 0.31, 0.57, 0.10, 0.14, 0.12) ||
-  isInsideRotatedEllipse(x, y, 0.48, 0.26, 0.10, 0.06, -0.1) ||
-  isInsideRotatedEllipse(x, y, 0.54, 0.36, 0.09, 0.06, -0.08) ||
-  isInsideRotatedEllipse(x, y, 0.55, 0.50, 0.10, 0.14, -0.1) ||
-  isInsideRotatedEllipse(x, y, 0.72, 0.31, 0.20, 0.10, 0.03) ||
-  isInsideRotatedEllipse(x, y, 0.82, 0.41, 0.15, 0.11, 0.12) ||
-  isInsideRotatedEllipse(x, y, 0.68, 0.50, 0.06, 0.08, -0.15) ||
-  isInsideRotatedEllipse(x, y, 0.79, 0.57, 0.09, 0.05, 0.35) ||
-  isInsideRotatedEllipse(x, y, 0.83, 0.68, 0.10, 0.05, 0.08) ||
-  isInsideRotatedEllipse(x, y, 0.47, 0.82, 0.45, 0.04, 0)
-);
-
-const LOGIN_WORLD_MAP_DOTS = Array.from({
-  length: Math.ceil(LOGIN_WORLD_MAP_HEIGHT / LOGIN_WORLD_MAP_DOT_SPACING) + 1,
-}).flatMap((_, row) => (
-  Array.from({
-    length: Math.ceil(LOGIN_WORLD_MAP_WIDTH / LOGIN_WORLD_MAP_DOT_SPACING) + 1,
-  }).flatMap((__, col) => {
-    const x = col * LOGIN_WORLD_MAP_DOT_SPACING + (row % 2 ? LOGIN_WORLD_MAP_DOT_SPACING / 2 : 0);
-    const y = row * LOGIN_WORLD_MAP_DOT_SPACING;
-    const normalizedX = x / LOGIN_WORLD_MAP_WIDTH;
-    const normalizedY = y / LOGIN_WORLD_MAP_HEIGHT;
-    if (!isLoginWorldMapLand(normalizedX, normalizedY)) return [];
-
-    return [{
-      x,
-      y,
-      opacity: 0.08 + ((col * 3 + row) % 6) * 0.018,
-    }];
-  })
-));
-
-function LoginWorldMapBackground() {
-  return (
-    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-      <svg
-        viewBox={`0 0 ${LOGIN_WORLD_MAP_WIDTH} ${LOGIN_WORLD_MAP_HEIGHT}`}
-        className="h-full w-full"
-        preserveAspectRatio="xMidYMid slice"
-        style={{ color: 'var(--app-dark)' }}
-        aria-hidden="true"
-      >
-        <defs>
-          <linearGradient id="login-map-fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="white" stopOpacity="0.18" />
-            <stop offset="14%" stopColor="white" stopOpacity="0.50" />
-            <stop offset="78%" stopColor="white" stopOpacity="0.72" />
-            <stop offset="100%" stopColor="white" stopOpacity="0.30" />
-          </linearGradient>
-          <mask id="login-map-mask">
-            <rect width={LOGIN_WORLD_MAP_WIDTH} height={LOGIN_WORLD_MAP_HEIGHT} fill="url(#login-map-fade)" />
-          </mask>
-        </defs>
-        <g mask="url(#login-map-mask)">
-          {LOGIN_WORLD_MAP_DOTS.map(dot => (
-            <circle
-              key={`${dot.x}-${dot.y}`}
-              cx={dot.x}
-              cy={dot.y}
-              r="1.25"
-              fill="currentColor"
-              opacity={dot.opacity}
-            />
-          ))}
-        </g>
-      </svg>
-    </div>
-  );
-}
 
 const createDefaultRecordStar = (): StarData => {
   const timestamp = Date.now();
@@ -1205,22 +1110,6 @@ const htmlToText = (html?: string) => {
   return (container.textContent || '').replace(/\s+/g, ' ').trim();
 };
 
-const getSearchPreviewText = (text: string, query: string, maxLength = 96) => {
-  const normalizedText = text.replace(/\s+/g, ' ').trim();
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedText || normalizedText.length <= maxLength) return normalizedText;
-  if (!normalizedQuery) return `${normalizedText.slice(0, maxLength).trim()}...`;
-
-  const matchIndex = normalizedText.toLowerCase().indexOf(normalizedQuery);
-  if (matchIndex < 0) return `${normalizedText.slice(0, maxLength).trim()}...`;
-
-  const start = Math.max(0, matchIndex - Math.floor((maxLength - normalizedQuery.length) / 2));
-  const end = Math.min(normalizedText.length, start + maxLength);
-  const prefix = start > 0 ? '...' : '';
-  const suffix = end < normalizedText.length ? '...' : '';
-  return `${prefix}${normalizedText.slice(start, end).trim()}${suffix}`;
-};
-
 const countSearchMatches = (text: string, query: string) => {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return 0;
@@ -1238,37 +1127,6 @@ const countSearchMatches = (text: string, query: string) => {
 
   return count;
 };
-
-function SearchHighlightedText({ text, query }: { text: string; query: string }) {
-  const normalizedQuery = query.trim();
-  if (!normalizedQuery) return <>{text}</>;
-
-  const lowerText = text.toLowerCase();
-  const lowerQuery = normalizedQuery.toLowerCase();
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  let matchIndex = lowerText.indexOf(lowerQuery);
-
-  while (matchIndex >= 0) {
-    if (matchIndex > cursor) {
-      parts.push(text.slice(cursor, matchIndex));
-    }
-    const matchEnd = matchIndex + normalizedQuery.length;
-    parts.push(
-      <mark key={`${matchIndex}-${matchEnd}`} className="rounded-[3px] bg-[#EDC727] px-[1px] text-black">
-        {text.slice(matchIndex, matchEnd)}
-      </mark>
-    );
-    cursor = matchEnd;
-    matchIndex = lowerText.indexOf(lowerQuery, cursor);
-  }
-
-  if (cursor < text.length) {
-    parts.push(text.slice(cursor));
-  }
-
-  return <>{parts}</>;
-}
 
 const escapeHtml = (value: string) => (
   value.replace(/[&<>"']/g, char => ({
@@ -6359,76 +6217,18 @@ export default function App() {
 
       <AnimatePresence>
         {isSignedIn && activeView === 'searchResults' && (
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 18 }}
-            className="absolute inset-0 z-[950] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
-          >
-            <div className={`flex-1 overflow-y-auto px-8 pb-20 ${screenTopPaddingClass}`}>
-              <div className="mx-auto w-full max-w-[430px]">
-                <button
-                  onClick={closeSearchResults}
-                  className="mb-12 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm transition-transform active:scale-95"
-                  aria-label={homeCopy.back}
-                >
-                  <ChevronsLeft size={30} strokeWidth={UI_ICON_STROKE} />
-                </button>
-
-                <div className="mb-8">
-                  <h1 className="text-[36px] font-extrabold leading-[1.08] tracking-tight text-black">
-                    {homeCopy.searchResultsTitle}
-                  </h1>
-                  <div className="mt-1 text-[28px] font-extrabold leading-[1.08] tracking-tight text-black">
-                    {homeCopy.searchResultsFor} <span className="text-black/48">&quot;{submittedTextSearch.trim()}&quot;</span>
-                  </div>
-                </div>
-
-                {searchResultRecords.length > 0 ? (
-                  <div className="flex flex-col gap-5">
-                    {searchResultRecords.map(record => {
-                      const normalizedQuery = submittedTextSearch.trim().toLowerCase();
-                      const sourceText = record.text.toLowerCase().includes(normalizedQuery) ? record.text : record.title;
-                      const previewText = getSearchPreviewText(sourceText || record.title, submittedTextSearch, 112);
-
-                      return (
-                        <button
-                          key={record.id}
-                          type="button"
-                          onClick={() => openReaderFromRecord(record.starId, record.noteId)}
-                          className="relative flex min-h-[92px] w-full items-center gap-3 rounded-[18px] bg-[var(--app-card)] px-5 py-4 pr-12 text-left shadow-sm transition-transform active:scale-[0.99]"
-                        >
-                          <span className="absolute right-[-7px] top-[-10px] flex h-9 min-w-9 items-center justify-center rounded-full bg-[var(--app-icon)] px-2 text-[14px] font-extrabold text-black shadow-sm">
-                            {record.matchCount}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span
-                              className="block overflow-hidden text-[14px] font-medium leading-snug text-black/82"
-                              style={{
-                                display: '-webkit-box',
-                                WebkitLineClamp: 3,
-                                WebkitBoxOrient: 'vertical',
-                              }}
-                            >
-                              <SearchHighlightedText text={previewText} query={submittedTextSearch} />
-                            </span>
-                            <span className="mt-2 block text-[11px] font-medium text-black/35">
-                              {formatRecordMonth(record.timestamp)} {formatRecordTime(record.timestamp, languageLocale)}
-                            </span>
-                          </span>
-                          <ChevronRight className="shrink-0 text-black/28" size={24} strokeWidth={UI_ICON_STROKE} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-[18px] bg-[var(--app-card)] px-5 py-7 text-center text-[15px] font-medium text-black/42 shadow-sm">
-                    {homeCopy.noSearchResults}
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
+          <SearchResultsScreen
+            records={searchResultRecords}
+            query={submittedTextSearch}
+            copy={homeCopy}
+            languageLocale={languageLocale}
+            screenTopPaddingClass={screenTopPaddingClass}
+            iconStrokeWidth={UI_ICON_STROKE}
+            onBack={closeSearchResults}
+            onOpenRecord={openReaderFromRecord}
+            formatRecordMonth={formatRecordMonth}
+            formatRecordTime={formatRecordTime}
+          />
         )}
       </AnimatePresence>
 
