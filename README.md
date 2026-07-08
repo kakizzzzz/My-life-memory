@@ -69,15 +69,18 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 ## Supabase Setup
 
 1. Create a Supabase project.
-2. In Authentication settings, disable email confirmation for the current ID/password flow.
+2. In Authentication settings, disable public Email signup after the invite function is deployed, so new users cannot bypass the invite flow with the anon key.
 3. Open SQL Editor and run `supabase/schema.sql`.
 4. Confirm these objects exist:
    - `public.profiles`
    - `public.app_states`
    - private Storage bucket `life-media`
    - RLS policies for both tables and `storage.objects`
-5. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
-6. If table grants are missing, run `supabase/fix-permissions.sql`.
+5. Deploy the Supabase Edge Function `register-with-invite`.
+6. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
+7. The function also requires Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+8. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
+9. If table grants are missing, run `supabase/fix-permissions.sql`.
 
 Storage paths are user scoped:
 
@@ -117,6 +120,9 @@ For GitHub Pages:
 - Do not commit `.env.local`, service role keys, database passwords, or raw SQL connection strings.
 - The frontend must use only the Supabase publishable/anon key.
 - `service_role` belongs only in trusted server environments and is not needed for this app.
+- Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
+- The invite code must live only in Supabase Function Secrets as `INVITE_CODE`.
+- After deployment, disable public Supabase Email signup so registration cannot bypass the Edge Function.
 - RLS ensures users can read/write only their own profile, app state, and Storage objects.
 - Private images are rendered with short-lived signed URLs; signed URLs are not stored in app state.
 - App state sanitization strips password-like fields before cloud save.

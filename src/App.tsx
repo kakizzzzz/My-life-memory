@@ -740,6 +740,8 @@ const HOME_COPY = {
   account: 'Account',
   idUnique: 'Unique ID',
   loginPassword: 'Login password',
+  inviteCode: 'Invite code',
+  inviteOnly: 'Registration is currently limited to invited testers',
   passwordManaged: 'Password is protected by Supabase Auth',
   passwordNotViewable: 'Saved passwords cannot be viewed. You can change it with your current password.',
   changePassword: 'Change password',
@@ -888,6 +890,8 @@ const HOME_COPY = {
   account: '账号',
   idUnique: 'ID唯一',
   loginPassword: '登录密码',
+  inviteCode: '内测码',
+  inviteOnly: '当前仅开放内测账号注册',
   passwordManaged: '密码由 Supabase Auth 安全保存',
   passwordNotViewable: '已保存的密码不能查看原文。你可以用当前密码修改新密码。',
   changePassword: '修改密码',
@@ -1036,6 +1040,8 @@ const HOME_COPY = {
   account: '계정',
   idUnique: '고유 ID',
   loginPassword: '로그인 비밀번호',
+  inviteCode: '초대 코드',
+  inviteOnly: '현재 초대받은 테스트 계정만 가입할 수 있습니다',
   passwordManaged: '비밀번호는 Supabase Auth에서 안전하게 관리됩니다',
   passwordNotViewable: '저장된 비밀번호 원문은 볼 수 없습니다. 현재 비밀번호로 새 비밀번호를 설정할 수 있습니다.',
   changePassword: '비밀번호 변경',
@@ -2372,6 +2378,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<CloudAuthAction>('login');
   const [loginAccount, setLoginAccount] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [registerInviteCode, setRegisterInviteCode] = useState('');
   const [isPasswordRevealed, setIsPasswordRevealed] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [isAuthBusy, setIsAuthBusy] = useState(false);
@@ -3275,6 +3282,7 @@ export default function App() {
     if (code === 'registration_disabled') {
       return homeCopy.cloudEmailConfirmRequired;
     }
+    if (code === 'invite_required') return homeCopy.inviteOnly;
     if (code === 'account_exists') return homeCopy.accountExists;
     if (code === 'weak_password') return homeCopy.passwordTooShort;
     if (code === 'invalid_credentials') {
@@ -3367,7 +3375,8 @@ export default function App() {
     setActiveHomePanel(null);
   };
 
-  const handleRegister = async () => {
+  const handleRegister = async (event?: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
     const enteredAccount = loginAccount.trim();
     setAuthMode('register');
     setIsPasswordRevealed(false);
@@ -3385,6 +3394,11 @@ export default function App() {
 
     if (loginPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
       setLoginError(homeCopy.passwordTooShort);
+      return;
+    }
+
+    if (isCloudBackendEnabled && !registerInviteCode.trim()) {
+      setLoginError(homeCopy.inviteOnly);
       return;
     }
 
@@ -3415,6 +3429,7 @@ export default function App() {
       await registerCloudAccount({
         account: normalizedAccount,
         password: loginPassword,
+        inviteCode: registerInviteCode,
         initialProfile: initialProfileForCloud,
         initialState,
       });
@@ -3424,6 +3439,7 @@ export default function App() {
       setAuthMode('login');
       setLoginAccount(normalizedAccount);
       setLoginPassword('');
+      setRegisterInviteCode('');
       setLoginError(homeCopy.registerSuccess);
     } catch (error) {
       console.error('Cloud register failed:', error);
@@ -5562,7 +5578,7 @@ export default function App() {
                   ))}
                 </div>
                 <form
-                  onSubmit={handleLogin}
+                  onSubmit={authMode === 'register' ? handleRegister : handleLogin}
                   className="relative z-10 flex min-h-full flex-col items-center justify-center"
                 >
                   <div className="relative flex w-full flex-col items-center">
@@ -5612,6 +5628,22 @@ export default function App() {
                           placeholder={authMode === 'register' ? homeCopy.registerPassword : homeCopy.loginPassword}
                         />
                       </label>
+                      {authMode === 'register' && (
+                        <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                          <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                          <input
+                            value={registerInviteCode}
+                            onChange={event => {
+                              setRegisterInviteCode(event.target.value);
+                              setLoginError('');
+                            }}
+                            type="password"
+                            autoComplete="off"
+                            className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                            placeholder={homeCopy.inviteCode}
+                          />
+                        </label>
+                      )}
                     </div>
                     {loginError && (
                       <div className="mt-3 text-[13px] font-medium text-black/45">
@@ -5622,7 +5654,13 @@ export default function App() {
                       <button
                         type="submit"
                         disabled={isAuthBusy}
-                        onClick={() => setAuthMode('login')}
+                        onClick={event => {
+                          if (authMode !== 'login') {
+                            event.preventDefault();
+                          }
+                          setAuthMode('login');
+                          setRegisterInviteCode('');
+                        }}
                         className="h-[48px] rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
                       >
                         {isAuthBusy && authMode === 'login' ? homeCopy.loggingIn : homeCopy.login}
@@ -5630,7 +5668,15 @@ export default function App() {
                       <button
                         type="button"
                         disabled={isAuthBusy}
-                        onClick={handleRegister}
+                        onClick={event => {
+                          if (authMode !== 'register') {
+                            setAuthMode('register');
+                            setLoginError('');
+                            setIsPasswordRevealed(false);
+                            return;
+                          }
+                          void handleRegister(event);
+                        }}
                         className="h-[48px] rounded-full bg-[var(--app-soft-surface)] text-[16px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
                       >
                         {isAuthBusy && authMode === 'register' ? homeCopy.registering : homeCopy.register}

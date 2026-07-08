@@ -1,0 +1,2 @@
+[functions.register-with-invite]
+verify_jwt = false

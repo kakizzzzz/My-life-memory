@@ -46,12 +46,14 @@ const SENSITIVE_CLOUD_STATE_KEYS = new Set([
   'registerpassword',
   'currentpassword',
   'newpassword',
+  'confirmpassword',
+  'invitecode',
 ]);
 
 export type CloudAuthAction = 'login' | 'register';
 
 export class CloudAuthError extends Error {
-  code: 'invalid_credentials' | 'account_exists' | 'setup_required' | 'registration_disabled' | 'weak_password' | 'unknown';
+  code: 'invalid_credentials' | 'account_exists' | 'setup_required' | 'registration_disabled' | 'invite_required' | 'weak_password' | 'unknown';
   details?: CloudAuthErrorDetails;
 
   constructor(code: CloudAuthError['code'], message: string, details?: CloudAuthErrorDetails) {
@@ -482,6 +484,35 @@ const buildInitialCloudData = ({
   state: initialState,
 });
 
+const readFunctionErrorPayload = async (error: unknown) => {
+  const response = error && typeof error === 'object' && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+  const status = response && typeof response === 'object' && 'status' in response
+    ? Number((response as { status?: unknown }).status)
+    : undefined;
+  let payload: Record<string, unknown> | null = null;
+
+  if (response instanceof Response) {
+    try {
+      payload = await response.clone().json() as Record<string, unknown>;
+    } catch {
+      payload = null;
+    }
+  }
+
+  const bodyError = payload && typeof payload.error === 'object' && payload.error
+    ? payload.error as Record<string, unknown>
+    : payload;
+
+  return {
+    status,
+    code: typeof bodyError?.code === 'string' ? bodyError.code : '',
+    message: typeof bodyError?.message === 'string' ? bodyError.message : '',
+    payload,
+  };
+};
+
 export const loginCloudAccount = async ({
   account,
   password,
@@ -585,133 +616,96 @@ export const loginCloudAccount = async ({
 export const registerCloudAccount = async ({
   account,
   password,
+  inviteCode,
   initialProfile,
   initialState,
 }: {
   account: string;
   password: string;
+  inviteCode: string;
   initialProfile: CloudProfile;
   initialState: CloudAppState;
 }) => {
   const client = requireSupabase();
-  const clientProjectRef = supabaseProjectRef;
   const normalizedAccount = normalizeAccountId(account);
   if (!normalizedAccount || !password) throw new Error('Account and password are required.');
   if (password.length < 6) throw new CloudAuthError('weak_password', 'Password is too short.');
+  if (!inviteCode.trim()) throw new CloudAuthError('invite_required', 'Invite code is required.');
 
   const email = accountIdToAuthEmail(normalizedAccount);
-  const signUpDebug = {
+  const registerDebug = {
     phase: 'signup' as const,
     accountId: normalizedAccount,
     email,
   };
 
-  let signUpResult: Awaited<ReturnType<typeof client.auth.signUp>> | null = null;
-
   try {
-    signUpResult = await client.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { account_id: normalizedAccount },
-      },
-    });
-
-    if (import.meta.env.DEV) {
-      console.debug('[My life memory] signUp result', {
-        ...signUpDebug,
-        hasUser: Boolean(signUpResult.data.user),
-        hasSession: Boolean(signUpResult.data.session),
-        identities: signUpResult.data.user?.identities,
-        userId: signUpResult.data.user?.id,
-        error: signUpResult.error,
-      });
-    }
-
-    if (signUpResult.error) {
-      throw toCloudAuthError(signUpResult.error, 'unknown', {
-        ...signUpDebug,
-        userId: signUpResult.data.user?.id,
-        tokenRef: signUpResult.data.session ? getTokenProjectRef(signUpResult.data.session.access_token) : '',
-        clientProjectRef,
-        tokenProjectRefMatch: signUpResult.data.session
-          ? getTokenProjectRef(signUpResult.data.session.access_token) === clientProjectRef
-          : undefined,
-        tokenRole: signUpResult.data.user?.role,
-        hasUser: Boolean(signUpResult.data.user),
-        hasSession: Boolean(signUpResult.data.session),
-        raw: signUpResult.error,
-        ...extractSupabaseErrorMeta(signUpResult.error),
-        message: signUpResult.error.message,
-      });
-    }
-    if (Array.isArray(signUpResult.data.user?.identities) && signUpResult.data.user.identities.length === 0) {
-      throw new CloudAuthError('account_exists', 'Account already exists.', {
-      ...signUpDebug,
-      userId: signUpResult.data.user?.id,
-      tokenRef: signUpResult.data.session ? getTokenProjectRef(signUpResult.data.session.access_token) : '',
-      clientProjectRef,
-      tokenProjectRefMatch: signUpResult.data.session
-        ? getTokenProjectRef(signUpResult.data.session.access_token) === clientProjectRef
-        : undefined,
-      tokenRole: signUpResult.data.user?.role,
-      hasUser: Boolean(signUpResult.data.user),
-      hasSession: Boolean(signUpResult.data.session),
-      ...extractSupabaseErrorMeta(signUpResult.error),
-      });
-    }
-    if (!signUpResult.data.session || !signUpResult.data.user) {
-      throw new CloudAuthError('registration_disabled', 'Supabase email confirmation must be disabled for ID-only login.', {
-      ...signUpDebug,
-      userId: signUpResult.data.user?.id,
-      tokenRef: signUpResult.data.session ? getTokenProjectRef(signUpResult.data.session.access_token) : '',
-      clientProjectRef,
-      tokenProjectRefMatch: signUpResult.data.session
-        ? getTokenProjectRef(signUpResult.data.session.access_token) === clientProjectRef
-        : undefined,
-      tokenRole: signUpResult.data.user?.role,
-      hasUser: Boolean(signUpResult.data.user),
-      hasSession: Boolean(signUpResult.data.session),
-      ...extractSupabaseErrorMeta(signUpResult.error),
-      });
-    }
-    await activateCloudSession(signUpResult.data.session, signUpResult.data.user.id);
-
     const initialData = buildInitialCloudData({
       account: normalizedAccount,
       initialProfile,
       initialState,
     });
-    const cloudProfile = await ensureCloudProfile(signUpResult.data.user, initialData.profile);
-    await saveCloudAppState(initialData.state);
-    await client.auth.signOut();
+    const { data, error } = await client.functions.invoke('register-with-invite', {
+      body: {
+        account: normalizedAccount,
+        password,
+        inviteCode,
+        initialProfile: initialData.profile,
+        initialState: initialData.state,
+      },
+    });
+
+    if (error) {
+      const functionError = await readFunctionErrorPayload(error);
+      const details = {
+        ...registerDebug,
+        rawStatus: functionError.status ? String(functionError.status) : '',
+        rawCode: functionError.code,
+        rawMessage: functionError.message,
+        raw: functionError.payload || error,
+        message: functionError.message || extractSupabaseErrorText(error),
+      };
+
+      if (functionError.status === 403 || functionError.code === 'invalid_invite') {
+        throw new CloudAuthError('invite_required', 'Invite code is invalid.', details);
+      }
+      if (functionError.status === 409 || functionError.code === 'account_exists') {
+        throw new CloudAuthError('account_exists', 'Account already exists.', details);
+      }
+      if (functionError.status === 422 || functionError.code === 'weak_password') {
+        throw new CloudAuthError('weak_password', 'Password is too short.', details);
+      }
+
+      throw toCloudAuthError(error, 'unknown', details);
+    }
+
+    if (import.meta.env.DEV) {
+      console.debug('[My life memory] register-with-invite result', {
+        ...registerDebug,
+        ok: Boolean((data as { ok?: unknown } | null)?.ok),
+      });
+    }
+
+    if (!(data as { ok?: unknown } | null)?.ok) {
+      throw new CloudAuthError('unknown', 'Registration failed.', registerDebug);
+    }
 
     return {
-      profile: cloudProfile,
+      profile: initialData.profile,
       state: initialData.state,
       isNewAccount: true,
     };
   } catch (error) {
-    await client.auth.signOut().catch(() => {});
     throw toCloudAuthError(error, 'unknown', {
-      ...signUpDebug,
-      userId: signUpResult?.data.user?.id,
-      tokenRef: signUpResult?.data.session ? getTokenProjectRef(signUpResult.data.session.access_token) : '',
-      clientProjectRef,
-      tokenProjectRefMatch: signUpResult?.data.session
-        ? getTokenProjectRef(signUpResult?.data.session.access_token) === clientProjectRef
-        : undefined,
-      tokenRole: signUpResult?.data.user?.role,
-      hasUser: Boolean(signUpResult?.data.user),
-      hasSession: Boolean(signUpResult?.data.session),
-      message: (signUpResult?.error as Error | undefined)?.message,
-      raw: signUpResult?.error,
-      ...extractSupabaseErrorMeta(signUpResult?.error),
+      ...registerDebug,
+      message: error instanceof Error ? error.message : '',
+      raw: error,
+      ...extractSupabaseErrorMeta(error),
     });
   }
 };
 
-export const signInOrCreateCloudAccount = async (params: Parameters<typeof loginCloudAccount>[0]) => {
+export const signInOrCreateCloudAccount = async (params: Parameters<typeof registerCloudAccount>[0]) => {
   try {
     return await loginCloudAccount(params);
   } catch (error) {
