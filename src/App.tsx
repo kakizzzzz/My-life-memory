@@ -274,6 +274,7 @@ const DEFAULT_RECORD_STAR_LOCATION: [number, number] = [31.2312, 121.4744];
 const LEGACY_RECORD_STAR_LOCATION: [number, number] = [36.36705, 127.34425];
 const APP_STORAGE_KEY = 'campus-map-app-state-v1';
 const INITIAL_PERMISSION_PROMPT_KEY = 'my-life-memory-initial-permission-prompt-v1';
+const AUTO_USER_MANUAL_KEY_PREFIX = 'my-life-memory-auto-user-manual-seen-v1:';
 const GEOLOCATION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
   maximumAge: 0,
@@ -469,6 +470,30 @@ const markInitialPermissionPromptSeen = () => {
     window.localStorage.setItem(INITIAL_PERMISSION_PROMPT_KEY, 'seen');
   } catch {
     // Ignore storage failures; the prompt should still be dismissible.
+  }
+};
+
+const getAutoUserManualStorageKey = (account: string) => (
+  `${AUTO_USER_MANUAL_KEY_PREFIX}${normalizeAccountId(account) || 'local'}`
+);
+
+const readAutoUserManualSeen = (account: string) => {
+  if (typeof window === 'undefined') return true;
+
+  try {
+    return window.localStorage.getItem(getAutoUserManualStorageKey(account)) === 'seen';
+  } catch {
+    return true;
+  }
+};
+
+const markAutoUserManualSeen = (account: string) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(getAutoUserManualStorageKey(account), 'seen');
+  } catch {
+    // Manual auto-open is a convenience; storage failures should not block login.
   }
 };
 
@@ -2058,6 +2083,8 @@ export default function App() {
   const cloudRegistrationInProgressRef = React.useRef(false);
   const cloudSaveTimerRef = React.useRef<number | null>(null);
   const photoLocationStatusTimerRef = React.useRef<number | null>(null);
+  const hasRequestedEntryLocationRef = React.useRef(false);
+  const autoOpenedManualAccountRef = React.useRef<string | null>(null);
 
   const trackingStateRef = React.useRef({ isTracking, isPaused });
   useEffect(() => {
@@ -2347,12 +2374,45 @@ export default function App() {
   }, [closeInitialPermissionPrompt, handleOpenPermissions]);
 
   useEffect(() => {
+    if (!isSignedIn || activeView !== 'map' || hasRequestedEntryLocationRef.current) return;
+    hasRequestedEntryLocationRef.current = true;
+
+    if (!canUseBrowserGeolocation()) {
+      setPermissionRequestState('unsupported');
+      return;
+    }
+
+    let isCancelled = false;
+    setPermissionRequestState('requesting');
+    requestLocationPermissionOnce().then(locationReady => {
+      if (isCancelled) return;
+      setPermissionRequestState(locationReady ? 'ready' : 'denied');
+      if (locationReady && lastGpsLocationRef.current) {
+        setFlyTarget(lastGpsLocationRef.current);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeView, isSignedIn, requestLocationPermissionOnce]);
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const account = normalizeAccountId(profile.account);
+    if (!account || autoOpenedManualAccountRef.current === account) return;
+
+    autoOpenedManualAccountRef.current = account;
+    if (readAutoUserManualSeen(account)) return;
+
+    markAutoUserManualSeen(account);
+    setIsUserManualOpen(true);
+  }, [isSignedIn, profile.account]);
+
+  useEffect(() => {
     if (activeHomePanel !== 'theme') {
       setActiveThemeColorKey(null);
       setShowThemeCustomPicker(false);
-    }
-    if (activeHomePanel !== 'settings') {
-      setIsUserManualOpen(false);
     }
     if (activeHomePanel !== 'profile') {
       setIsPasswordChangeOpen(false);
@@ -2380,6 +2440,8 @@ export default function App() {
 
   useEffect(() => {
     if (isSignedIn) return;
+    hasRequestedEntryLocationRef.current = false;
+    autoOpenedManualAccountRef.current = null;
     hasSyncedDefaultStarToGpsRef.current = false;
     setActiveView('home');
     setActiveHomePanel(null);
@@ -2400,7 +2462,6 @@ export default function App() {
     if (hasSeenInitialPermissionPrompt) return;
     markInitialPermissionPromptSeen();
     setHasSeenInitialPermissionPrompt(true);
-    setIsInitialPermissionPromptOpen(true);
   }, [activeView, hasSeenInitialPermissionPrompt, isSignedIn, permissionRequestState]);
 
   useEffect(() => {
@@ -2515,12 +2576,9 @@ export default function App() {
     setSelectedTrackLatLng(null);
   }, []);
 
-  const handleLocateMe = () => {
-    if (isLocating.current) return;
-    isLocating.current = true;
-    void startHeadingWatch();
-    if (!requestUserLocation(true)) isLocating.current = false;
-  };
+  const handleLocateMe = React.useCallback(() => {
+    setFlyTarget([userLocation[0], userLocation[1]]);
+  }, [userLocation]);
 
   const handleMapReady = React.useCallback((map: L.Map | null) => {
     mapInstanceRef.current = map;
