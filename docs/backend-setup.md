@@ -61,7 +61,7 @@ When deleting notes or stars, the function removes referenced `life-media` Stora
 
 ## MCP Server
 
-The local MCP server lives at `mcp/my-life-memory.mjs` and calls `memory-api`.
+The local stdio MCP server lives at `mcp/my-life-memory.mjs` and calls `memory-api`.
 
 Run it directly:
 
@@ -100,6 +100,26 @@ To also expose destructive delete tools:
 MLM_MCP_ENABLE_WRITES=true
 MLM_MCP_ENABLE_DELETES=true
 ```
+
+For mobile MCP clients, run the Streamable HTTP server from a trusted computer or server:
+
+```bash
+MLM_SUPABASE_URL=https://your-project-ref.supabase.co \
+MLM_SUPABASE_ANON_KEY=your-publishable-or-anon-key \
+MLM_ACCOUNT=your-account-id \
+MLM_PASSWORD=your-password \
+MCP_AUTH_TOKEN=choose-a-long-random-token \
+PORT=3000 \
+npm run mcp:http
+```
+
+Mobile MCP client settings:
+
+- Transport: Streamable HTTP
+- URL: `http://<server-ip>:3000/mcp` or `https://<your-domain>/mcp`
+- Authorization: `Bearer <MCP_AUTH_TOKEN>`
+
+The mobile client should not receive Supabase credentials or the app account password. They stay in server-side environment variables. The installed SDK supports `StreamableHTTPServerTransport`; SSE fallback is not needed for this project version.
 
 ## Storage Rules
 
