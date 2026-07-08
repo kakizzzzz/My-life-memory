@@ -101,7 +101,26 @@ MLM_MCP_ENABLE_WRITES=true
 MLM_MCP_ENABLE_DELETES=true
 ```
 
-For mobile MCP clients, run the Streamable HTTP server from a trusted computer or server:
+For mobile MCP clients, deploy the cloud MCP Edge Function and use it directly:
+
+```bash
+supabase functions secrets set \
+  MLM_ACCOUNT=your-account-id \
+  MLM_PASSWORD=your-password \
+  MCP_AUTH_TOKEN=choose-a-long-random-token
+
+supabase functions deploy mcp
+```
+
+Mobile MCP client settings:
+
+- Transport: Streamable HTTP
+- URL: `https://your-project-ref.supabase.co/functions/v1/mcp`
+- Authorization: `Bearer <MCP_AUTH_TOKEN>`
+
+GitHub Pages is a static web host and cannot serve MCP directly. The mobile MCP server address should be the Supabase Edge Function URL, not the Pages URL.
+
+For local development or self-hosting, run the Node Streamable HTTP server from a trusted computer or server:
 
 ```bash
 MLM_SUPABASE_URL=https://your-project-ref.supabase.co \
@@ -113,13 +132,13 @@ PORT=3000 \
 npm run mcp:http
 ```
 
-Mobile MCP client settings:
+Local MCP client settings:
 
 - Transport: Streamable HTTP
 - URL: `http://<server-ip>:3000/mcp` or `https://<your-domain>/mcp`
 - Authorization: `Bearer <MCP_AUTH_TOKEN>`
 
-The mobile client should not receive Supabase credentials or the app account password. They stay in server-side environment variables. The installed SDK supports `StreamableHTTPServerTransport`; SSE fallback is not needed for this project version.
+The mobile client should not receive Supabase credentials or the app account password. They stay in Supabase Function Secrets or server-side environment variables. The installed SDK supports `StreamableHTTPServerTransport`; SSE fallback is not needed for this project version.
 
 ## Storage Rules
 

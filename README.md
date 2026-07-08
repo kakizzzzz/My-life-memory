@@ -92,7 +92,23 @@ MLM_PASSWORD=your-password
 
 You can use `MLM_SUPABASE_ACCESS_TOKEN` instead of `MLM_ACCOUNT` and `MLM_PASSWORD` if an AI client or helper has already obtained a user token.
 
-Mobile MCP clients can use the Streamable HTTP server instead:
+Mobile MCP clients should use the cloud MCP Edge Function:
+
+```text
+https://your-project-ref.supabase.co/functions/v1/mcp
+```
+
+Cloud MCP secrets:
+
+```bash
+MLM_ACCOUNT=your-account-id
+MLM_PASSWORD=your-password
+MCP_AUTH_TOKEN=choose-a-long-random-token
+```
+
+Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <MCP_AUTH_TOKEN>`. The phone never receives the Supabase URL, publishable key, account, or password; those stay in Supabase Function Secrets.
+
+For local development or self-hosting, the Node HTTP server is also available:
 
 ```bash
 MLM_SUPABASE_URL=https://your-project-ref.supabase.co \
@@ -103,9 +119,9 @@ MCP_AUTH_TOKEN=choose-a-long-random-token \
 npm run mcp:http
 ```
 
-The HTTP MCP endpoint is `/mcp` and listens on `process.env.PORT || 3000`. Phone clients should choose Streamable HTTP, set the URL to `http://<server-ip>:3000/mcp`, and set the authorization header to `Bearer <MCP_AUTH_TOKEN>`. The phone never receives the Supabase URL, publishable key, account, or password; those stay on the server environment.
+The local HTTP MCP endpoint is `/mcp` and listens on `process.env.PORT || 3000`.
 
-By default, MCP exposes only read-only tools. To expose write tools locally:
+By default, MCP exposes only read-only tools. To expose write tools in either the cloud function or the local server:
 
 ```bash
 MLM_MCP_ENABLE_WRITES=true
