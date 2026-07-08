@@ -33,12 +33,12 @@ html, body {
 }
 
 /* Custom night map filter to turn black/gray map into readable dark blue/gray map */
-.theme-dark .leaflet-tile-pane, .custom-dark-thumb {
+.theme-dark .leaflet-tile-pane {
   filter: sepia(80%) hue-rotate(185deg) saturate(150%) brightness(190%) contrast(90%) !important;
 }
 
 /* Custom light map filter to make it purely grayscale like the reference */
-.theme-light .leaflet-tile-pane, .custom-light-thumb {
+.theme-light .leaflet-tile-pane {
   filter: grayscale(100%) !important;
 }
 

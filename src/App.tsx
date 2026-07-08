@@ -140,6 +140,49 @@ type SystemTheme = {
   dark: string;
 };
 
+function MapStyleThumbnail({ styleName }: { styleName: MapStyle }) {
+  const palette = {
+    light: {
+      background: '#e7e7e7',
+      water: '#d4d4d4',
+      land: '#ededed',
+      major: '#ffffff',
+      minor: '#bcbcbc',
+      point: '#9f9f9f',
+    },
+    dark: {
+      background: '#172630',
+      water: '#243947',
+      land: '#20313b',
+      major: '#8da5b1',
+      minor: '#526a75',
+      point: '#b5c2c8',
+    },
+    aerial: {
+      background: '#456c5c',
+      water: '#365f73',
+      land: '#6f7f55',
+      major: '#d8cda8',
+      minor: '#8c8c69',
+      point: '#f0e8c9',
+    },
+  }[styleName];
+
+  return (
+    <div className="h-full w-full overflow-hidden" style={{ background: palette.background }}>
+      <svg viewBox="0 0 48 48" className="h-full w-full" fill="none" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M-4 31 C7 24 14 28 22 22 C30 16 35 18 52 7 L52 52 L-4 52 Z" fill={palette.water} opacity={styleName === 'light' ? 0.72 : 0.9} />
+        <path d="M-5 10 C7 2 15 8 23 5 C32 2 39 7 53 -2 L53 18 C41 23 31 20 24 25 C16 31 7 26 -5 34 Z" fill={palette.land} opacity={styleName === 'aerial' ? 0.85 : 0.58} />
+        <path d="M-5 38 C9 31 18 38 28 31 C37 25 42 28 53 21" stroke={palette.major} strokeWidth="4.4" strokeLinecap="round" opacity={styleName === 'aerial' ? 0.6 : 0.74} />
+        <path d="M2 9 C11 16 17 18 25 16 C33 14 39 18 47 25" stroke={palette.major} strokeWidth="3" strokeLinecap="round" opacity={styleName === 'aerial' ? 0.5 : 0.72} />
+        <path d="M12 -4 C13 9 14 19 17 28 C20 36 22 42 23 52" stroke={palette.minor} strokeWidth="2.1" strokeLinecap="round" opacity={styleName === 'light' ? 0.62 : 0.72} />
+        <path d="M34 -4 C30 7 30 14 34 22 C38 30 38 38 34 52" stroke={palette.minor} strokeWidth="2.1" strokeLinecap="round" opacity={styleName === 'light' ? 0.54 : 0.7} />
+        <circle cx="31.5" cy="19" r="2.4" fill={palette.point} opacity="0.86" />
+      </svg>
+    </div>
+  );
+}
+
 type UserProfile = {
   name: string;
   account: string;
@@ -3187,18 +3230,15 @@ export default function App() {
   const mapTiles = {
     light: {
       url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      thumb: "https://a.basemaps.cartocdn.com/light_all/8/61/105.png"
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
     },
     dark: {
       url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      thumb: "https://a.basemaps.cartocdn.com/dark_all/8/61/105.png"
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
     },
     aerial: {
       url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      attribution: 'Tiles &copy; Esri',
-      thumb: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/8/105/61"
+      attribution: 'Tiles &copy; Esri'
     }
   };
 
@@ -4572,9 +4612,10 @@ export default function App() {
                           <button 
                             onClick={() => { setMapStyle('dark'); setIsMapStyleMenuOpen(false); }}
                             className={`flex items-center justify-center rounded-full transition-all focus:outline-none ${mapStyle === 'dark' ? 'w-[40px] h-[40px] border-[3px] border-black scale-100' : 'w-[40px] h-[40px] hover:opacity-80 scale-[0.85]'}`}
+                            aria-label={homeCopy.darkMapAlt}
                           >
                             <div className="w-full h-full rounded-full overflow-hidden relative">
-                              <img src={mapTiles.dark.thumb} className="w-full h-full object-cover custom-dark-thumb" alt={homeCopy.darkMapAlt} />
+                              <MapStyleThumbnail styleName="dark" />
                             </div>
                           </button>
                           
@@ -4582,9 +4623,10 @@ export default function App() {
                           <button 
                             onClick={() => { setMapStyle('aerial'); setIsMapStyleMenuOpen(false); }}
                             className={`flex items-center justify-center rounded-full transition-all focus:outline-none ${mapStyle === 'aerial' ? 'w-[40px] h-[40px] border-[3px] border-black scale-100' : 'w-[40px] h-[40px] hover:opacity-80 scale-[0.85]'}`}
+                            aria-label={homeCopy.aerialMapAlt}
                           >
                             <div className="w-full h-full rounded-full overflow-hidden relative">
-                              <img src={mapTiles.aerial.thumb} className="w-full h-full object-cover" alt={homeCopy.aerialMapAlt} />
+                              <MapStyleThumbnail styleName="aerial" />
                             </div>
                           </button>
 
@@ -4592,9 +4634,10 @@ export default function App() {
                           <button 
                             onClick={() => { setMapStyle('light'); setIsMapStyleMenuOpen(false); }}
                             className={`flex items-center justify-center rounded-full transition-all focus:outline-none ${mapStyle === 'light' ? 'w-[40px] h-[40px] border-[3px] border-black scale-100' : 'w-[40px] h-[40px] hover:opacity-80 scale-[0.85]'}`}
+                            aria-label={homeCopy.lightMapAlt}
                           >
                             <div className="w-full h-full rounded-full overflow-hidden relative">
-                              <img src={mapTiles.light.thumb} className="w-full h-full object-cover custom-light-thumb" alt={homeCopy.lightMapAlt} />
+                              <MapStyleThumbnail styleName="light" />
                             </div>
                           </button>
                         </div>
@@ -4608,13 +4651,10 @@ export default function App() {
                         transition={{ duration: 0.15 }}
                         onClick={() => setIsMapStyleMenuOpen(true)}
                         className="w-[48px] h-[48px] rounded-full bg-[var(--app-icon)] p-[6px] shadow-sm hover:opacity-90 transition-opacity focus:outline-none block"
+                        aria-label={homeCopy.currentMapStyleAlt}
                       >
                         <div className="w-full h-full rounded-full border-[3px] border-black overflow-hidden relative">
-                          <img 
-                            src={mapTiles[mapStyle].thumb} 
-                            className={`w-full h-full object-cover ${mapStyle === 'dark' ? 'custom-dark-thumb' : ''} ${mapStyle === 'light' ? 'custom-light-thumb' : ''}`}
-                            alt={homeCopy.currentMapStyleAlt} 
-                          />
+                          <MapStyleThumbnail styleName={mapStyle} />
                         </div>
                       </motion.button>
                     )}
