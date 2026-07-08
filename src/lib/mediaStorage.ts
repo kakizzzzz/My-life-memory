@@ -3,7 +3,8 @@ import { isCloudBackendEnabled, supabase } from './supabaseClient';
 export const MEDIA_BUCKET = 'life-media';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
-const PENDING_MEDIA_DELETE_STORAGE_KEY = 'my-life-memory-pending-media-deletes-v1';
+const PENDING_MEDIA_DELETE_STORAGE_KEY_PREFIX = 'my-life-memory-pending-media-deletes-v1:';
+const UNREFERENCED_MEDIA_GRACE_MS = 30 * 1000;
 
 export type StoredImageMetadata = {
   provider: 'supabase';
@@ -41,11 +42,15 @@ const uniqueMetadata = (metadataList: StoredImageMetadata[]) => (
   ))
 );
 
-const readPendingDeletes = () => {
+const getPendingDeleteStorageKey = (userId: string) => (
+  `${PENDING_MEDIA_DELETE_STORAGE_KEY_PREFIX}${encodeURIComponent(userId)}`
+);
+
+const readPendingDeletes = (userId: string) => {
   if (typeof window === 'undefined') return [];
 
   try {
-    const raw = window.localStorage.getItem(PENDING_MEDIA_DELETE_STORAGE_KEY);
+    const raw = window.localStorage.getItem(getPendingDeleteStorageKey(userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -60,27 +65,33 @@ const readPendingDeletes = () => {
   }
 };
 
-const writePendingDeletes = (metadataList: StoredImageMetadata[]) => {
+const writePendingDeletes = (userId: string, metadataList: StoredImageMetadata[]) => {
   if (typeof window === 'undefined') return;
 
   try {
-    const uniqueList = uniqueMetadata(metadataList);
+    const uniqueList = uniqueMetadata(metadataList).filter(metadata => (
+      metadata.path.startsWith(`${userId}/`)
+    ));
     if (uniqueList.length === 0) {
-      window.localStorage.removeItem(PENDING_MEDIA_DELETE_STORAGE_KEY);
+      window.localStorage.removeItem(getPendingDeleteStorageKey(userId));
       return;
     }
-    window.localStorage.setItem(PENDING_MEDIA_DELETE_STORAGE_KEY, JSON.stringify(uniqueList));
+    window.localStorage.setItem(getPendingDeleteStorageKey(userId), JSON.stringify(uniqueList));
   } catch {
     // Best effort. Storage cleanup will retry whenever pending metadata can be persisted again.
   }
 };
 
-const queueImageDeletion = (metadata: StoredImageMetadata) => {
-  writePendingDeletes([...readPendingDeletes(), metadata]);
+const queueImageDeletion = async (metadata: StoredImageMetadata) => {
+  const userId = await getCurrentUserId().catch(() => '');
+  if (!userId || !metadata.path.startsWith(`${userId}/`)) return;
+  writePendingDeletes(userId, [...readPendingDeletes(userId), metadata]);
 };
 
-const removeQueuedImageDeletion = (metadata: StoredImageMetadata) => {
-  writePendingDeletes(readPendingDeletes().filter(item => !sameStoredImage(item, metadata)));
+const removeQueuedImageDeletion = async (metadata: StoredImageMetadata) => {
+  const userId = await getCurrentUserId().catch(() => '');
+  if (!userId || !metadata.path.startsWith(`${userId}/`)) return;
+  writePendingDeletes(userId, readPendingDeletes(userId).filter(item => !sameStoredImage(item, metadata)));
 };
 
 const safePart = (value?: string) => (
@@ -222,15 +233,17 @@ export const deleteImageFromStorage = async (metadata: StoredImageMetadata) => {
 export const deleteImageFromStorageReliably = async (metadata: StoredImageMetadata) => {
   const deleted = await deleteImageFromStorage(metadata);
   if (deleted) {
-    removeQueuedImageDeletion(metadata);
+    await removeQueuedImageDeletion(metadata);
   } else {
-    queueImageDeletion(metadata);
+    await queueImageDeletion(metadata);
   }
   return deleted;
 };
 
 export const retryPendingImageDeletions = async () => {
-  const pendingDeletes = uniqueMetadata(readPendingDeletes());
+  const userId = await getCurrentUserId().catch(() => '');
+  if (!userId) return;
+  const pendingDeletes = uniqueMetadata(readPendingDeletes(userId));
   if (pendingDeletes.length === 0) return;
 
   const remainingDeletes: StoredImageMetadata[] = [];
@@ -238,7 +251,96 @@ export const retryPendingImageDeletions = async () => {
     const deleted = await deleteImageFromStorage(metadata);
     if (!deleted) remainingDeletes.push(metadata);
   }
-  writePendingDeletes(remainingDeletes);
+  writePendingDeletes(userId, remainingDeletes);
+};
+
+type StorageListItem = {
+  name: string;
+  id?: string | null;
+  metadata?: { size?: number; mimetype?: string; mimeType?: string } | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type StorageObjectPath = {
+  path: string;
+  metadata: StoredImageMetadata;
+  isTooNew: boolean;
+};
+
+const isStorageFolder = (item: StorageListItem) => (
+  !item.id && !item.metadata
+);
+
+const getStorageItemTimestamp = (item: StorageListItem) => {
+  const timestamp = Date.parse(item.created_at || item.updated_at || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const listStorageObjectPaths = async (folder: string): Promise<StorageObjectPath[]> => {
+  if (!supabase) return [];
+
+  const bucket = supabase.storage.from(MEDIA_BUCKET);
+  const paths: StorageObjectPath[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await bucket.list(folder, {
+      limit: 1000,
+      offset,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+
+    if (error) throw error;
+    const items = (data || []) as StorageListItem[];
+
+    for (const item of items) {
+      if (!item.name) continue;
+      const path = `${folder}/${item.name}`;
+      if (isStorageFolder(item)) {
+        paths.push(...await listStorageObjectPaths(path));
+        continue;
+      }
+
+      const createdAt = getStorageItemTimestamp(item) || Date.now();
+      const mimeType = item.metadata?.mimetype || item.metadata?.mimeType || 'image/jpeg';
+      paths.push({
+        path,
+        metadata: {
+          provider: 'supabase',
+          bucket: MEDIA_BUCKET,
+          key: path,
+          path,
+          mimeType,
+          size: Number(item.metadata?.size || 0),
+          createdAt,
+        },
+        isTooNew: createdAt > 0 && Date.now() - createdAt < UNREFERENCED_MEDIA_GRACE_MS,
+      });
+    }
+
+    if (items.length < 1000) break;
+    offset += items.length;
+  }
+
+  return paths;
+};
+
+export const cleanupUnreferencedUserMedia = async (referencedPaths: string[]) => {
+  if (!isSupabaseMediaEnabled || !supabase) return;
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+
+  const userPrefix = `${userId}/`;
+  const referencedPathSet = new Set(referencedPaths.filter(path => path.startsWith(userPrefix)));
+  const storageObjects = await listStorageObjectPaths(userId);
+
+  for (const object of storageObjects) {
+    if (!object.path.startsWith(userPrefix)) continue;
+    if (object.isTooNew) continue;
+    if (referencedPathSet.has(object.path)) continue;
+    await deleteImageFromStorageReliably(object.metadata);
+  }
 };
 
 export const imageMetadataFromElement = (element: Element | null): StoredImageMetadata | null => {

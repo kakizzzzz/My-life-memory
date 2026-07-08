@@ -13,6 +13,7 @@ import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from 
 import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
+  cleanupUnreferencedUserMedia,
   createSignedImageUrl,
   dehydrateStorageMediaHtml,
   deleteImageFromStorageReliably,
@@ -2231,6 +2232,8 @@ export default function App() {
   const photoLocationStatusTimerRef = React.useRef<number | null>(null);
   const hasRequestedEntryLocationRef = React.useRef(false);
   const autoOpenedManualAccountRef = React.useRef<string | null>(null);
+  const cleanedMediaAccountRef = React.useRef<string | null>(null);
+  const isCleaningMediaRef = React.useRef(false);
 
   const trackingStateRef = React.useRef({ isTracking, isPaused });
   useEffect(() => {
@@ -3007,6 +3010,8 @@ export default function App() {
 
     if (!session?.user) {
       cloudReadyToSaveRef.current = false;
+      cleanedMediaAccountRef.current = null;
+      isCleaningMediaRef.current = false;
       setIsSignedIn(false);
       setActiveHomePanel(null);
       return;
@@ -3019,6 +3024,8 @@ export default function App() {
       console.error('Could not load cloud account data:', error);
       setLoginError(getCloudAuthErrorMessage(error, 'login'));
       cloudReadyToSaveRef.current = false;
+      cleanedMediaAccountRef.current = null;
+      isCleaningMediaRef.current = false;
       setIsSignedIn(false);
       setActiveHomePanel(null);
       void signOutCloudAccount();
@@ -3223,18 +3230,24 @@ export default function App() {
     setLoginPassword('');
     setIsPasswordRevealed(false);
     setLoginError('');
+    cleanedMediaAccountRef.current = null;
+    isCleaningMediaRef.current = false;
   };
+
+  const getReferencedStoredMedia = React.useCallback(() => (
+    uniqueStoredImages([
+      profile.avatarImage,
+      ...stars.flatMap(star => (
+        (star.notes || []).flatMap(note => getStoredImagesFromNote(note))
+      )),
+    ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata)))
+  ), [profile.avatarImage, stars]);
 
   useEffect(() => {
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
 
     let isMounted = true;
-    const metadataList = [
-      profile.avatarImage,
-      ...stars.flatMap(star => (
-        (star.notes || []).flatMap(note => getStoredImagesFromNote(note))
-      )),
-    ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata));
+    const metadataList = getReferencedStoredMedia();
 
     void warmStorageImageUrls(metadataList).then(() => {
       if (isMounted) setMediaRefreshKey(key => key + 1);
@@ -3243,7 +3256,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [isSignedIn, profile.avatarImage, profile.account, stars]);
+  }, [getReferencedStoredMedia, isSignedIn, profile.account]);
 
   useEffect(() => {
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
@@ -3261,6 +3274,39 @@ export default function App() {
       window.removeEventListener('focus', retryDeletes);
     };
   }, [isSignedIn, profile.account]);
+
+  useEffect(() => {
+    if (!isSupabaseMediaEnabled || !isSignedIn) return;
+    const account = normalizeAccountId(profile.account);
+    if (!account || cleanedMediaAccountRef.current === account) return;
+
+    const cleanupMedia = () => {
+      if (cleanedMediaAccountRef.current === account) return;
+      if (isCleaningMediaRef.current) return;
+      isCleaningMediaRef.current = true;
+      const referencedPaths = getReferencedStoredMedia().map(metadata => metadata.path);
+      void cleanupUnreferencedUserMedia(referencedPaths)
+        .then(() => {
+          cleanedMediaAccountRef.current = account;
+        })
+        .catch(error => {
+          console.warn('Could not clean unreferenced media:', error);
+        })
+        .finally(() => {
+          isCleaningMediaRef.current = false;
+        });
+    };
+
+    const cleanupTimer = window.setTimeout(cleanupMedia, 1200);
+    window.addEventListener('online', cleanupMedia);
+    window.addEventListener('focus', cleanupMedia);
+
+    return () => {
+      window.clearTimeout(cleanupTimer);
+      window.removeEventListener('online', cleanupMedia);
+      window.removeEventListener('focus', cleanupMedia);
+    };
+  }, [getReferencedStoredMedia, isSignedIn, profile.account]);
 
   useEffect(() => {
     if (!isCloudBackendEnabled) return;
