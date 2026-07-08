@@ -1073,6 +1073,23 @@ const imageBlobToDataUrl = (blob: Blob) => (
   })
 );
 
+type NavigatorWithFileShare = Navigator & {
+  canShare?: (data: { files?: File[]; title?: string }) => boolean;
+  share?: (data: { files?: File[]; title?: string }) => Promise<void>;
+};
+
+const getImageExtension = (mimeType: string) => {
+  if (mimeType.includes('png')) return 'png';
+  if (mimeType.includes('webp')) return 'webp';
+  if (mimeType.includes('gif')) return 'gif';
+  return 'jpg';
+};
+
+const getImageDownloadFileName = (title: string, mimeType = 'image/jpeg') => {
+  const baseName = title.replace(/[^\w-]+/g, '-').replace(/^-|-$/g, '') || 'image';
+  return `${baseName}.${getImageExtension(mimeType)}`;
+};
+
 const loadImageFile = (file: File) => (
   new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
@@ -3414,7 +3431,6 @@ export default function App() {
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const currentYear = now.getFullYear();
-    const query = textSearch.trim().toLowerCase();
 
     return stars
       .flatMap((star, starIndex) => (
@@ -3448,11 +3464,10 @@ export default function App() {
         if (selectedRecordsDateKey && record.dateKey !== selectedRecordsDateKey) return false;
         if (recordsFilter === 'monthly' && record.monthKey !== currentMonthKey) return false;
         if (recordsFilter === 'annual' && record.year !== currentYear) return false;
-        if (!query) return true;
-        return `${record.title} ${record.text} ${record.lat.toFixed(4)} ${record.lng.toFixed(4)}`.toLowerCase().includes(query);
+        return true;
       })
       .sort((a, b) => b.timestamp - a.timestamp);
-  }, [homeCopy.noteLabel, homeCopy.untitledNote, recordsFilter, selectedRecordsDateKey, stars, textSearch]);
+  }, [homeCopy.noteLabel, homeCopy.untitledNote, recordsFilter, selectedRecordsDateKey, stars]);
 
   const searchResultRecords = React.useMemo(() => {
     const query = submittedTextSearch.trim().toLowerCase();
@@ -3703,13 +3718,46 @@ export default function App() {
     setSystemTheme(prev => ({ ...prev, [key]: value }));
   };
 
-  const downloadGalleryImage = (image: UploadedImage) => {
+  const downloadGalleryImageFallback = (href: string, fileName: string) => {
     const link = document.createElement('a');
-    link.href = image.src;
-    link.download = `${image.title.replace(/[^\w-]+/g, '-').replace(/^-|-$/g, '') || 'image'}.jpg`;
+    link.href = href;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     link.remove();
+  };
+
+  const downloadGalleryImage = async (image: UploadedImage) => {
+    let objectUrl: string | null = null;
+    const fallbackFileName = getImageDownloadFileName(image.title);
+
+    try {
+      const response = await fetch(image.src);
+      if (!response.ok) throw new Error('Could not fetch image.');
+
+      const blob = await response.blob();
+      const mimeType = blob.type || 'image/jpeg';
+      const fileName = getImageDownloadFileName(image.title, mimeType);
+      const file = new File([blob], fileName, { type: mimeType });
+      const shareNavigator = navigator as NavigatorWithFileShare;
+
+      if (shareNavigator.share && (!shareNavigator.canShare || shareNavigator.canShare({ files: [file], title: image.title }))) {
+        await shareNavigator.share({ files: [file], title: image.title });
+        return;
+      }
+
+      objectUrl = URL.createObjectURL(blob);
+      downloadGalleryImageFallback(objectUrl, fileName);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        console.warn('Could not open native image save flow, falling back to download:', error);
+        downloadGalleryImageFallback(image.src, fallbackFileName);
+      }
+    } finally {
+      if (objectUrl) {
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      }
+    }
   };
 
   const showPhotoLocationStatus = React.useCallback((message: string, durationMs = 500) => {
@@ -6433,7 +6481,7 @@ export default function App() {
             <X size={22} strokeWidth={UI_ICON_STROKE} />
           </button>
           <button
-            onClick={() => downloadGalleryImage(galleryPreviewImage)}
+            onClick={() => { void downloadGalleryImage(galleryPreviewImage); }}
             className="absolute right-[4.25rem] top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
             aria-label={homeCopy.downloadImage}
           >
