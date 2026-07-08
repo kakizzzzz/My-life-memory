@@ -107,20 +107,7 @@ MCP_AUTH_TOKEN=choose-a-long-random-token
 
 Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <MCP_AUTH_TOKEN>`. The phone never receives the Supabase URL, publishable key, or app account ID; those stay in Supabase Function Secrets. The cloud MCP function does not store the app password.
 
-For local development or self-hosting, the Node HTTP server is also available:
-
-```bash
-MLM_SUPABASE_URL=https://your-project-ref.supabase.co \
-MLM_SUPABASE_ANON_KEY=your-publishable-or-anon-key \
-MLM_ACCOUNT=your-account-id \
-MLM_PASSWORD=your-password \
-MCP_AUTH_TOKEN=choose-a-long-random-token \
-npm run mcp:http
-```
-
-The local HTTP MCP endpoint is `/mcp` and listens on `process.env.PORT || 3000`.
-
-By default, MCP exposes only read-only tools. To expose write tools in either the cloud function or the local server:
+By default, MCP exposes only read-only tools. To expose write tools in either the cloud function or the local stdio server:
 
 ```bash
 MLM_MCP_ENABLE_WRITES=true
