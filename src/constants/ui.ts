@@ -1,0 +1,4 @@
+export const UI_ICON_STROKE = 2.2;
+export const MAP_TOOL_ICON_STROKE = UI_ICON_STROKE;
+export const HOME_SETTINGS_ICON_SIZE = 24;
+export const HOME_SETTINGS_ICON_STROKE = UI_ICON_STROKE;
