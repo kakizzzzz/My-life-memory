@@ -44,6 +44,8 @@ export type TrackDraftData = {
 export type MapStyle = 'light' | 'dark' | 'aerial';
 export type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchResults';
 export type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'apiSecurity' | 'mcp' | 'export' | null;
+export type RecordsFilter = 'all' | 'monthly' | 'annual';
+export type RecordsCalendarMode = 'month' | 'year';
 
 export type SystemTheme = {
   page: string;
@@ -64,6 +66,30 @@ export type UploadedImage = {
   id: string;
   src: string;
   title: string;
+};
+
+export type NoteRecord = {
+  id: string;
+  starId: string;
+  noteId: string;
+  starIndex: number;
+  noteIndex: number;
+  lat: number;
+  lng: number;
+  color: string;
+  title: string;
+  text: string;
+  timestamp: number;
+  day: number;
+  year: number;
+  monthKey: string;
+  dateKey: string;
+  hasContent: boolean;
+};
+
+export type RecordsByDateGroup = {
+  dateKey: string;
+  records: NoteRecord[];
 };
 
 export type PersistedAppState = {
