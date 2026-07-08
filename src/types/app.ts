@@ -60,6 +60,12 @@ export type UserProfile = {
   avatarImage?: StoredImageMetadata;
 };
 
+export type UploadedImage = {
+  id: string;
+  src: string;
+  title: string;
+};
+
 export type PersistedAppState = {
   mapStyle?: MapStyle;
   systemTheme?: Partial<SystemTheme>;
