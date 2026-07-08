@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { MapContainer, TileLayer, Marker, useMap, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
-import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, CalendarDays, Camera, Eye, EyeOff, Underline, KeyRound } from 'lucide-react';
+import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, CalendarDays, Camera, Eye, EyeOff, Underline, KeyRound, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import * as exifr from 'exifr';
@@ -10,7 +10,7 @@ import { StarActionOverlay } from './StarActionOverlay';
 import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
 import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
-import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
+import { isCloudBackendEnabled, supabaseConfigMessage, supabaseFunctionUrl } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
   cleanupUnreferencedUserMedia,
@@ -135,7 +135,7 @@ type TrackData = {
 
 type MapStyle = 'light' | 'dark' | 'aerial';
 type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchResults';
-type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'mcp' | 'export' | null;
+type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'apiSecurity' | 'mcp' | 'export' | null;
 type RecordsFilter = 'all' | 'monthly' | 'annual';
 type SearchField = 'coordinate' | 'text';
 type RecordsCalendarMode = 'month' | 'year';
@@ -821,6 +821,19 @@ const HOME_COPY = {
     mcpFailed: 'MCP service unavailable',
     mcpRevoked: 'Token revoked',
     mcpTokenWarning: 'The full token is shown only once.',
+    apiSecurity: 'API & security',
+    apiMemoryApiTitle: 'Memory API',
+    apiMemoryApiBody: 'Memory API is a Supabase Edge Function for authenticated integrations. It reads the current user memory data and requires a real user access token.',
+    apiMcpSecurityTitle: 'MCP access',
+    apiMcpSecurityBody: 'Cloud MCP is also a Supabase Edge Function. It verifies the generated MCP token, maps it to one user, and exposes read-only tools to AI clients.',
+    apiTokenSecurityTitle: 'Token generation',
+    apiTokenSecurityBody: 'The MCP token is generated on Supabase, not in frontend code. The full token is shown once; Supabase stores only a SHA-256 hash and a short prefix.',
+    apiStorageSecurityTitle: 'Private media',
+    apiStorageSecurityBody: 'Images are stored in the private life-media bucket under each user ID. The database keeps paths and metadata instead of public image files.',
+    apiDirectApiTitle: 'Direct API shape',
+    apiDirectApiBody: 'External tools should POST to memory-api with Authorization: Bearer <user access token>, apikey: <publishable key>, and an action such as search_memories.',
+    apiNeverExposeTitle: 'Do not expose',
+    apiNeverExposeBody: 'Never put service_role, invite codes, real session tokens, raw MCP tokens, or database connection strings into the app page, README examples, exports, or screenshots.',
     searchResultsTitle: 'Search results',
     searchResultsFor: 'for',
     noSearchResults: 'No matching notes',
@@ -992,6 +1005,19 @@ const HOME_COPY = {
     mcpFailed: 'MCP 服务暂时不可用',
     mcpRevoked: 'Token 已吊销',
     mcpTokenWarning: '完整 Token 只会显示一次。',
+    apiSecurity: 'API与安全',
+    apiMemoryApiTitle: 'Memory API',
+    apiMemoryApiBody: 'Memory API 是 Supabase Edge Function，用于经过认证的外部集成。它读取当前用户自己的记忆数据，需要真实用户 access token。',
+    apiMcpSecurityTitle: 'MCP 访问',
+    apiMcpSecurityBody: '云端 MCP 也是 Supabase Edge Function。它校验生成的 MCP Token，把 token 映射到唯一用户，并只向 AI 客户端开放只读工具。',
+    apiTokenSecurityTitle: 'Token 生成',
+    apiTokenSecurityBody: 'MCP Token 在 Supabase 服务端生成，不在前端代码里生成。完整 Token 只显示一次，Supabase 只保存 SHA-256 hash 和短前缀。',
+    apiStorageSecurityTitle: '私有媒体',
+    apiStorageSecurityBody: '图片文件存放在私有 life-media 桶里，并按用户 ID 分路径。数据库只保存图片路径和元数据，不保存公开图片文件。',
+    apiDirectApiTitle: '直接 API 格式',
+    apiDirectApiBody: '外部工具调用 memory-api 时，需要 Authorization: Bearer <用户 access token>、apikey: <publishable key>，并传入 search_memories 这类 action。',
+    apiNeverExposeTitle: '不要暴露',
+    apiNeverExposeBody: '不要把 service_role、内测码、真实 session token、完整 MCP token、数据库连接串写进 app 页面、README 示例、导出文件或截图。',
     searchResultsTitle: '搜索结果',
     searchResultsFor: '关于',
     noSearchResults: '没有匹配的笔记',
@@ -1163,6 +1189,19 @@ const HOME_COPY = {
     mcpFailed: 'MCP 서비스를 사용할 수 없습니다',
     mcpRevoked: '토큰을 해지했습니다',
     mcpTokenWarning: '전체 토큰은 한 번만 표시됩니다.',
+    apiSecurity: 'API와 보안',
+    apiMemoryApiTitle: 'Memory API',
+    apiMemoryApiBody: 'Memory API는 인증된 외부 연동을 위한 Supabase Edge Function입니다. 현재 사용자 기억 데이터만 읽으며 실제 사용자 access token이 필요합니다.',
+    apiMcpSecurityTitle: 'MCP 접근',
+    apiMcpSecurityBody: '클라우드 MCP도 Supabase Edge Function입니다. 생성된 MCP 토큰을 검증해 한 사용자와 연결하고 AI 클라이언트에는 읽기 전용 도구만 제공합니다.',
+    apiTokenSecurityTitle: '토큰 생성',
+    apiTokenSecurityBody: 'MCP 토큰은 프론트엔드가 아니라 Supabase 서버에서 생성됩니다. 전체 토큰은 한 번만 표시되고, Supabase에는 SHA-256 해시와 짧은 접두사만 저장됩니다.',
+    apiStorageSecurityTitle: '비공개 미디어',
+    apiStorageSecurityBody: '이미지는 비공개 life-media 버킷에 사용자 ID별 경로로 저장됩니다. 데이터베이스에는 경로와 메타데이터만 저장됩니다.',
+    apiDirectApiTitle: '직접 API 형식',
+    apiDirectApiBody: '외부 도구는 memory-api에 Authorization: Bearer <user access token>, apikey: <publishable key>, search_memories 같은 action을 담아 POST해야 합니다.',
+    apiNeverExposeTitle: '노출 금지',
+    apiNeverExposeBody: 'service_role, 초대 코드, 실제 session token, 원본 MCP token, 데이터베이스 연결 문자열을 앱 화면, README 예시, 내보내기 파일, 스크린샷에 넣지 마세요.',
     searchResultsTitle: '검색 결과',
     searchResultsFor: '검색어',
     noSearchResults: '일치하는 노트가 없습니다',
@@ -3671,6 +3710,7 @@ export default function App() {
       current === 'language' ||
       current === 'permissions' ||
       current === 'manual' ||
+      current === 'apiSecurity' ||
       current === 'mcp' ||
       current === 'export'
         ? 'settings'
@@ -4447,6 +4487,7 @@ export default function App() {
     language: homeCopy.language,
     permissions: homeCopy.openPermissionsHint,
     manual: homeCopy.userManual,
+    apiSecurity: homeCopy.apiSecurity,
     mcp: homeCopy.mcpAccess,
     export: homeCopy.exportData,
   };
@@ -4454,7 +4495,16 @@ export default function App() {
     homeMenuItems.find(item => item.panel === activeHomePanel)?.label ||
     homeCopy.settings;
   const cloudMcpEndpoint = getCloudMcpEndpoint();
+  const cloudMemoryApiEndpoint = supabaseFunctionUrl('memory-api');
   const mcpHeaderValue = mcpPlainToken ? `Bearer ${mcpPlainToken}` : homeCopy.mcpHeaderValueHint;
+  const apiSecurityCards = [
+    { title: homeCopy.apiMemoryApiTitle, body: homeCopy.apiMemoryApiBody },
+    { title: homeCopy.apiMcpSecurityTitle, body: homeCopy.apiMcpSecurityBody },
+    { title: homeCopy.apiTokenSecurityTitle, body: homeCopy.apiTokenSecurityBody },
+    { title: homeCopy.apiStorageSecurityTitle, body: homeCopy.apiStorageSecurityBody },
+    { title: homeCopy.apiDirectApiTitle, body: homeCopy.apiDirectApiBody },
+    { title: homeCopy.apiNeverExposeTitle, body: homeCopy.apiNeverExposeBody },
+  ];
   const themeColorControls: { key: keyof SystemTheme; label: string }[] = [
     { key: 'page', label: homeCopy.base },
     { key: 'card', label: homeCopy.card },
@@ -4462,7 +4512,7 @@ export default function App() {
     { key: 'dark', label: homeCopy.dark },
   ];
   const settingsMenuItems: {
-    panel: Extract<HomePanel, 'language' | 'permissions' | 'manual' | 'mcp' | 'export'>;
+    panel: Extract<HomePanel, 'language' | 'permissions' | 'manual' | 'apiSecurity' | 'mcp' | 'export'>;
     label: string;
     icon: React.ReactNode;
     hidden?: boolean;
@@ -4470,6 +4520,7 @@ export default function App() {
     { panel: 'language', label: homeCopy.language, icon: <Languages size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'permissions', label: homeCopy.openPermissionsHint, icon: <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'manual', label: homeCopy.userManual, icon: <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
+    { panel: 'apiSecurity', label: homeCopy.apiSecurity, icon: <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
     { panel: 'mcp', label: homeCopy.mcpAccess, icon: <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
     { panel: 'export', label: homeCopy.exportData, icon: <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
   ];
@@ -6278,6 +6329,46 @@ export default function App() {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isSignedIn && activeHomePanel === 'apiSecurity' && (
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                        <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                        {homeCopy.apiSecurity}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
+                          <div className="text-[12px] font-medium text-black/42">{homeCopy.apiMemoryApiTitle}</div>
+                          <div className="mt-1 break-all text-[12px] font-medium leading-snug text-black/72">{cloudMemoryApiEndpoint || homeCopy.cloudConfigInvalid}</div>
+                        </div>
+                        <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
+                          <div className="text-[12px] font-medium text-black/42">{homeCopy.apiMcpSecurityTitle}</div>
+                          <div className="mt-1 break-all text-[12px] font-medium leading-snug text-black/72">{cloudMcpEndpoint || homeCopy.cloudConfigInvalid}</div>
+                        </div>
+                        <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
+                          <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpHeaderName}</div>
+                          <div className="mt-1 break-all text-[12px] font-medium leading-snug text-black/72">Bearer &lt;MCP Token&gt;</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="space-y-3">
+                        {apiSecurityCards.map(card => (
+                          <div key={card.title}>
+                            <div className="text-[13px] font-semibold leading-tight text-black">
+                              {card.title}
+                            </div>
+                            <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
+                              {card.body}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
