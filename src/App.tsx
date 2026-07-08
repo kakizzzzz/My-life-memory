@@ -326,7 +326,6 @@ const DEFAULT_USER_LOCATION: [number, number] = [31.2304, 121.4737];
 const DEFAULT_RECORD_STAR_LOCATION: [number, number] = [31.2312, 121.4744];
 const LEGACY_RECORD_STAR_LOCATION: [number, number] = [36.36705, 127.34425];
 const APP_STORAGE_KEY = 'campus-map-app-state-v1';
-const INITIAL_PERMISSION_PROMPT_KEY = 'my-life-memory-initial-permission-prompt-v1';
 const AUTO_USER_MANUAL_KEY_PREFIX = 'my-life-memory-auto-user-manual-seen-v1:';
 const GEOLOCATION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
@@ -621,26 +620,6 @@ const readPersistedAppState = (): PersistedAppState | null => {
     return parsed && typeof parsed === 'object' ? parsed as PersistedAppState : null;
   } catch {
     return null;
-  }
-};
-
-const readInitialPermissionPromptSeen = () => {
-  if (typeof window === 'undefined') return false;
-
-  try {
-    return window.localStorage.getItem(INITIAL_PERMISSION_PROMPT_KEY) === 'seen';
-  } catch {
-    return false;
-  }
-};
-
-const markInitialPermissionPromptSeen = () => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(INITIAL_PERMISSION_PROMPT_KEY, 'seen');
-  } catch {
-    // Ignore storage failures; the prompt should still be dismissible.
   }
 };
 
@@ -2456,9 +2435,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<AppView>(() => initialSignedIn ? 'map' : 'home');
   const [activeHomePanel, setActiveHomePanel] = useState<HomePanel>(null);
   const [isInitialPermissionPromptOpen, setIsInitialPermissionPromptOpen] = useState(false);
-  const [hasSeenInitialPermissionPrompt, setHasSeenInitialPermissionPrompt] = useState(() => (
-    readInitialPermissionPromptSeen()
-  ));
+  const [hasSeenInitialPermissionPrompt, setHasSeenInitialPermissionPrompt] = useState(false);
   const [recordsFilter, setRecordsFilter] = useState<RecordsFilter>('all');
   const [selectedRecordsDateKey, setSelectedRecordsDateKey] = useState<string | null>(null);
   const [isRecordsMenuOpen, setIsRecordsMenuOpen] = useState(false);
@@ -2818,7 +2795,6 @@ export default function App() {
   const handleOpenPermissions = React.useCallback(async () => {
     if (typeof window === 'undefined') return;
 
-    markInitialPermissionPromptSeen();
     setHasSeenInitialPermissionPrompt(true);
     setIsInitialPermissionPromptOpen(false);
 
@@ -2843,7 +2819,6 @@ export default function App() {
   }, [requestLocationPermissionOnce, startHeadingWatch]);
 
   const closeInitialPermissionPrompt = React.useCallback(() => {
-    markInitialPermissionPromptSeen();
     setHasSeenInitialPermissionPrompt(true);
     setIsInitialPermissionPromptOpen(false);
   }, []);
@@ -2859,6 +2834,11 @@ export default function App() {
   useEffect(() => {
     if (!isSignedIn || activeView !== 'map' || hasRequestedEntryLocationRef.current) return;
     hasRequestedEntryLocationRef.current = true;
+
+    if (!hasSeenInitialPermissionPrompt && permissionRequestState !== 'ready') {
+      setIsInitialPermissionPromptOpen(true);
+      return;
+    }
 
     if (!canUseBrowserGeolocation()) {
       setPermissionRequestState('unsupported');
@@ -2878,7 +2858,7 @@ export default function App() {
     return () => {
       isCancelled = true;
     };
-  }, [activeView, isSignedIn, requestLocationPermissionOnce]);
+  }, [activeView, hasSeenInitialPermissionPrompt, isSignedIn, permissionRequestState, requestLocationPermissionOnce]);
 
   useEffect(() => {
     if (!isSignedIn) return;
@@ -2927,6 +2907,7 @@ export default function App() {
     hasRequestedEntryLocationRef.current = false;
     autoOpenedManualAccountRef.current = null;
     hasSyncedDefaultStarToGpsRef.current = false;
+    setHasSeenInitialPermissionPrompt(false);
     setActiveView('home');
     setActiveHomePanel(null);
     setIsInitialPermissionPromptOpen(false);
@@ -2939,13 +2920,6 @@ export default function App() {
     setReadingNoteTarget(null);
     setEditingNoteTarget(null);
   }, [isSignedIn]);
-
-  useEffect(() => {
-    if (!isSignedIn || activeView !== 'map' || permissionRequestState === 'ready') return;
-    if (hasSeenInitialPermissionPrompt) return;
-    markInitialPermissionPromptSeen();
-    setHasSeenInitialPermissionPrompt(true);
-  }, [activeView, hasSeenInitialPermissionPrompt, isSignedIn, permissionRequestState]);
 
   useEffect(() => {
     if (isCloudBackendEnabled) {
