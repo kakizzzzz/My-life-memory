@@ -135,7 +135,7 @@ type TrackData = {
 
 type MapStyle = 'light' | 'dark' | 'aerial';
 type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchResults';
-type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | null;
+type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'mcp' | null;
 type RecordsFilter = 'all' | 'monthly' | 'annual';
 type SearchField = 'coordinate' | 'text';
 type RecordsCalendarMode = 'month' | 'year';
@@ -800,16 +800,24 @@ const HOME_COPY = {
     exportDataReady: 'Report exported',
     exportDataPartial: 'Report exported. Some images could not be embedded.',
     exportDataFailed: 'Could not export data',
-    mcpAccess: 'AI memory access',
+    mcpAccess: 'Get MCP',
     mcpGenerateToken: 'Generate MCP token',
     mcpGenerating: 'Generating...',
     mcpTokenReady: 'Token generated. Copy it now.',
     mcpCopyToken: 'Copy token',
     mcpCopyEndpoint: 'Copy endpoint',
+    mcpCopyHeader: 'Copy header value',
     mcpCopied: 'Copied',
     mcpRevoke: 'Revoke',
     mcpNoTokens: 'No active MCP tokens',
-    mcpEndpoint: 'MCP endpoint',
+    mcpNameLabel: 'Name',
+    mcpNameValue: 'My Life Memory',
+    mcpTransportLabel: 'Transport type',
+    mcpTransportValue: 'Streamable HTTP',
+    mcpEndpoint: 'Server address',
+    mcpCustomHeader: 'Custom request header',
+    mcpHeaderName: 'Authorization',
+    mcpHeaderValueHint: 'Generate a token first',
     mcpTokenPrefix: 'Active token',
     mcpFailed: 'MCP service unavailable',
     mcpRevoked: 'Token revoked',
@@ -964,16 +972,24 @@ const HOME_COPY = {
     exportDataReady: '阅读版已导出',
     exportDataPartial: '阅读版已导出，部分图片未能写入文件',
     exportDataFailed: '导出失败',
-    mcpAccess: 'AI 记忆连接',
+    mcpAccess: '获取MCP',
     mcpGenerateToken: '生成 MCP Token',
     mcpGenerating: '生成中...',
     mcpTokenReady: 'Token 已生成，请现在复制',
     mcpCopyToken: '复制 Token',
     mcpCopyEndpoint: '复制地址',
+    mcpCopyHeader: '复制请求头内容',
     mcpCopied: '已复制',
     mcpRevoke: '吊销',
     mcpNoTokens: '暂无可用 MCP Token',
-    mcpEndpoint: 'MCP 地址',
+    mcpNameLabel: '名称',
+    mcpNameValue: 'My Life Memory',
+    mcpTransportLabel: '传输类型',
+    mcpTransportValue: 'Streamable HTTP',
+    mcpEndpoint: '服务器地址',
+    mcpCustomHeader: '自定义请求头',
+    mcpHeaderName: 'Authorization',
+    mcpHeaderValueHint: '请先生成 Token',
     mcpTokenPrefix: '已生成 Token',
     mcpFailed: 'MCP 服务暂时不可用',
     mcpRevoked: 'Token 已吊销',
@@ -1128,16 +1144,24 @@ const HOME_COPY = {
     exportDataReady: '읽기용 파일을 내보냈습니다',
     exportDataPartial: '읽기용 파일을 내보냈습니다. 일부 이미지는 포함하지 못했습니다.',
     exportDataFailed: '데이터를 내보내지 못했습니다',
-    mcpAccess: 'AI 메모리 연결',
+    mcpAccess: 'MCP 받기',
     mcpGenerateToken: 'MCP 토큰 생성',
     mcpGenerating: '생성 중...',
     mcpTokenReady: '토큰이 생성되었습니다. 지금 복사하세요.',
     mcpCopyToken: '토큰 복사',
     mcpCopyEndpoint: '주소 복사',
+    mcpCopyHeader: '헤더 값 복사',
     mcpCopied: '복사됨',
     mcpRevoke: '해지',
     mcpNoTokens: '활성 MCP 토큰 없음',
-    mcpEndpoint: 'MCP 주소',
+    mcpNameLabel: '이름',
+    mcpNameValue: 'My Life Memory',
+    mcpTransportLabel: '전송 방식',
+    mcpTransportValue: 'Streamable HTTP',
+    mcpEndpoint: '서버 주소',
+    mcpCustomHeader: '사용자 지정 요청 헤더',
+    mcpHeaderName: 'Authorization',
+    mcpHeaderValueHint: '먼저 토큰을 생성하세요',
     mcpTokenPrefix: '생성된 토큰',
     mcpFailed: 'MCP 서비스를 사용할 수 없습니다',
     mcpRevoked: '토큰을 해지했습니다',
@@ -3647,7 +3671,7 @@ export default function App() {
       homeScrollRef.current.scrollTop = 0;
       homeScrollRef.current.scrollLeft = 0;
     }
-    setActiveHomePanel(null);
+    setActiveHomePanel(current => current === 'mcp' ? 'settings' : null);
   }, []);
 
   const openRecordsCalendarPanel = () => {
@@ -4328,7 +4352,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (isSignedIn && activeHomePanel === 'settings' && isCloudBackendEnabled) {
+    if (isSignedIn && activeHomePanel === 'mcp' && isCloudBackendEnabled) {
       void loadMcpTokens();
       return;
     }
@@ -4409,14 +4433,17 @@ export default function App() {
     }
   };
 
-  const homeMenuItems: { panel: Exclude<HomePanel, null>; label: string; icon: React.ReactNode }[] = [
+  const homeMenuItems: { panel: Exclude<HomePanel, 'mcp' | null>; label: string; icon: React.ReactNode }[] = [
     { panel: 'profile', label: homeCopy.modify, icon: <Database size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'theme', label: homeCopy.theme, icon: <Palette size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'gallery', label: homeCopy.gallery, icon: <ImageIcon size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'settings', label: homeCopy.settings, icon: <Settings size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
   ];
-  const activeHomeTitle = homeMenuItems.find(item => item.panel === activeHomePanel)?.label || homeCopy.settings;
+  const activeHomeTitle = activeHomePanel === 'mcp'
+    ? homeCopy.mcpAccess
+    : homeMenuItems.find(item => item.panel === activeHomePanel)?.label || homeCopy.settings;
   const cloudMcpEndpoint = getCloudMcpEndpoint();
+  const mcpHeaderValue = mcpPlainToken ? `Bearer ${mcpPlainToken}` : homeCopy.mcpHeaderValueHint;
   const themeColorControls: { key: keyof SystemTheme; label: string }[] = [
     { key: 'page', label: homeCopy.base },
     { key: 'card', label: homeCopy.card },
@@ -6157,73 +6184,17 @@ export default function App() {
                       </button>
                     </div>
                     {isCloudBackendEnabled && (
-                      <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
-                        <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                      <button
+                        type="button"
+                        onClick={() => setActiveHomePanel('mcp')}
+                        className="mt-3 flex h-[52px] w-full items-center rounded-[14px] bg-[var(--app-card)] px-3 text-left text-black transition-transform active:scale-[0.99]"
+                      >
+                        <span className="mr-3 flex shrink-0 items-center justify-center text-black/60">
                           <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                          {homeCopy.mcpAccess}
-                        </div>
-                        <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
-                          <div className="mb-1 text-[12px] font-medium text-black/45">{homeCopy.mcpEndpoint}</div>
-                          <div className="break-all text-[12px] font-medium leading-snug text-black/70">{cloudMcpEndpoint}</div>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyMcpText(cloudMcpEndpoint)}
-                            className="mt-2 h-8 w-full rounded-full bg-white/70 text-[12px] font-medium text-black transition-transform active:scale-[0.98]"
-                          >
-                            {homeCopy.mcpCopyEndpoint}
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleCreateMcpToken}
-                          disabled={isMcpTokenBusy}
-                          className="mt-2 h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
-                        >
-                          {isMcpTokenBusy ? homeCopy.mcpGenerating : homeCopy.mcpGenerateToken}
-                        </button>
-                        {mcpPlainToken && (
-                          <div className="mt-2 rounded-[12px] bg-white/65 px-3 py-2">
-                            <div className="mb-1 text-[12px] font-medium text-black/45">{homeCopy.mcpTokenWarning}</div>
-                            <div className="max-h-16 overflow-y-auto break-all text-[12px] font-medium leading-snug text-black/75">
-                              {mcpPlainToken}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyMcpText(mcpPlainToken)}
-                              className="mt-2 h-8 w-full rounded-full bg-[var(--app-soft-card)] text-[12px] font-medium text-black transition-transform active:scale-[0.98]"
-                            >
-                              {homeCopy.mcpCopyToken}
-                            </button>
-                          </div>
-                        )}
-                        <div className="mt-2 space-y-1.5">
-                          {mcpTokens.length > 0 ? mcpTokens.map(token => (
-                            <div key={token.id} className="flex items-center gap-2 rounded-[12px] bg-white/45 px-3 py-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-[12px] font-medium text-black/65">{token.name || homeCopy.mcpTokenPrefix}</div>
-                                <div className="truncate text-[11px] font-medium text-black/38">{token.tokenPrefix}</div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRevokeMcpToken(token.id)}
-                                disabled={isMcpTokenBusy}
-                                className="h-8 rounded-full bg-[var(--app-soft-card)] px-3 text-[12px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
-                              >
-                                {homeCopy.mcpRevoke}
-                              </button>
-                            </div>
-                          )) : (
-                            <div className="px-1 text-[12px] font-medium leading-snug text-black/38">
-                              {homeCopy.mcpNoTokens}
-                            </div>
-                          )}
-                        </div>
-                        {mcpTokenStatus && (
-                          <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
-                            {mcpTokenStatus}
-                          </div>
-                        )}
-                      </div>
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-black/60">{homeCopy.mcpAccess}</span>
+                        <ChevronRight size={24} strokeWidth={UI_ICON_STROKE} className="ml-3 text-black/15" />
+                      </button>
                     )}
                     <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
@@ -6256,6 +6227,109 @@ export default function App() {
                       >
                         {homeCopy.exit}
                       </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {isSignedIn && activeHomePanel === 'mcp' && (
+                  <motion.div
+                    key="mcp-panel"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="mt-4 space-y-3"
+                  >
+                    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                        <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                        {homeCopy.mcpAccess}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
+                          <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpNameLabel}</div>
+                          <div className="mt-1 break-all text-[13px] font-medium leading-snug text-black/72">{homeCopy.mcpNameValue}</div>
+                        </div>
+                        <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
+                          <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpTransportLabel}</div>
+                          <div className="mt-1 break-all text-[13px] font-medium leading-snug text-black/72">{homeCopy.mcpTransportValue}</div>
+                        </div>
+                        <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
+                          <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpEndpoint}</div>
+                          <div className="mt-1 break-all text-[12px] font-medium leading-snug text-black/72">{cloudMcpEndpoint}</div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyMcpText(cloudMcpEndpoint)}
+                            className="mt-2 h-8 w-full rounded-full bg-white/70 text-[12px] font-medium text-black transition-transform active:scale-[0.98]"
+                          >
+                            {homeCopy.mcpCopyEndpoint}
+                          </button>
+                        </div>
+                        <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
+                          <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpCustomHeader}</div>
+                          <div className="mt-2 rounded-[10px] bg-white/55 px-3 py-2">
+                            <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpHeaderName}</div>
+                            <div className={`mt-1 break-all text-[12px] font-medium leading-snug ${mcpPlainToken ? 'text-black/72' : 'text-black/35'}`}>
+                              {mcpHeaderValue}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyMcpText(mcpHeaderValue)}
+                            disabled={!mcpPlainToken}
+                            className="mt-2 h-8 w-full rounded-full bg-white/70 text-[12px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-45"
+                          >
+                            {homeCopy.mcpCopyHeader}
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCreateMcpToken}
+                        disabled={isMcpTokenBusy}
+                        className="mt-3 h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
+                      >
+                        {isMcpTokenBusy ? homeCopy.mcpGenerating : homeCopy.mcpGenerateToken}
+                      </button>
+                      {mcpPlainToken && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyMcpText(mcpPlainToken)}
+                          className="mt-2 h-9 w-full rounded-full bg-white/70 text-[12px] font-medium text-black transition-transform active:scale-[0.98]"
+                        >
+                          {homeCopy.mcpCopyToken}
+                        </button>
+                      )}
+                      {(mcpTokenStatus || mcpPlainToken) && (
+                        <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
+                          {mcpTokenStatus || homeCopy.mcpTokenWarning}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-2 text-[13px] font-medium text-black/45">{homeCopy.mcpTokenPrefix}</div>
+                      <div className="space-y-1.5">
+                        {mcpTokens.length > 0 ? mcpTokens.map(token => (
+                          <div key={token.id} className="flex items-center gap-2 rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[12px] font-medium text-black/65">{token.name || homeCopy.mcpTokenPrefix}</div>
+                              <div className="truncate text-[11px] font-medium text-black/38">{token.tokenPrefix}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeMcpToken(token.id)}
+                              disabled={isMcpTokenBusy}
+                              className="h-8 rounded-full bg-white/70 px-3 text-[12px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
+                            >
+                              {homeCopy.mcpRevoke}
+                            </button>
+                          </div>
+                        )) : (
+                          <div className="px-1 text-[12px] font-medium leading-snug text-black/38">
+                            {homeCopy.mcpNoTokens}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 )}
