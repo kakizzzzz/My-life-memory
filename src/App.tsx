@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { MapContainer, TileLayer, Marker, useMap, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
-import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Languages, Download, CalendarDays, Camera, Eye, EyeOff, Underline } from 'lucide-react';
+import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, CalendarDays, Camera, Eye, EyeOff, Underline } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import * as exifr from 'exifr';
@@ -5630,7 +5630,7 @@ export default function App() {
                       </label>
                       {authMode === 'register' && (
                         <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                          <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                          <Asterisk size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
                           <input
                             value={registerInviteCode}
                             onChange={event => {
