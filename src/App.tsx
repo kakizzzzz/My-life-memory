@@ -670,10 +670,10 @@ const HOME_COPY = {
     openManual: 'Open manual',
     closeManual: 'Close manual',
     exportData: 'Export data',
-    exportJson: 'Export JSON',
+    exportJson: 'Export report',
     exportingData: 'Exporting...',
-    exportDataReady: 'JSON exported',
-    exportDataPartial: 'JSON exported. Some images could not be embedded.',
+    exportDataReady: 'Report exported',
+    exportDataPartial: 'Report exported. Some images could not be embedded.',
     exportDataFailed: 'Could not export data',
     searchResultsTitle: 'Search results',
     searchResultsFor: 'for',
@@ -818,10 +818,10 @@ const HOME_COPY = {
     openManual: '打开查阅',
     closeManual: '关闭手册',
     exportData: '导出数据',
-    exportJson: '导出 JSON',
+    exportJson: '导出阅读版',
     exportingData: '导出中...',
-    exportDataReady: 'JSON 已导出',
-    exportDataPartial: 'JSON 已导出，部分图片未能写入文件',
+    exportDataReady: '阅读版已导出',
+    exportDataPartial: '阅读版已导出，部分图片未能写入文件',
     exportDataFailed: '导出失败',
     searchResultsTitle: '搜索结果',
     searchResultsFor: '关于',
@@ -966,10 +966,10 @@ const HOME_COPY = {
     openManual: '열어 보기',
     closeManual: '설명서 닫기',
     exportData: '데이터 내보내기',
-    exportJson: 'JSON 내보내기',
+    exportJson: '읽기용 내보내기',
     exportingData: '내보내는 중...',
-    exportDataReady: 'JSON을 내보냈습니다',
-    exportDataPartial: 'JSON을 내보냈습니다. 일부 이미지는 포함하지 못했습니다.',
+    exportDataReady: '읽기용 파일을 내보냈습니다',
+    exportDataPartial: '읽기용 파일을 내보냈습니다. 일부 이미지는 포함하지 못했습니다.',
     exportDataFailed: '데이터를 내보내지 못했습니다',
     searchResultsTitle: '검색 결과',
     searchResultsFor: '검색어',
@@ -1452,6 +1452,120 @@ const hasImageExportError = (value: unknown): boolean => {
   if (!value || typeof value !== 'object') return false;
   if ('exportError' in value && Boolean((value as { exportError?: unknown }).exportError)) return true;
   return Object.values(value).some(hasImageExportError);
+};
+
+const buildReadableExportHtml = ({
+  appName,
+  account,
+  profileName,
+  exportedAt,
+  locations,
+  locale,
+}: {
+  appName: string;
+  account: string;
+  profileName: string;
+  exportedAt: string;
+  locale: string;
+  locations: Array<{
+    index: number;
+    lat: number;
+    lng: number;
+    createdAt?: number | null;
+    notes: Array<{
+      title: string;
+      text: string;
+      timestamp: number;
+      images: ExportedImageData[];
+    }>;
+  }>;
+}) => {
+  const formatDate = (timestamp?: number | string | null) => {
+    const date = timestamp ? new Date(timestamp) : null;
+    if (!date || Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  };
+
+  const imageHtml = (image: ExportedImageData, index: number) => {
+    if (!image.dataUrl) {
+      return `<div class="image-missing">Image ${index + 1} could not be embedded.</div>`;
+    }
+    return (
+      '<figure class="image-frame">' +
+        `<img src="${image.dataUrl}" alt="Exported image ${index + 1}" />` +
+      '</figure>'
+    );
+  };
+
+  const locationHtml = locations.map(location => (
+    `<section class="location">` +
+      `<div class="location-head">` +
+        `<div>` +
+          `<h2>Location ${location.index}</h2>` +
+          `<p class="meta">Coordinates: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}</p>` +
+          (location.createdAt ? `<p class="meta">Created: ${formatDate(location.createdAt)}</p>` : '') +
+        `</div>` +
+      `</div>` +
+      location.notes.map(note => (
+        `<article class="note">` +
+          `<h3>${escapeHtml(note.title || 'Untitled note')}</h3>` +
+          `<p class="meta">Time: ${formatDate(note.timestamp)}</p>` +
+          (note.text ? `<p class="note-text">${escapeHtml(note.text)}</p>` : '<p class="empty">No text</p>') +
+          (note.images.length > 0 ? `<div class="images">${note.images.map(imageHtml).join('')}</div>` : '') +
+        `</article>`
+      )).join('') +
+    `</section>`
+  )).join('');
+
+  return (
+    '<!doctype html>' +
+    `<html lang="${locale.startsWith('zh') ? 'zh-CN' : locale.startsWith('ko') ? 'ko-KR' : 'en'}">` +
+    '<head>' +
+      '<meta charset="utf-8" />' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
+      `<title>${escapeHtml(appName)} Export</title>` +
+      '<style>' +
+        'body{margin:0;background:#f4f4f4;color:#111;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55;}' +
+        '.page{max-width:860px;margin:0 auto;padding:42px 22px 64px;}' +
+        'header{margin-bottom:28px;}' +
+        'h1{margin:0 0 8px;font-size:34px;line-height:1.08;}' +
+        'h2{margin:0 0 6px;font-size:24px;}' +
+        'h3{margin:0 0 6px;font-size:20px;}' +
+        '.meta{margin:2px 0;color:#666;font-size:13px;}' +
+        '.summary{margin-top:14px;padding:14px 16px;border-radius:14px;background:#fff;}' +
+        '.location{margin:22px 0;padding:20px;border-radius:18px;background:#fff;box-shadow:0 1px 8px rgba(0,0,0,.04);}' +
+        '.location-head{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:16px;}' +
+        '.note{padding:14px 0;border-top:1px solid #f0f0f0;}' +
+        '.note:first-of-type{border-top:0;padding-top:0;}' +
+        '.note-text{white-space:pre-wrap;margin:12px 0;font-size:15px;}' +
+        '.empty{color:#999;font-size:14px;}' +
+        '.images{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:12px;}' +
+        '.image-frame{margin:0;border-radius:14px;overflow:hidden;background:#eee;}' +
+        '.image-frame img{display:block;width:100%;height:auto;}' +
+        '.image-missing{border-radius:12px;background:#f1f1f1;color:#777;padding:12px;font-size:13px;}' +
+        '@media print{body{background:#fff}.page{max-width:none;padding:0}.location{box-shadow:none;break-inside:avoid}}' +
+      '</style>' +
+    '</head>' +
+    '<body>' +
+      '<main class="page">' +
+        '<header>' +
+          `<h1>${escapeHtml(appName)}</h1>` +
+          `<p class="meta">Account: ${escapeHtml(account || 'user')}</p>` +
+          (profileName ? `<p class="meta">Name: ${escapeHtml(profileName)}</p>` : '') +
+          `<p class="meta">Exported: ${formatDate(exportedAt)}</p>` +
+          `<div class="summary">${locations.length} locations, ${locations.reduce((sum, location) => sum + location.notes.length, 0)} notes</div>` +
+        '</header>' +
+        (locationHtml || '<section class="location"><p class="empty">No notes yet.</p></section>') +
+      '</main>' +
+    '</body>' +
+    '</html>'
+  );
 };
 
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
@@ -3978,14 +4092,9 @@ export default function App() {
 
     try {
       const exportedAt = new Date().toISOString();
-      const avatar = profile.avatarImage
-        ? await exportStoredImage(profile.avatarImage, 'profile.avatar')
-        : profile.avatarUrl
-          ? await exportImageSource(profile.avatarUrl, 'profile.avatar')
-          : null;
-
       const locations = await Promise.all(stars.map(async (star, starIndex) => {
         const notes = await Promise.all((star.notes || []).map(async (note, noteIndex) => {
+          if (!hasMeaningfulNoteContent(note)) return null;
           const timestamp = getNoteTimestamp(note);
           const storedImages = await Promise.all(
             getStoredImagesFromNote(note).map((metadata, imageIndex) => (
@@ -4003,81 +4112,43 @@ export default function App() {
           ];
 
           return {
-            id: note.id,
             title: htmlToText(note.titleHtml) || note.title || `${homeCopy.noteLabel} ${noteIndex + 1}`,
-            titleHtml: note.titleHtml || '',
-            content: note.content || '',
-            contentHtml: note.contentHtml || '',
             text: htmlToText(note.contentHtml) || note.content || '',
             timestamp,
-            timestampIso: new Date(timestamp).toISOString(),
-            createdAt: note.createdAt || timestamp,
-            createdAtIso: new Date(note.createdAt || timestamp).toISOString(),
-            updatedAt: note.updatedAt || null,
-            updatedAtIso: note.updatedAt ? new Date(note.updatedAt).toISOString() : null,
-            color: note.color || star.color || null,
-            fontSize: note.fontSize || null,
-            titleFontSize: note.titleFontSize || null,
             images,
           };
         }));
 
         return {
-          id: star.id,
           index: starIndex + 1,
-          coordinates: {
-            lat: star.lat,
-            lng: star.lng,
-          },
+          lat: star.lat,
+          lng: star.lng,
           createdAt: star.createdAt || null,
-          createdAtIso: star.createdAt ? new Date(star.createdAt).toISOString() : null,
-          color: star.color || null,
-          tagOrder: star.tagOrder ?? null,
-          tagGroupId: star.tagGroupId ?? null,
-          notes,
+          notes: notes.filter((note): note is NonNullable<typeof note> => Boolean(note)),
         };
       }));
 
-      const exportPayload = {
-        schema: 'my-life-memory-export-v1',
-        exportedAt,
-        app: 'My Life Memory',
+      const readableLocations = locations.filter(location => location.notes.length > 0);
+      const html = buildReadableExportHtml({
+        appName: 'My Life Memory',
         account: normalizeAccountId(profile.account),
-        profile: {
-          name: profile.name,
-          account: normalizeAccountId(profile.account),
-          avatar,
-        },
-        settings: {
-          language,
-          mapStyle,
-          systemTheme,
-        },
-        currentLocation: {
-          coordinates: {
-            lat: userLocation[0],
-            lng: userLocation[1],
-          },
-          deviceHeading,
-        },
-        locations,
-        routes: savedTracks,
-        rawAppState: createAppStateSnapshot(),
-      };
-
-      const jsonText = JSON.stringify(exportPayload, null, 2);
-      const blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
+        profileName: profile.name,
+        exportedAt,
+        locale: languageLocale,
+        locations: readableLocations,
+      });
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
       const objectUrl = URL.createObjectURL(blob);
       const accountSlug = normalizeAccountId(profile.account) || 'user';
       const dateSlug = exportedAt.slice(0, 10);
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = `my-life-memory-${accountSlug}-${dateSlug}.json`;
+      link.download = `my-life-memory-${accountSlug}-${dateSlug}.html`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      setExportDataStatus(hasImageExportError(exportPayload) ? homeCopy.exportDataPartial : homeCopy.exportDataReady);
+      setExportDataStatus(hasImageExportError(readableLocations) ? homeCopy.exportDataPartial : homeCopy.exportDataReady);
     } catch (error) {
       console.error('Could not export user data:', error);
       setExportDataStatus(homeCopy.exportDataFailed);
