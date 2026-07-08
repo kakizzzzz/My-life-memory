@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import L from 'leaflet';
-import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Route, Star, X, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, Camera, Underline, KeyRound, ShieldCheck } from 'lucide-react';
+import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Route, Star, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, Camera, Underline, KeyRound, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import * as exifr from 'exifr';
+import {
+  BottomNavigation,
+  GalleryPreviewOverlay,
+  InitialPermissionPrompt,
+  PasswordChangeModal,
+  SearchModal,
+} from './AppChrome';
 import { NoteEditorModal } from './NoteEditorModal';
 import { LoginWorldMapBackground } from './LoginWorldMapBackground';
 import { MapCanvas } from './MapCanvas';
@@ -80,6 +87,7 @@ import type {
   PersistedAppState,
   RecordsCalendarMode,
   RecordsFilter,
+  SearchField,
   StarData,
   SystemTheme,
   TagMode,
@@ -173,8 +181,6 @@ function createLocationIcon(mapStyle: string, iconColor = '#c3c3c3', heading = 0
     iconAnchor: [40, 40]
   });
 }
-
-type SearchField = 'coordinate' | 'text';
 
 type EditingNoteTarget = {
   starId: string;
@@ -2808,22 +2814,10 @@ export default function App() {
     { panel: 'export', label: homeCopy.exportData, icon: <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
   ];
 
-  const getBottomNavClass = (view: AppView) => (
-    activeView === view
-      ? 'bg-[var(--app-dark)] text-white rounded-full px-6 py-3 flex items-center justify-center transition-all duration-300 ease-out'
-      : 'text-gray-800 rounded-full px-4 py-3 flex items-center justify-center hover:bg-[var(--app-card)] transition-all duration-300 ease-out'
-  );
-  const bottomNavTransition = { type: 'spring', stiffness: 420, damping: 34 };
-
   const screenTopPaddingClass = 'pt-16';
   const btnClass = "w-12 h-12 rounded-full bg-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 transition-all shadow-sm";
   const starPlacementButtonClass = `${btnClass} touch-none`;
   const readerToolButtonClass = "flex h-12 w-12 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-md transition-transform active:scale-95";
-  const searchInputClass = (field: SearchField) => (
-    `h-12 rounded-full px-5 text-[15px] font-medium text-black outline-none transition-colors placeholder:text-black/25 ${
-      activeSearchField === field ? 'bg-[var(--app-active-surface)] shadow-sm' : 'bg-[var(--app-card)]'
-    }`
-  );
 
   const startTrackingRoute = () => {
     clearTrackDraft(profile.account);
@@ -3875,146 +3869,45 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {isInitialPermissionPromptOpen && isSignedIn && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[2300] flex items-end justify-center bg-black/25 px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-6 pointer-events-auto"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 18, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 14, scale: 0.98 }}
-              transition={{ duration: 0.18 }}
-              className="w-full max-w-[360px] rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
-            >
-              <div className="mb-2 flex items-center gap-2 text-[17px] font-medium leading-tight">
-                <MapPin size={22} strokeWidth={UI_ICON_STROKE} />
-                {homeCopy.initialPermissionsTitle}
-              </div>
-              <div className="text-[13px] font-medium leading-snug text-black/55">
-                {homeCopy.initialPermissionsBody}
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={closeInitialPermissionPrompt}
-                  className="h-11 rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
-                >
-                  {homeCopy.notNow}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleInitialPermissionRequest}
-                  disabled={permissionRequestState === 'requesting'}
-                  className="h-11 rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-                >
-                  {permissionRequestState === 'requesting' ? homeCopy.permissionRequesting : homeCopy.openPermissions}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <InitialPermissionPrompt
+        isOpen={isInitialPermissionPromptOpen && isSignedIn}
+        copy={homeCopy}
+        permissionRequestState={permissionRequestState}
+        iconStrokeWidth={UI_ICON_STROKE}
+        onClose={closeInitialPermissionPrompt}
+        onRequest={handleInitialPermissionRequest}
+      />
 
-      <AnimatePresence>
-        {isPasswordChangeOpen && isSignedIn && isCloudBackendEnabled && activeHomePanel === 'profile' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[2300] flex items-center justify-center bg-black/35 px-5 py-[calc(env(safe-area-inset-top)+1rem)] pointer-events-auto"
-          >
-            <motion.form
-              initial={{ opacity: 0, y: 16, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
-              transition={{ duration: 0.18 }}
-              onSubmit={event => {
-                event.preventDefault();
-                void handleChangePassword();
-              }}
-              className="w-full max-w-[360px] rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
-            >
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2 text-[18px] font-medium leading-tight">
-                  <Lock size={23} strokeWidth={UI_ICON_STROKE} />
-                  <span className="truncate">{homeCopy.changePassword}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsPasswordChangeOpen(false);
-                    setCurrentPasswordInput('');
-                    setNewPasswordInput('');
-                    setConfirmPasswordInput('');
-                    setPasswordChangeStatus('');
-                  }}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black transition-transform active:scale-95"
-                  aria-label={homeCopy.closeManual}
-                >
-                  <X size={20} strokeWidth={UI_ICON_STROKE} />
-                </button>
-              </div>
-              <div className="mb-3 text-[12px] font-medium leading-snug text-black/45">
-                {homeCopy.passwordNotViewable}
-              </div>
-              <div className="space-y-2">
-                <input
-                  value={currentPasswordInput}
-                  onChange={event => {
-                    setCurrentPasswordInput(event.target.value);
-                    setPasswordChangeStatus('');
-                  }}
-                  type="password"
-                  autoComplete="current-password"
-                  className="h-11 w-full rounded-[12px] bg-[var(--app-soft-card)] px-3 text-[15px] font-medium outline-none placeholder:text-black/30"
-                  placeholder={homeCopy.currentPassword}
-                  aria-label={homeCopy.currentPassword}
-                />
-                <input
-                  value={newPasswordInput}
-                  onChange={event => {
-                    setNewPasswordInput(event.target.value);
-                    setPasswordChangeStatus('');
-                  }}
-                  type="password"
-                  autoComplete="new-password"
-                  className="h-11 w-full rounded-[12px] bg-[var(--app-soft-card)] px-3 text-[15px] font-medium outline-none placeholder:text-black/30"
-                  placeholder={homeCopy.newPassword}
-                  aria-label={homeCopy.newPassword}
-                />
-                <input
-                  value={confirmPasswordInput}
-                  onChange={event => {
-                    setConfirmPasswordInput(event.target.value);
-                    setPasswordChangeStatus('');
-                  }}
-                  type="password"
-                  autoComplete="new-password"
-                  className="h-11 w-full rounded-[12px] bg-[var(--app-soft-card)] px-3 text-[15px] font-medium outline-none placeholder:text-black/30"
-                  placeholder={homeCopy.confirmPassword}
-                  aria-label={homeCopy.confirmPassword}
-                />
-              </div>
-              {passwordChangeStatus && (
-                <div className="mt-3 text-[12px] font-medium leading-snug text-black/45">
-                  {passwordChangeStatus}
-                </div>
-              )}
-              <button
-                type="submit"
-                disabled={isChangingPassword}
-                className="mt-4 h-11 w-full rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-              >
-                {isChangingPassword ? homeCopy.changingPassword : homeCopy.savePassword}
-              </button>
-            </motion.form>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <PasswordChangeModal
+        isOpen={isPasswordChangeOpen && isSignedIn && isCloudBackendEnabled && activeHomePanel === 'profile'}
+        copy={homeCopy}
+        iconStrokeWidth={UI_ICON_STROKE}
+        currentPassword={currentPasswordInput}
+        newPassword={newPasswordInput}
+        confirmPassword={confirmPasswordInput}
+        status={passwordChangeStatus}
+        isChanging={isChangingPassword}
+        onCurrentPasswordChange={value => {
+          setCurrentPasswordInput(value);
+          setPasswordChangeStatus('');
+        }}
+        onNewPasswordChange={value => {
+          setNewPasswordInput(value);
+          setPasswordChangeStatus('');
+        }}
+        onConfirmPasswordChange={value => {
+          setConfirmPasswordInput(value);
+          setPasswordChangeStatus('');
+        }}
+        onClose={() => {
+          setIsPasswordChangeOpen(false);
+          setCurrentPasswordInput('');
+          setNewPasswordInput('');
+          setConfirmPasswordInput('');
+          setPasswordChangeStatus('');
+        }}
+        onSubmit={() => { void handleChangePassword(); }}
+      />
 
       <AnimatePresence>
         {isSignedIn && activeView === 'reader' && (
@@ -4288,146 +4181,58 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {isSearchOpen && activeView !== 'home' && activeView !== 'stats' && activeView !== 'reader' && !isTracking && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1800] flex items-start justify-center bg-black/[0.28] px-6 pb-6 pt-[calc(env(safe-area-inset-top)+4.75rem)] pointer-events-auto"
-            onPointerDown={closeSearchModal}
-          >
-            <motion.form
-              initial={{ opacity: 0, y: -10, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.98 }}
-              transition={{ duration: 0.18 }}
-              className="w-full max-w-[360px]"
-              onPointerDown={event => event.stopPropagation()}
-              onSubmit={event => {
-                event.preventDefault();
-                if (activeSearchField === 'coordinate') {
-                  handleCoordinateSearch();
-                } else {
-                  handleTextSearch();
-                }
-              }}
-            >
-              <div className="relative flex flex-col gap-2">
-                <input
-                  value={coordinateSearch}
-                  onFocus={() => setActiveSearchField('coordinate')}
-                  onPointerDown={() => setActiveSearchField('coordinate')}
-                  onChange={event => setCoordinateSearch(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter') handleCoordinateSearch();
-                  }}
-                  placeholder="(35.8626, 129.1945)"
-                  className={`${searchInputClass('coordinate')} pr-14`}
-                />
-                <label className={`flex h-12 items-center rounded-full px-5 text-black transition-colors ${
-                  activeSearchField === 'text' ? 'bg-[var(--app-active-surface)] shadow-sm' : 'bg-[var(--app-card)]'
-                }`}>
-                  <input
-                    value={textSearch}
-                    onFocus={() => setActiveSearchField('text')}
-                    onPointerDown={() => setActiveSearchField('text')}
-                    onChange={event => {
-                      setTextSearch(event.target.value);
-                      setSubmittedTextSearch('');
-                    }}
-                    placeholder={homeCopy.searchPlaceholder}
-                    className="min-w-0 flex-1 bg-transparent pr-10 text-[15px] font-medium outline-none placeholder:text-black/25"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="absolute right-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-black transition-colors hover:bg-black/5"
-                  style={{ top: activeSearchField === 'coordinate' ? 6 : 62 }}
-                  aria-label={homeCopy.runSearch}
-                >
-                  <Search size={28} strokeWidth={UI_ICON_STROKE} />
-                </button>
-              </div>
-            </motion.form>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <SearchModal
+        isOpen={isSearchOpen && activeView !== 'home' && activeView !== 'stats' && activeView !== 'reader' && !isTracking}
+        activeSearchField={activeSearchField}
+        coordinateSearch={coordinateSearch}
+        textSearch={textSearch}
+        copy={homeCopy}
+        iconStrokeWidth={UI_ICON_STROKE}
+        onClose={closeSearchModal}
+        onActiveFieldChange={setActiveSearchField}
+        onCoordinateChange={setCoordinateSearch}
+        onTextChange={value => {
+          setTextSearch(value);
+          setSubmittedTextSearch('');
+        }}
+        onCoordinateSubmit={handleCoordinateSearch}
+        onTextSubmit={handleTextSearch}
+      />
 
-      {/* Bottom Navigation Bar */}
-      {isSignedIn && activeView !== 'reader' && activeView !== 'searchResults' && (
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000]">
-        <div className="bg-[var(--app-nav-surface)] backdrop-blur-lg rounded-[2rem] px-2.5 py-2 flex items-center gap-2.5 shadow-sm border border-[var(--app-icon)] transition-all duration-300 ease-out">
-          <motion.button
-            layout
-            transition={bottomNavTransition}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => {
-              setActiveView('map');
-              setActiveHomePanel(null);
-              setIsRecordsMenuOpen(false);
-            }}
-            className={getBottomNavClass('map')}
-            aria-label={homeCopy.bottomMap}
-          >
-            <MapIcon size={24} strokeWidth={UI_ICON_STROKE} />
-          </motion.button>
-
-          <motion.button
-            layout
-            transition={bottomNavTransition}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => {
-              setActiveView('stats');
-              setActiveHomePanel(null);
-              setIsMenuOpen(false);
-              setIsMapStyleMenuOpen(false);
-              setTagMenuOpen(false);
-              setIsRecordsMenuOpen(false);
-              setIsRecordsCalendarOpen(false);
-            }}
-            className={getBottomNavClass('stats')}
-            aria-label={homeCopy.bottomStats}
-          >
-            <PieChart size={24} strokeWidth={UI_ICON_STROKE} />
-          </motion.button>
-          
-          <motion.button
-            layout
-            transition={bottomNavTransition}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => {
-              setActiveView('records');
-              setActiveHomePanel(null);
-              setIsMenuOpen(false);
-              setIsMapStyleMenuOpen(false);
-              setTagMenuOpen(false);
-            }}
-            className={getBottomNavClass('records')}
-            aria-label={homeCopy.bottomNotes}
-          >
-            <BookOpen size={24} strokeWidth={UI_ICON_STROKE} />
-          </motion.button>
-          
-          <motion.button
-            layout
-            transition={bottomNavTransition}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => {
-              setActiveView('home');
-              setIsMenuOpen(false);
-              setIsMapStyleMenuOpen(false);
-              setTagMenuOpen(false);
-              setIsRecordsMenuOpen(false);
-            }}
-            className={getBottomNavClass('home')}
-            aria-label={homeCopy.bottomHome}
-          >
-            <Home size={24} strokeWidth={UI_ICON_STROKE} />
-          </motion.button>
-        </div>
-      </div>
-      )}
+      <BottomNavigation
+        isVisible={isSignedIn && activeView !== 'reader' && activeView !== 'searchResults'}
+        activeView={activeView}
+        copy={homeCopy}
+        iconStrokeWidth={UI_ICON_STROKE}
+        onMap={() => {
+          setActiveView('map');
+          setActiveHomePanel(null);
+          setIsRecordsMenuOpen(false);
+        }}
+        onStats={() => {
+          setActiveView('stats');
+          setActiveHomePanel(null);
+          setIsMenuOpen(false);
+          setIsMapStyleMenuOpen(false);
+          setTagMenuOpen(false);
+          setIsRecordsMenuOpen(false);
+          setIsRecordsCalendarOpen(false);
+        }}
+        onRecords={() => {
+          setActiveView('records');
+          setActiveHomePanel(null);
+          setIsMenuOpen(false);
+          setIsMapStyleMenuOpen(false);
+          setTagMenuOpen(false);
+        }}
+        onHome={() => {
+          setActiveView('home');
+          setIsMenuOpen(false);
+          setIsMapStyleMenuOpen(false);
+          setTagMenuOpen(false);
+          setIsRecordsMenuOpen(false);
+        }}
+      />
 
       <AnimatePresence>
         {editingNoteTarget && editingStar && (
@@ -4444,29 +4249,13 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {galleryPreviewImage && (
-        <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/80 p-4">
-          <button
-            onClick={() => setGalleryPreviewImage(null)}
-            className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
-            aria-label={homeCopy.closeImagePreview}
-          >
-            <X size={22} strokeWidth={UI_ICON_STROKE} />
-          </button>
-          <button
-            onClick={() => { void downloadGalleryImage(galleryPreviewImage); }}
-            className="absolute right-[4.25rem] top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
-            aria-label={homeCopy.downloadImage}
-          >
-            <Download size={21} strokeWidth={UI_ICON_STROKE} />
-          </button>
-          <img
-            src={galleryPreviewImage.src}
-            alt={galleryPreviewImage.title}
-            className="max-h-full max-w-full rounded-[18px] object-contain shadow-2xl"
-          />
-        </div>
-      )}
+      <GalleryPreviewOverlay
+        image={galleryPreviewImage}
+        copy={homeCopy}
+        iconStrokeWidth={UI_ICON_STROKE}
+        onClose={() => setGalleryPreviewImage(null)}
+        onDownload={downloadGalleryImage}
+      />
     </div>
   );
 }
