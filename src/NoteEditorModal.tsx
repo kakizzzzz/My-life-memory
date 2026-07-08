@@ -15,6 +15,12 @@ import {
 } from './lib/mediaStorage';
 import { sanitizeRichHtml } from './lib/htmlSanitizer';
 import type { NoteData, StarData } from './types/app';
+import {
+  DEFAULT_RECORD_STAR_ID,
+  SAMPLE_NOTE_IMAGE_URL,
+  SAMPLE_NOTE_TEXT,
+  UPLOAD_IMAGE_MAX_BYTES,
+} from './constants/appDefaults';
 
 interface NoteEditorModalProps {
   star: StarData;
@@ -31,13 +37,9 @@ const DEFAULT_COLORS = [
 ];
 
 const FONT_SIZES = [12, 14, 16, 18, 22, 26];
-const IMAGE_MAX_BYTES = 100 * 1024;
 const OLD_DEFAULT_NOTE_TITLE = 'The "Campus" Entry';
 const OLD_DEFAULT_NOTE_START = 'Finally standing in front of the White Horse statue';
-const SAMPLE_NOTE_IMAGE_URL = `${import.meta.env.BASE_URL}note-sample.jpg`;
-const DEFAULT_NOTE_CONTENT = 'Today was simple and quiet. I walked for a while, took one photo, and saved this small note.';
 const EDITABLE_TAIL_HTML = '<p data-note-tail="true"></p>';
-const DEFAULT_RECORD_STAR_ID = 'default-record-star';
 
 const NOTE_EDITOR_COPY = {
   en: {
@@ -117,7 +119,7 @@ const defaultNote: NoteData = {
   id: Date.now().toString(),
   title: 'Today Note',
   titleHtml: 'Today Note',
-  content: DEFAULT_NOTE_CONTENT,
+  content: SAMPLE_NOTE_TEXT,
   imageUrl: SAMPLE_NOTE_IMAGE_URL,
   fontSize: 18,
   titleFontSize: 18,
@@ -241,7 +243,7 @@ const isOldDefaultNote = (note: NoteData) => (
   ) ||
   (
     note.title === defaultNote.title &&
-    note.content === DEFAULT_NOTE_CONTENT &&
+    note.content === SAMPLE_NOTE_TEXT &&
     !note.contentHtml?.includes(SAMPLE_NOTE_IMAGE_URL)
   )
 );
@@ -420,7 +422,7 @@ const compressImageToDataUrl = async (file: File) => {
 
     const blob = await canvasToBlob(canvas, 'image/jpeg', quality);
     lastBlob = blob;
-    if (blob.size <= IMAGE_MAX_BYTES) return blobToDataUrl(blob);
+    if (blob.size <= UPLOAD_IMAGE_MAX_BYTES) return blobToDataUrl(blob);
 
     if (quality > 0.42) {
       quality = Math.max(0.42, quality - 0.12);

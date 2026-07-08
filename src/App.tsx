@@ -41,6 +41,45 @@ import type {
   UserProfile,
 } from './types/app';
 import {
+  CLOUD_PASSWORD_MIN_LENGTH,
+  DEFAULT_PROFILE,
+  DEFAULT_RECORD_STAR_ID,
+  DEFAULT_RECORD_STAR_LOCATION,
+  DEFAULT_USER_LOCATION,
+  GEOLOCATION_OPTIONS,
+  LEGACY_RECORD_STAR_LOCATION,
+  SAMPLE_NOTE_IMAGE_URL,
+  SAMPLE_NOTE_TEXT,
+  TRACK_MAX_ACCURACY_METERS,
+  TRACK_MAX_DYNAMIC_MIN_DISTANCE_METERS,
+  TRACK_MAX_PLAUSIBLE_SPEED_MPS,
+  TRACK_MAX_SEGMENT_GAP_MS,
+  TRACK_MIN_DISTANCE_METERS,
+  TRACK_MIN_POINT_INTERVAL_MS,
+  TRACK_STALE_POSITION_GRACE_MS,
+  UPLOAD_IMAGE_MAX_BYTES,
+} from './constants/appDefaults';
+import {
+  DEFAULT_NAME_PREFIX,
+  LANGUAGE_FONT_FAMILIES,
+  LANGUAGE_FONT_SCALE,
+  LANGUAGE_LOCALES,
+  LANGUAGE_OPTIONS,
+  LOGIN_LANGUAGE_LABELS,
+} from './constants/language';
+import {
+  AUTO_USER_MANUAL_KEY_PREFIX,
+  APP_STORAGE_KEY,
+  TRACK_DRAFT_STORAGE_KEY_PREFIX,
+} from './constants/storageKeys';
+import {
+  DEFAULT_SYSTEM_THEME,
+  READER_FONT_SIZES,
+  READER_TEXT_COLORS,
+  THEME_PICKER_COLORS,
+  THEME_PRESETS,
+} from './constants/theme';
+import {
   getCloudSession,
   loadCloudAccountData,
   loginCloudAccount,
@@ -186,44 +225,6 @@ type DeviceOrientationEventConstructorWithPermission = typeof DeviceOrientationE
   requestPermission?: (absolute?: boolean) => Promise<PermissionState>;
 };
 
-const DEFAULT_SYSTEM_THEME: SystemTheme = {
-  page: '#F3F3F3',
-  card: '#D9D9D9',
-  icon: '#C3C3C3',
-  dark: '#5C5C5C',
-};
-
-const DEFAULT_PROFILE: UserProfile = {
-  name: '',
-  account: '',
-  password: '',
-  avatarUrl: '',
-};
-
-const DEFAULT_NAME_PREFIX: Record<'en' | 'zh' | 'ko', string> = {
-  en: 'User ',
-  zh: '用户',
-  ko: '사용자 ',
-};
-
-const THEME_PRESETS: { label: Record<string, string>; theme: SystemTheme }[] = [
-  { label: { en: 'Original', zh: '初始', ko: '기본' }, theme: DEFAULT_SYSTEM_THEME },
-  { label: { en: 'Terracotta', zh: '陶土', ko: '테라코타' }, theme: { page: '#FAF4F0', card: '#E8D7CD', icon: '#B98A78', dark: '#6A5048' } },
-  { label: { en: 'Blue', zh: '清蓝', ko: '블루' }, theme: { page: '#F4F8FA', card: '#D7E7EE', icon: '#8AAEBC', dark: '#405D6B' } },
-  { label: { en: 'Mauve', zh: '雾紫', ko: '모브' }, theme: { page: '#F8F5F8', card: '#E8DAE8', icon: '#A994AA', dark: '#5D4D62' } },
-];
-
-const THEME_PICKER_COLORS = [
-  '#D2936D', '#B6A5B9', '#EDC727', '#88AA9A', '#C4D4C5', '#D0D5C1',
-  '#CBE0E8', '#80AACD', '#D3CCE3', '#F0EBE1', '#28292B'
-];
-
-const READER_TEXT_COLORS = [
-  '#D2936D', '#B6A5B9', '#EDC727', '#88AA9A', '#C4D4C5', '#D0D5C1',
-  '#CBE0E8', '#80AACD', '#D3CCE3', '#F0EBE1', '#28292B'
-];
-const READER_FONT_SIZES = [12, 14, 16, 18, 22, 26];
-
 const cssColorToHex = (color: string, fallback = '#D2936D') => {
   if (!color) return fallback;
   if (color.startsWith('#')) return color;
@@ -235,62 +236,8 @@ const cssColorToHex = (color: string, fallback = '#D2936D') => {
     .toUpperCase()}`;
 };
 
-const UPLOAD_IMAGE_MAX_BYTES = 100 * 1024;
-const SAMPLE_NOTE_IMAGE_URL = `${import.meta.env.BASE_URL}note-sample.jpg`;
-const SAMPLE_NOTE_TEXT = 'Today was simple and quiet. I walked for a while, took one photo, and saved this small note.';
-
-const LANGUAGE_OPTIONS = [
-  { label: '中文', value: 'zh' },
-  { label: 'English', value: 'en' },
-  { label: '한국어', value: 'ko' },
-];
-
-const LOGIN_LANGUAGE_LABELS: Record<string, string> = {
-  zh: '中',
-  en: 'EN',
-  ko: '한',
-};
-
-const LANGUAGE_FONT_FAMILIES: Record<string, string> = {
-  en: '"Afacad", ui-sans-serif, system-ui, sans-serif',
-  zh: '"Noto Serif SC", "Songti SC", serif',
-  ko: '"Noto Serif KR", serif',
-};
-
-const LANGUAGE_FONT_SCALE: Record<string, number> = {
-  en: 1,
-  zh: 0.9,
-  ko: 0.9,
-};
-
-const LANGUAGE_LOCALES: Record<string, string> = {
-  en: 'en-US',
-  zh: 'zh-CN',
-  ko: 'ko-KR',
-};
-
 const HOME_SETTINGS_ICON_SIZE = 24;
 const HOME_SETTINGS_ICON_STROKE = UI_ICON_STROKE;
-const DEFAULT_RECORD_STAR_ID = 'default-record-star';
-const DEFAULT_USER_LOCATION: [number, number] = [31.2304, 121.4737];
-const DEFAULT_RECORD_STAR_LOCATION: [number, number] = [31.2312, 121.4744];
-const LEGACY_RECORD_STAR_LOCATION: [number, number] = [36.36705, 127.34425];
-const APP_STORAGE_KEY = 'campus-map-app-state-v1';
-const AUTO_USER_MANUAL_KEY_PREFIX = 'my-life-memory-auto-user-manual-seen-v1:';
-const TRACK_DRAFT_STORAGE_KEY_PREFIX = 'my-life-memory-active-track-draft-v1:';
-const GEOLOCATION_OPTIONS: PositionOptions = {
-  enableHighAccuracy: true,
-  maximumAge: 0,
-  timeout: 15000,
-};
-const TRACK_MAX_ACCURACY_METERS = 150;
-const TRACK_MIN_DISTANCE_METERS = 2;
-const TRACK_MAX_DYNAMIC_MIN_DISTANCE_METERS = 20;
-const TRACK_MAX_PLAUSIBLE_SPEED_MPS = 90;
-const TRACK_MAX_SEGMENT_GAP_MS = 60_000;
-const TRACK_MIN_POINT_INTERVAL_MS = 500;
-const TRACK_STALE_POSITION_GRACE_MS = 2000;
-const CLOUD_PASSWORD_MIN_LENGTH = 6;
 
 type TrackPoint = {
   location: [number, number];
