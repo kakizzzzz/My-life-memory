@@ -4,7 +4,6 @@ export const MEDIA_BUCKET = 'life-media';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const PENDING_MEDIA_DELETE_STORAGE_KEY_PREFIX = 'my-life-memory-pending-media-deletes-v1:';
-const UNREFERENCED_MEDIA_GRACE_MS = 30 * 1000;
 
 export type StoredImageMetadata = {
   provider: 'supabase';
@@ -252,95 +251,6 @@ export const retryPendingImageDeletions = async () => {
     if (!deleted) remainingDeletes.push(metadata);
   }
   writePendingDeletes(userId, remainingDeletes);
-};
-
-type StorageListItem = {
-  name: string;
-  id?: string | null;
-  metadata?: { size?: number; mimetype?: string; mimeType?: string } | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
-type StorageObjectPath = {
-  path: string;
-  metadata: StoredImageMetadata;
-  isTooNew: boolean;
-};
-
-const isStorageFolder = (item: StorageListItem) => (
-  !item.id && !item.metadata
-);
-
-const getStorageItemTimestamp = (item: StorageListItem) => {
-  const timestamp = Date.parse(item.created_at || item.updated_at || '');
-  return Number.isFinite(timestamp) ? timestamp : 0;
-};
-
-const listStorageObjectPaths = async (folder: string): Promise<StorageObjectPath[]> => {
-  if (!supabase) return [];
-
-  const bucket = supabase.storage.from(MEDIA_BUCKET);
-  const paths: StorageObjectPath[] = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await bucket.list(folder, {
-      limit: 1000,
-      offset,
-      sortBy: { column: 'name', order: 'asc' },
-    });
-
-    if (error) throw error;
-    const items = (data || []) as StorageListItem[];
-
-    for (const item of items) {
-      if (!item.name) continue;
-      const path = `${folder}/${item.name}`;
-      if (isStorageFolder(item)) {
-        paths.push(...await listStorageObjectPaths(path));
-        continue;
-      }
-
-      const createdAt = getStorageItemTimestamp(item) || Date.now();
-      const mimeType = item.metadata?.mimetype || item.metadata?.mimeType || 'image/jpeg';
-      paths.push({
-        path,
-        metadata: {
-          provider: 'supabase',
-          bucket: MEDIA_BUCKET,
-          key: path,
-          path,
-          mimeType,
-          size: Number(item.metadata?.size || 0),
-          createdAt,
-        },
-        isTooNew: createdAt > 0 && Date.now() - createdAt < UNREFERENCED_MEDIA_GRACE_MS,
-      });
-    }
-
-    if (items.length < 1000) break;
-    offset += items.length;
-  }
-
-  return paths;
-};
-
-export const cleanupUnreferencedUserMedia = async (referencedPaths: string[]) => {
-  if (!isSupabaseMediaEnabled || !supabase) return;
-  const userId = await getCurrentUserId();
-  if (!userId) return;
-
-  const userPrefix = `${userId}/`;
-  const referencedPathSet = new Set(referencedPaths.filter(path => path.startsWith(userPrefix)));
-  const storageObjects = await listStorageObjectPaths(userId);
-
-  for (const object of storageObjects) {
-    if (!object.path.startsWith(userPrefix)) continue;
-    if (object.isTooNew) continue;
-    if (referencedPathSet.has(object.path)) continue;
-    await deleteImageFromStorageReliably(object.metadata);
-  }
 };
 
 export const imageMetadataFromElement = (element: Element | null): StoredImageMetadata | null => {

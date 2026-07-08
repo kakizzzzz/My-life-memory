@@ -147,7 +147,7 @@ const isSafeImageSrc = (src: string) => {
   const trimmed = src.trim();
   const lowered = trimmed.toLowerCase();
   if (!trimmed || lowered.startsWith('javascript:')) return false;
-  if (lowered.startsWith('data:')) return lowered.startsWith('data:image/');
+  if (lowered.startsWith('data:')) return /^data:image\/(?:jpeg|jpg|png|webp|gif);/i.test(lowered);
   if (lowered.startsWith('storage://')) return true;
   if (lowered.startsWith('http://') || lowered.startsWith('https://') || lowered.startsWith('blob:')) return true;
   return false;

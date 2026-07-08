@@ -1277,6 +1277,21 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     return insertStyledTextInElement(editor, getEditorSelectionRange(), text, styles, syncEditorContent);
   };
 
+  const insertPlainTextInElement = (
+    element: HTMLElement,
+    range: Range | null,
+    text: string,
+    syncAfterChange: () => void
+  ) => {
+    if (!range || !range.collapsed || !rangeIsInsideElement(range, element)) return false;
+    const textNode = document.createTextNode(text);
+    range.deleteContents();
+    range.insertNode(textNode);
+    moveCaretAfterNode(textNode);
+    syncAfterChange();
+    return true;
+  };
+
   const handleEditorBeforeInput = (e: React.FormEvent<HTMLDivElement>) => {
     const inputEvent = e.nativeEvent as InputEvent;
     const pendingStyles = pendingEditorStylesRef.current;
@@ -1373,7 +1388,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     syncEditorContent();
   };
 
-  const appendImages = async (files: FileList | null) => {
+  const appendImages = async (files: FileList | File[] | null) => {
     const imageFiles = Array.from(files || []).filter(file => file.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
 
@@ -1405,6 +1420,30 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   const handleImageInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await appendImages(e.target.files);
     e.target.value = '';
+  };
+
+  const handleTitlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const titleEditor = titleEditorRef.current;
+    const text = event.clipboardData.getData('text/plain').replace(/\s+/g, ' ').trim();
+    if (!titleEditor || !text) return;
+    insertPlainTextInElement(titleEditor, getTitleSelectionRange(), text, syncTitleContent);
+  };
+
+  const handleEditorPaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const imageFiles = Array.from(event.clipboardData.files).filter((file): file is File => (
+      file instanceof File && file.type.startsWith('image/')
+    ));
+    if (imageFiles.length > 0) {
+      await appendImages(imageFiles);
+      return;
+    }
+
+    const text = event.clipboardData.getData('text/plain');
+    const editor = editorRef.current;
+    if (!editor || !text) return;
+    insertPlainTextInElement(editor, getEditorSelectionRange(), text, syncEditorContent);
   };
 
   const stopCamera = () => {
@@ -1762,6 +1801,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                 data-placeholder={copy.titlePlaceholder}
                 onBeforeInput={handleTitleBeforeInput}
                 onInput={syncTitleContent}
+                onPaste={handleTitlePaste}
                 onFocus={syncToolbarFontSizeFromTitle}
                 onClick={syncToolbarFontSizeFromTitle}
                 onKeyUp={syncToolbarFontSizeFromTitle}
@@ -1789,6 +1829,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
               data-placeholder={copy.bodyPlaceholder}
               onBeforeInput={handleEditorBeforeInput}
               onInput={syncEditorContent}
+              onPaste={handleEditorPaste}
               onFocus={saveEditorSelection}
               onKeyDown={handleEditorKeyDown}
               onKeyUp={saveEditorSelection}

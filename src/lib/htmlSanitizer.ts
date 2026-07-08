@@ -9,7 +9,9 @@ const isSafeImageSrc = (value: string) => {
   if (!trimmed) return false;
   const lowered = trimmed.toLowerCase();
   if (lowered.startsWith('javascript:')) return false;
-  if (lowered.startsWith('data:')) return lowered.startsWith('data:image/');
+  if (lowered.startsWith('data:')) {
+    return /^data:image\/(?:jpeg|jpg|png|webp|gif);/i.test(lowered);
+  }
   if (lowered.startsWith('storage://')) return true;
 
   try {

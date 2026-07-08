@@ -11,7 +11,7 @@ import {
   tokenPrefix,
 } from '../_shared/security.ts';
 
-let corsHeaders = {
+const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -114,7 +114,12 @@ const readTools = [
   },
 ];
 
-const jsonResponse = (body: unknown, status = 200, extraHeaders: Record<string, string> = {}) => (
+const jsonResponse = (
+  body: unknown,
+  status = 200,
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
+  extraHeaders: Record<string, string> = {},
+) => (
   new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -181,7 +186,11 @@ const getConfig = () => {
   };
 };
 
-const authenticateMcpRequest = async (request: Request, config: ReturnType<typeof getConfig>) => {
+const authenticateMcpRequest = async (
+  request: Request,
+  config: ReturnType<typeof getConfig>,
+  corsHeaders: Record<string, string>,
+) => {
   const token = getBearerToken(request);
   if (!token) {
     const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
@@ -320,20 +329,25 @@ serve(async request => {
     return forbiddenOriginResponse();
   }
 
-  corsHeaders = createCorsHeaders(
+  const localCorsHeaders = createCorsHeaders(
     request,
     'GET, POST, OPTIONS',
     'authorization, x-client-info, apikey, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id',
     'mcp-session-id',
   );
+  const json = (
+    body: unknown,
+    status = 200,
+    extraHeaders: Record<string, string> = {},
+  ) => jsonResponse(body, status, localCorsHeaders, extraHeaders);
 
   const ipLimit = hitRateLimit(`mcp:${clientIp(request)}`, 240, 60_000);
   if (ipLimit.limited) {
-    return rateLimitResponse(corsHeaders, ipLimit.retryAfterSeconds);
+    return rateLimitResponse(localCorsHeaders, ipLimit.retryAfterSeconds);
   }
 
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: localCorsHeaders });
   }
 
   const config = getConfig();
@@ -344,26 +358,26 @@ serve(async request => {
     !config.memoryApiInternalToken ||
     !config.memoryApiUrl
   ) {
-    return jsonResponse(rpcError(null, -32000, 'MCP service is not configured.'), 500);
+    return json(rpcError(null, -32000, 'MCP service is not configured.'), 500);
   }
 
   let auth: { userId: string };
   try {
-    auth = await authenticateMcpRequest(request, config);
+    auth = await authenticateMcpRequest(request, config, localCorsHeaders);
   } catch (error) {
     if (error instanceof Response) return error;
-    return jsonResponse(rpcError(null, -32001, 'Unauthorized'), 401);
+    return json(rpcError(null, -32001, 'Unauthorized'), 401);
   }
 
   if (request.method === 'GET') {
     const accept = request.headers.get('accept') || '';
     if (!accept.includes('text/event-stream')) {
-      return jsonResponse(rpcError(null, -32000, 'Not Acceptable: Client must accept text/event-stream'), 406);
+      return json(rpcError(null, -32000, 'Not Acceptable: Client must accept text/event-stream'), 406);
     }
     return new Response('event: endpoint\ndata: /mcp\n\n', {
       status: 200,
       headers: {
-        ...corsHeaders,
+        ...localCorsHeaders,
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
@@ -372,29 +386,29 @@ serve(async request => {
   }
 
   if (request.method !== 'POST') {
-    return jsonResponse(rpcError(null, -32000, 'Method not allowed'), 405);
+    return json(rpcError(null, -32000, 'Method not allowed'), 405);
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return jsonResponse(rpcError(null, -32700, 'Parse error: Invalid JSON'), 400);
+    return json(rpcError(null, -32700, 'Parse error: Invalid JSON'), 400);
   }
 
   try {
     if (Array.isArray(body)) {
       const results = (await Promise.all(body.map(message => handleRpcMessage(message, config, auth.userId)))).filter(Boolean);
-      return jsonResponse(results);
+      return json(results);
     }
     if (!body || typeof body !== 'object') {
-      return jsonResponse(rpcError(null, -32600, 'Invalid Request'), 400);
+      return json(rpcError(null, -32600, 'Invalid Request'), 400);
     }
     const result = await handleRpcMessage(body as Record<string, unknown>, config, auth.userId);
-    if (!result) return new Response(null, { status: 202, headers: corsHeaders });
-    return jsonResponse(result);
+    if (!result) return new Response(null, { status: 202, headers: localCorsHeaders });
+    return json(result);
   } catch (error) {
     const id = body && typeof body === 'object' && 'id' in body ? (body as Record<string, unknown>).id : null;
-    return jsonResponse(rpcError(id, -32603, error instanceof Error ? error.message : 'Internal server error'), 500);
+    return json(rpcError(id, -32603, error instanceof Error ? error.message : 'Internal server error'), 500);
   }
 });

@@ -13,7 +13,7 @@ import {
   tokenPrefix,
 } from '../_shared/security.ts';
 
-let corsHeaders = {
+const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -58,7 +58,11 @@ const writableStarKeys = new Set([
   'tagGroupId',
 ]);
 
-const jsonResponse = (body: unknown, status = 200) => (
+const jsonResponse = (
+  body: unknown,
+  status = 200,
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
+) => (
   new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -68,14 +72,21 @@ const jsonResponse = (body: unknown, status = 200) => (
   })
 );
 
-const errorResponse = (code: string, message: string, status = 400, extra: Record<string, unknown> = {}) => (
-  jsonResponse({ error: { code, message, ...extra } }, status)
+const errorResponse = (
+  code: string,
+  message: string,
+  status = 400,
+  extra: Record<string, unknown> = {},
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
+) => (
+  jsonResponse({ error: { code, message, ...extra } }, status, corsHeaders)
 );
 
 const memoryResponse = (
   action: string,
   body: Record<string, unknown>,
   meta: { count?: number; query?: string } = {},
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
 ) => {
   const count = Number.isFinite(meta.count) ? meta.count as number : getNumber(body.count, 0);
   return jsonResponse({
@@ -91,7 +102,7 @@ const memoryResponse = (
     } : {}),
     ...body,
     count,
-  });
+  }, 200, corsHeaders);
 };
 
 const sanitizeValue = (value: unknown): unknown => {
@@ -362,6 +373,7 @@ const loadMemoryForUserId = async (
   admin: ReturnType<typeof createClient>,
   userId: string,
   accountFallback = '',
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
 ) => {
   const [{ data: profileRow, error: profileError }, { data: stateRow, error: stateError }] = await Promise.all([
     admin
@@ -397,7 +409,11 @@ const loadMemoryForUserId = async (
   };
 };
 
-const loadMemory = async (admin: ReturnType<typeof createClient>, token: string) => {
+const loadMemory = async (
+  admin: ReturnType<typeof createClient>,
+  token: string,
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
+) => {
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) {
     throw new Response(JSON.stringify({ error: { code: 'unauthorized', message: 'A valid user token is required.' } }), {
@@ -406,7 +422,7 @@ const loadMemory = async (admin: ReturnType<typeof createClient>, token: string)
     });
   }
 
-  return loadMemoryForUserId(admin, userData.user.id);
+  return loadMemoryForUserId(admin, userData.user.id, '', corsHeaders);
 };
 
 const saveState = async (admin: ReturnType<typeof createClient>, userId: string, state: Record<string, unknown>) => {
@@ -416,7 +432,10 @@ const saveState = async (admin: ReturnType<typeof createClient>, userId: string,
   if (error) throw error;
 };
 
-const requireWriteIntent = (body: Record<string, unknown>) => {
+const requireWriteIntent = (
+  body: Record<string, unknown>,
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
+) => {
   if (!getBoolean(body.confirmWrite)) {
     throw new Response(JSON.stringify({
       error: {
@@ -430,8 +449,11 @@ const requireWriteIntent = (body: Record<string, unknown>) => {
   }
 };
 
-const requireDeleteIntent = (body: Record<string, unknown>) => {
-  requireWriteIntent(body);
+const requireDeleteIntent = (
+  body: Record<string, unknown>,
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
+) => {
+  requireWriteIntent(body, corsHeaders);
   if (body.confirm !== 'DELETE') {
     throw new Response(JSON.stringify({
       error: {
@@ -450,33 +472,47 @@ serve(async request => {
     return forbiddenOriginResponse();
   }
 
-  corsHeaders = createCorsHeaders(request);
+  const localCorsHeaders = createCorsHeaders(request);
+  const json = (body: unknown, status = 200) => jsonResponse(body, status, localCorsHeaders);
+  const fail = (
+    code: string,
+    message: string,
+    status = 400,
+    extra: Record<string, unknown> = {},
+  ) => errorResponse(code, message, status, extra, localCorsHeaders);
+  const memoryOut = (
+    action: string,
+    body: Record<string, unknown>,
+    meta: { count?: number; query?: string } = {},
+  ) => memoryResponse(action, body, meta, localCorsHeaders);
+  const requireWrite = (input: Record<string, unknown>) => requireWriteIntent(input, localCorsHeaders);
+  const requireDelete = (input: Record<string, unknown>) => requireDeleteIntent(input, localCorsHeaders);
 
   const ipLimit = hitRateLimit(`memory-api:${clientIp(request)}`, 180, 60_000);
   if (ipLimit.limited) {
-    return rateLimitResponse(corsHeaders, ipLimit.retryAfterSeconds);
+    return rateLimitResponse(localCorsHeaders, ipLimit.retryAfterSeconds);
   }
 
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: localCorsHeaders });
   }
 
   if (request.method !== 'POST') {
-    return errorResponse('method_not_allowed', 'Method not allowed.', 405);
+    return fail('method_not_allowed', 'Method not allowed.', 405);
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   const internalToken = Deno.env.get('MEMORY_API_INTERNAL_TOKEN') || '';
   if (!supabaseUrl || !serviceRoleKey) {
-    return errorResponse('setup_required', 'Memory API is not configured.', 500);
+    return fail('setup_required', 'Memory API is not configured.', 500);
   }
 
   let body: Record<string, unknown>;
   try {
     body = await request.json();
   } catch {
-    return errorResponse('bad_request', 'Invalid request body.', 400);
+    return fail('bad_request', 'Invalid request body.', 400);
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -492,24 +528,24 @@ serve(async request => {
     const internalHeader = request.headers.get('x-memory-api-internal-token') || '';
     const authLimit = hitRateLimit(`memory-api-auth:${clientIp(request)}:${tokenPrefix(internalHeader || token)}`, 120, 60_000);
     if (authLimit.limited) {
-      return rateLimitResponse(corsHeaders, authLimit.retryAfterSeconds);
+      return rateLimitResponse(localCorsHeaders, authLimit.retryAfterSeconds);
     }
     let memory: Awaited<ReturnType<typeof loadMemoryForUserId>>;
     if (internalHeader) {
       if (!internalToken || internalHeader !== internalToken) {
-        return errorResponse('unauthorized', 'Invalid internal Memory API token.', 401);
+        return fail('unauthorized', 'Invalid internal Memory API token.', 401);
       }
       const internalUserId = getString(body.userId);
       if (!internalUserId) {
-        return errorResponse('bad_request', 'Internal Memory API requests require userId.', 400);
+        return fail('bad_request', 'Internal Memory API requests require userId.', 400);
       }
-      memory = await loadMemoryForUserId(admin, internalUserId);
+      memory = await loadMemoryForUserId(admin, internalUserId, '', localCorsHeaders);
     } else {
-      memory = await loadMemory(admin, token);
+      memory = await loadMemory(admin, token, localCorsHeaders);
     }
     const action = getString(body.action);
     if (writeActions.has(action) && (Deno.env.get('ENABLE_MEMORY_API_WRITES') || '').toLowerCase() !== 'true') {
-      return errorResponse('writes_disabled', 'Memory API write actions are disabled in production.', 403);
+      return fail('writes_disabled', 'Memory API write actions are disabled in production.', 403);
     }
 
     const timeZone = getString(body.timeZone, 'Asia/Shanghai');
@@ -518,7 +554,7 @@ serve(async request => {
 
     if (action === 'list_locations') {
       const locations = stars.map(starSummary);
-      return memoryResponse(action, {
+      return memoryOut(action, {
         locations,
         records: locations,
       }, { count: locations.length });
@@ -547,7 +583,7 @@ serve(async request => {
         );
       }).slice(0, limit);
 
-      return memoryResponse(action, {
+      return memoryOut(action, {
         query,
         results,
         records: results,
@@ -557,10 +593,10 @@ serve(async request => {
     if (action === 'get_location_memory') {
       const starId = getString(body.starId);
       const starIndex = stars.findIndex(star => getString(star.id) === starId);
-      if (starIndex === -1) return errorResponse('not_found', 'Location was not found.', 404);
+      if (starIndex === -1) return fail('not_found', 'Location was not found.', 404);
       const star = stars[starIndex];
       const notes = getNotes(star).map((note, noteIndex) => noteSummary(note, star, starIndex, noteIndex));
-      return memoryResponse(action, {
+      return memoryOut(action, {
         location: starSummary(star, starIndex),
         notes,
         records: notes,
@@ -569,7 +605,7 @@ serve(async request => {
 
     if (action === 'get_day_memory') {
       const date = getString(body.date);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return errorResponse('bad_request', 'date must be YYYY-MM-DD.', 400);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('bad_request', 'date must be YYYY-MM-DD.', 400);
       const notes = stars.flatMap((star, starIndex) => (
         getNotes(star)
           .map((note, noteIndex) => noteSummary(note, star, starIndex, noteIndex))
@@ -582,7 +618,7 @@ serve(async request => {
           getNotes(star).some(note => dateKeyFor(note.createdAt || star.createdAt, timeZone) === date)
         ))
         .map(({ star, starIndex }) => starSummary(star, starIndex));
-      return memoryResponse(action, {
+      return memoryOut(action, {
         date,
         locations,
         notes,
@@ -605,7 +641,7 @@ serve(async request => {
         pointCount: getArray(track.paths).reduce((sum, segment) => sum + getArray(segment).length, 0),
         paths: getBoolean(body.includePaths) ? track.paths : undefined,
       }));
-      return memoryResponse(action, {
+      return memoryOut(action, {
         routes,
         records: routes,
       }, { count: routes.length });
@@ -628,7 +664,7 @@ serve(async request => {
         .filter(location => location.matchedNotes > 0)
         .sort((a, b) => b.matchedNotes - a.matchedNotes)
         .slice(0, 10);
-      return memoryResponse(action, {
+      return memoryOut(action, {
         range: { dateFrom: dateFrom || null, dateTo: dateTo || null, timeZone },
         totals: {
           locations: new Set(notes.map(note => note.starId)).size,
@@ -643,7 +679,7 @@ serve(async request => {
     }
 
     if (action === 'export_memory_report') {
-      return memoryResponse(action, {
+      return memoryOut(action, {
         format: 'html',
         html: buildMemoryReportHtml({
           account: memory.account,
@@ -655,10 +691,10 @@ serve(async request => {
     }
 
     if (action === 'create_star') {
-      requireWriteIntent(body);
+      requireWrite(body);
       const lat = getNumber(body.lat, Number.NaN);
       const lng = getNumber(body.lng, Number.NaN);
-      if (!isFiniteCoordinate(lat, lng)) return errorResponse('bad_request', 'lat and lng must be valid coordinates.', 400);
+      if (!isFiniteCoordinate(lat, lng)) return fail('bad_request', 'lat and lng must be valid coordinates.', 400);
       const star: Record<string, unknown> = {
         id: createId('star'),
         lat,
@@ -681,14 +717,14 @@ serve(async request => {
 
       const nextStars = [...stars, star];
       await saveState(admin, memory.userId, { ...memory.state, stars: nextStars });
-      return jsonResponse({ ok: true, location: starSummary(star, nextStars.length - 1), star });
+      return json({ ok: true, location: starSummary(star, nextStars.length - 1), star });
     }
 
     if (action === 'update_star') {
-      requireWriteIntent(body);
+      requireWrite(body);
       const starId = getString(body.starId);
       const starIndex = stars.findIndex(star => getString(star.id) === starId);
-      if (starIndex === -1) return errorResponse('not_found', 'Location was not found.', 404);
+      if (starIndex === -1) return fail('not_found', 'Location was not found.', 404);
       const updates = sanitizeValue(body.updates || {}) as Record<string, unknown>;
       const nextStars = stars.map((star, index) => {
         if (index !== starIndex) return star;
@@ -702,14 +738,14 @@ serve(async request => {
         return next;
       });
       await saveState(admin, memory.userId, { ...memory.state, stars: nextStars });
-      return jsonResponse({ ok: true, location: starSummary(nextStars[starIndex], starIndex) });
+      return json({ ok: true, location: starSummary(nextStars[starIndex], starIndex) });
     }
 
     if (action === 'add_note_to_star') {
-      requireWriteIntent(body);
+      requireWrite(body);
       const starId = getString(body.starId);
       const starIndex = stars.findIndex(star => getString(star.id) === starId);
-      if (starIndex === -1) return errorResponse('not_found', 'Location was not found.', 404);
+      if (starIndex === -1) return fail('not_found', 'Location was not found.', 404);
       const noteInput = sanitizeValue(body.note || {}) as Record<string, unknown>;
       const now = Date.now();
       const note: Record<string, unknown> = {
@@ -728,18 +764,18 @@ serve(async request => {
         index === starIndex ? { ...star, notes: [...getNotes(star), note] } : star
       ));
       await saveState(admin, memory.userId, { ...memory.state, stars: nextStars });
-      return jsonResponse({ ok: true, note: noteSummary(note, nextStars[starIndex], starIndex, getNotes(nextStars[starIndex]).length - 1) });
+      return json({ ok: true, note: noteSummary(note, nextStars[starIndex], starIndex, getNotes(nextStars[starIndex]).length - 1) });
     }
 
     if (action === 'update_note') {
-      requireWriteIntent(body);
+      requireWrite(body);
       const starId = getString(body.starId);
       const noteId = getString(body.noteId);
       const starIndex = stars.findIndex(star => getString(star.id) === starId);
-      if (starIndex === -1) return errorResponse('not_found', 'Location was not found.', 404);
+      if (starIndex === -1) return fail('not_found', 'Location was not found.', 404);
       const notes = getNotes(stars[starIndex]);
       const noteIndex = notes.findIndex(note => getString(note.id) === noteId);
-      if (noteIndex === -1) return errorResponse('not_found', 'Note was not found.', 404);
+      if (noteIndex === -1) return fail('not_found', 'Note was not found.', 404);
       const updates = sanitizeValue(body.updates || {}) as Record<string, unknown>;
       const nextNote = { ...notes[noteIndex], updatedAt: Date.now() };
       Object.entries(updates).forEach(([key, value]) => {
@@ -749,31 +785,31 @@ serve(async request => {
       const nextNotes = notes.map((note, index) => index === noteIndex ? nextNote : note);
       const nextStars = stars.map((star, index) => index === starIndex ? { ...star, notes: nextNotes } : star);
       await saveState(admin, memory.userId, { ...memory.state, stars: nextStars });
-      return jsonResponse({ ok: true, note: noteSummary(nextNote, nextStars[starIndex], starIndex, noteIndex) });
+      return json({ ok: true, note: noteSummary(nextNote, nextStars[starIndex], starIndex, noteIndex) });
     }
 
     if (action === 'delete_note') {
-      requireDeleteIntent(body);
+      requireDelete(body);
       const starId = getString(body.starId);
       const noteId = getString(body.noteId);
       const starIndex = stars.findIndex(star => getString(star.id) === starId);
-      if (starIndex === -1) return errorResponse('not_found', 'Location was not found.', 404);
+      if (starIndex === -1) return fail('not_found', 'Location was not found.', 404);
       const notes = getNotes(stars[starIndex]);
       const noteIndex = notes.findIndex(note => getString(note.id) === noteId);
-      if (noteIndex === -1) return errorResponse('not_found', 'Note was not found.', 404);
+      if (noteIndex === -1) return fail('not_found', 'Note was not found.', 404);
       const removedNote = notes[noteIndex];
       const nextNotes = notes.filter((_, index) => index !== noteIndex);
       const nextStars = stars.map((star, index) => index === starIndex ? { ...star, notes: nextNotes } : star);
       await saveState(admin, memory.userId, { ...memory.state, stars: nextStars });
       const media = await deleteMediaPaths(admin, collectMediaPathsFromNote(removedNote, memory.userId));
-      return jsonResponse({ ok: true, deletedNoteId: noteId, media });
+      return json({ ok: true, deletedNoteId: noteId, media });
     }
 
     if (action === 'delete_star') {
-      requireDeleteIntent(body);
+      requireDelete(body);
       const starId = getString(body.starId);
       const starIndex = stars.findIndex(star => getString(star.id) === starId);
-      if (starIndex === -1) return errorResponse('not_found', 'Location was not found.', 404);
+      if (starIndex === -1) return fail('not_found', 'Location was not found.', 404);
       const removedStar = stars[starIndex];
       const removedTagOrder = getNumber(removedStar.tagOrder, 0);
       const removedGroupId = removedStar.tagGroupId;
@@ -790,19 +826,19 @@ serve(async request => {
         ));
       await saveState(admin, memory.userId, { ...memory.state, stars: nextStars });
       const media = await deleteMediaPaths(admin, mediaPaths);
-      return jsonResponse({ ok: true, deletedStarId: starId, media });
+      return json({ ok: true, deletedStarId: starId, media });
     }
 
     if (action === 'delete_route') {
-      requireDeleteIntent(body);
+      requireDelete(body);
       const routeId = getString(body.routeId);
       const nextTracks = tracks.filter(track => getString(track.id) !== routeId);
-      if (nextTracks.length === tracks.length) return errorResponse('not_found', 'Route was not found.', 404);
+      if (nextTracks.length === tracks.length) return fail('not_found', 'Route was not found.', 404);
       await saveState(admin, memory.userId, { ...memory.state, savedTracks: nextTracks });
-      return jsonResponse({ ok: true, deletedRouteId: routeId });
+      return json({ ok: true, deletedRouteId: routeId });
     }
 
-    return errorResponse('unknown_action', 'Unknown memory API action.', 400, {
+    return fail('unknown_action', 'Unknown memory API action.', 400, {
       actions: [
         'search_memories',
         'list_locations',
@@ -822,6 +858,6 @@ serve(async request => {
     });
   } catch (error) {
     if (error instanceof Response) return error;
-    return errorResponse('internal_error', error instanceof Error ? error.message : 'Unexpected memory API error.', 500);
+    return fail('internal_error', error instanceof Error ? error.message : 'Unexpected memory API error.', 500);
   }
 });

@@ -20,7 +20,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Export a readable HTML memory report with note text, dates, coordinates, and embedded images instead of raw app-state JSON.
 - Change the account password from the profile screen through Supabase Auth without storing readable passwords in app state.
 - Sync per-user data with Supabase Auth, RLS-protected tables, and private Storage.
-- Retry failed image deletions and clean unreferenced user media so deleted photos do not remain in cloud storage.
+- Retry failed image deletions so explicitly deleted photos do not remain in cloud storage.
 - Show an in-app user manual for map, record, statistics, account, icon, and permission behavior.
 
 ## Tech Stack
@@ -45,8 +45,10 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Legacy compressed data URL images still render as fallback, but new uploads use Storage when Supabase is configured.
 - Photo-GPS star creation uploads the selected photo through the same Storage flow, then creates a star and a note at the embedded photo coordinates. If the photo has no usable GPS metadata, no star is created.
 - Deleting an avatar, note image, star, or note queues the related Storage object for deletion. Failed deletes are retried after login, focus, or network recovery.
-- On login, the app scans only the current user's Storage folder and removes unreferenced media after a short grace window. It does not list or delete other users' files.
+- Automatic login cleanup of old unreferenced media is intentionally disabled to avoid multi-device stale-state deletion. Media cleanup should stay user-scoped and conservative.
 - Rich note HTML is sanitized before save/load so only the note editor's small allowlist is stored.
+- Cloud and local app state are normalized at runtime before entering React state, including stars, notes, routes, image metadata, HTML length, data URL compatibility, and GPS coordinate shape.
+- Unsaved active route recording is stored as a local draft and can be restored or discarded after reload.
 - Password-like fields are removed before saving cloud app state; password changes go through `supabase.auth.updateUser`.
 - Readable export intentionally omits raw app state, settings internals, and password fields. It writes a local `.html` report for the user to keep or archive.
 
@@ -203,13 +205,15 @@ For GitHub Pages:
 - The local MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.
 - MCP is read-only and updates `mcp_tokens.last_used_at` after successful token authentication. Direct Memory API write/delete actions are production-disabled by default and require normal user authentication, `ENABLE_MEMORY_API_WRITES=true`, and explicit confirmation fields.
 - Rich text HTML is sanitized on the client and in Memory API write paths. Stored notes allow only `p`, `br`, `span`, `u`, `figure`, and `img`, plus a small safe style/metadata allowlist.
+- Note editors paste plain text by default. Pasted images go through the upload path, and external HTML is not inserted directly into contentEditable editors.
+- Statistics iframe previews run without `allow-same-origin` in the sandbox. Future production work should localize external D3/topojson/world-atlas assets.
 - The invite code must live only in Supabase Function Secrets as `INVITE_CODE`.
 - After deployment, disable public Supabase Email signup so registration cannot bypass the Edge Function.
 - RLS ensures users can read/write only their own profile, app state, and Storage objects.
 - Private images are rendered with short-lived signed URLs; signed URLs are not stored in app state.
 - App state sanitization strips password-like fields before cloud save. Production builds do not allow local account/password fallback when Supabase is not configured.
 - Supabase Auth passwords cannot be viewed by the app. The app supports changing passwords, not revealing saved passwords.
-- Media cleanup is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`.
+- Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`.
 - Legacy data URL images are kept only as compatibility fallback. They should not be used as the long-term storage path for new media.
 - If GitHub Pages is used as a live demo, configure Supabase environment variables in GitHub Actions secrets before building.
 

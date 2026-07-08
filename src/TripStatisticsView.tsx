@@ -763,7 +763,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             key={`mosaic-${mapSessionKey}`}
             srcDoc={mosaicHtml}
             className="h-full w-full border-none pointer-events-none"
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts"
             title={copy.mosaicMap}
           />
 
@@ -848,7 +848,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             key={`mosaic-fullscreen-${mapSessionKey}-${expandedMapKey}`}
             srcDoc={fullscreenMapHtml}
             className="h-full w-full border-none"
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts"
             title={copy.expandedMosaicMap}
           />
         )}

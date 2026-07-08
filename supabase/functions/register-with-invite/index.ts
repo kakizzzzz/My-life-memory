@@ -11,7 +11,7 @@ import {
   sanitizeHtmlFields,
 } from '../_shared/security.ts';
 
-let corsHeaders = {
+const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -27,7 +27,11 @@ const sensitiveStateKeys = new Set([
   'invitecode',
 ]);
 
-const jsonResponse = (body: unknown, status = 200) => (
+const jsonResponse = (
+  body: unknown,
+  status = 200,
+  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
+) => (
   new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -68,19 +72,20 @@ serve(async request => {
     return forbiddenOriginResponse();
   }
 
-  corsHeaders = createCorsHeaders(request);
+  const localCorsHeaders = createCorsHeaders(request);
+  const json = (body: unknown, status = 200) => jsonResponse(body, status, localCorsHeaders);
 
   const ipLimit = hitRateLimit(`register:${clientIp(request)}`, 30, 60_000);
   if (ipLimit.limited) {
-    return rateLimitResponse(corsHeaders, ipLimit.retryAfterSeconds);
+    return rateLimitResponse(localCorsHeaders, ipLimit.retryAfterSeconds);
   }
 
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: localCorsHeaders });
   }
 
   if (request.method !== 'POST') {
-    return jsonResponse({ error: { code: 'method_not_allowed', message: 'Method not allowed.' } }, 405);
+    return json({ error: { code: 'method_not_allowed', message: 'Method not allowed.' } }, 405);
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
@@ -88,14 +93,14 @@ serve(async request => {
   const inviteSecret = Deno.env.get('INVITE_CODE') || '';
 
   if (!supabaseUrl || !serviceRoleKey || !inviteSecret) {
-    return jsonResponse({ error: { code: 'setup_required', message: 'Registration service is not configured.' } }, 500);
+    return json({ error: { code: 'setup_required', message: 'Registration service is not configured.' } }, 500);
   }
 
   let body: Record<string, unknown>;
   try {
     body = await request.json();
   } catch {
-    return jsonResponse({ error: { code: 'bad_request', message: 'Invalid request body.' } }, 400);
+    return json({ error: { code: 'bad_request', message: 'Invalid request body.' } }, 400);
   }
 
   const normalizedAccount = normalizeAccountId(body.account);
@@ -110,16 +115,16 @@ serve(async request => {
 
   if (!inviteCode || inviteCode !== inviteSecret) {
     const failLimit = hitRateLimit(`register-invite-fail:${clientIp(request)}:${normalizedAccount || 'none'}`, 5, 10 * 60_000);
-    if (failLimit.limited) return rateLimitResponse(corsHeaders, failLimit.retryAfterSeconds);
-    return jsonResponse({ error: { code: 'invalid_invite', message: 'Invite code is invalid.' } }, 403);
+    if (failLimit.limited) return rateLimitResponse(localCorsHeaders, failLimit.retryAfterSeconds);
+    return json({ error: { code: 'invalid_invite', message: 'Invite code is invalid.' } }, 403);
   }
 
   if (!normalizedAccount || !password) {
-    return jsonResponse({ error: { code: 'missing_credentials', message: 'Account and password are required.' } }, 400);
+    return json({ error: { code: 'missing_credentials', message: 'Account and password are required.' } }, 400);
   }
 
   if (password.length < 6) {
-    return jsonResponse({ error: { code: 'weak_password', message: 'Password must be at least 6 characters.' } }, 422);
+    return json({ error: { code: 'weak_password', message: 'Password must be at least 6 characters.' } }, 422);
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -136,11 +141,11 @@ serve(async request => {
     .maybeSingle();
 
   if (existingProfileError) {
-    return jsonResponse({ error: { code: 'setup_required', message: 'Could not check account.' } }, 500);
+    return json({ error: { code: 'setup_required', message: 'Could not check account.' } }, 500);
   }
 
   if (existingProfile) {
-    return jsonResponse({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
+    return json({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
   }
 
   const email = accountIdToAuthEmail(normalizedAccount);
@@ -164,12 +169,12 @@ serve(async request => {
       message.includes('registered') ||
       message.includes('duplicate')
     ) {
-      return jsonResponse({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
+      return json({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
     }
     if (message.includes('password')) {
-      return jsonResponse({ error: { code: 'weak_password', message: 'Password must be at least 6 characters.' } }, 422);
+      return json({ error: { code: 'weak_password', message: 'Password must be at least 6 characters.' } }, 422);
     }
-    return jsonResponse({ error: { code: 'setup_required', message: 'Could not create account.' } }, 500);
+    return json({ error: { code: 'setup_required', message: 'Could not create account.' } }, 500);
   }
 
   const userId = createdUser.user.id;
@@ -187,9 +192,9 @@ serve(async request => {
     await admin.auth.admin.deleteUser(userId).catch(() => {});
     const message = profileError.message.toLowerCase();
     if (message.includes('duplicate') || message.includes('unique')) {
-      return jsonResponse({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
+      return json({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
     }
-    return jsonResponse({ error: { code: 'setup_required', message: 'Could not create profile.' } }, 500);
+    return json({ error: { code: 'setup_required', message: 'Could not create profile.' } }, 500);
   }
 
   const { error: stateError } = await admin
@@ -201,10 +206,10 @@ serve(async request => {
 
   if (stateError) {
     await admin.auth.admin.deleteUser(userId).catch(() => {});
-    return jsonResponse({ error: { code: 'setup_required', message: 'Could not create app state.' } }, 500);
+    return json({ error: { code: 'setup_required', message: 'Could not create app state.' } }, 500);
   }
 
-  return jsonResponse({
+  return json({
     ok: true,
     userId,
     account: normalizedAccount,

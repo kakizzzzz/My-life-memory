@@ -8,6 +8,7 @@ import {
   type CloudSession,
 } from './supabaseClient';
 import { sanitizeRichHtmlFields } from './htmlSanitizer';
+import { normalizePersistedAppState } from './appStateNormalize';
 
 export type CloudProfile = {
   account: string;
@@ -165,7 +166,7 @@ const sanitizeCloudValue = (value: unknown): unknown => {
 };
 
 const sanitizeCloudAppState = (state: CloudAppState | null): CloudAppState | null => (
-  state ? sanitizeRichHtmlFields(sanitizeCloudValue(state) as CloudAppState) : null
+  state ? normalizePersistedAppState(sanitizeRichHtmlFields(sanitizeCloudValue(state) as CloudAppState)) : null
 );
 
 const isCloudSetupError = (error: unknown) => {

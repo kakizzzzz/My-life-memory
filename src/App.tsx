@@ -13,7 +13,6 @@ import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from 
 import { isCloudBackendEnabled, supabaseConfigMessage, supabaseFunctionUrl } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
-  cleanupUnreferencedUserMedia,
   createSignedImageUrl,
   dehydrateStorageMediaHtml,
   deleteImageFromStorageReliably,
@@ -28,6 +27,7 @@ import {
   type StoredImageMetadata,
 } from './lib/mediaStorage';
 import { sanitizeRichHtml, sanitizeRichHtmlFields } from './lib/htmlSanitizer';
+import { normalizePersistedAppState } from './lib/appStateNormalize';
 import {
   getCloudSession,
   loadCloudAccountData,
@@ -132,6 +132,12 @@ type TrackData = {
   color?: string;
   time?: number;
   distance?: number;
+};
+
+type TrackDraftData = {
+  paths: [number, number][][];
+  time: number;
+  savedAt: number;
 };
 
 type MapStyle = 'light' | 'dark' | 'aerial';
@@ -328,6 +334,7 @@ const DEFAULT_RECORD_STAR_LOCATION: [number, number] = [31.2312, 121.4744];
 const LEGACY_RECORD_STAR_LOCATION: [number, number] = [36.36705, 127.34425];
 const APP_STORAGE_KEY = 'campus-map-app-state-v1';
 const AUTO_USER_MANUAL_KEY_PREFIX = 'my-life-memory-auto-user-manual-seen-v1:';
+const TRACK_DRAFT_STORAGE_KEY_PREFIX = 'my-life-memory-active-track-draft-v1:';
 const GEOLOCATION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
   maximumAge: 0,
@@ -619,7 +626,7 @@ const readPersistedAppState = (): PersistedAppState | null => {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object'
-      ? sanitizeRichHtmlFields(parsed as PersistedAppState)
+      ? normalizePersistedAppState(sanitizeRichHtmlFields(parsed as PersistedAppState))
       : null;
   } catch {
     return null;
@@ -661,9 +668,77 @@ const writePersistedAppState = (state: PersistedAppState) => {
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(sanitizeRichHtmlFields(state)));
+    window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(normalizePersistedAppState(sanitizeRichHtmlFields(state))));
   } catch {
     // Storage can fail when image-heavy notes exceed the browser quota.
+  }
+};
+
+const getTrackDraftStorageKey = (account: string) => (
+  `${TRACK_DRAFT_STORAGE_KEY_PREFIX}${normalizeAccountId(account) || 'local'}`
+);
+
+const isValidTrackDraftPoint = (value: unknown): value is [number, number] => (
+  Array.isArray(value) &&
+  value.length >= 2 &&
+  Number.isFinite(Number(value[0])) &&
+  Number.isFinite(Number(value[1])) &&
+  Number(value[0]) >= -90 &&
+  Number(value[0]) <= 90 &&
+  Number(value[1]) >= -180 &&
+  Number(value[1]) <= 180
+);
+
+const normalizeTrackDraftPaths = (value: unknown): [number, number][][] => (
+  Array.isArray(value)
+    ? value
+        .map(segment => (
+          Array.isArray(segment)
+            ? segment
+                .map(point => isValidTrackDraftPoint(point) ? [Number(point[0]), Number(point[1])] as [number, number] : null)
+                .filter((point): point is [number, number] => Boolean(point))
+            : []
+        ))
+        .filter(segment => segment.length > 0)
+    : []
+);
+
+const readTrackDraft = (account: string): TrackDraftData | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(getTrackDraftStorageKey(account));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<TrackDraftData>;
+    const paths = normalizeTrackDraftPaths(parsed.paths);
+    if (paths.length === 0) return null;
+    return {
+      paths,
+      time: Math.max(0, Number(parsed.time) || 0),
+      savedAt: Math.max(0, Number(parsed.savedAt) || Date.now()),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeTrackDraft = (account: string, draft: TrackDraftData) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(getTrackDraftStorageKey(account), JSON.stringify(draft));
+  } catch {
+    // A route draft is only a recovery aid; storage quota errors should not stop tracking.
+  }
+};
+
+const clearTrackDraft = (account: string) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.removeItem(getTrackDraftStorageKey(account));
+  } catch {
+    // Ignore local cleanup failures.
   }
 };
 
@@ -749,6 +824,7 @@ const HOME_COPY = {
   photoLocationNoGps: 'This photo has no usable GPS',
   photoLocationFailed: 'Could not read this photo',
   photoGpsNoteTitle: 'Photo location',
+  restoreTrackDraft: 'An unsaved route draft was found. Restore it?',
     loginTitle: 'Account login',
     registerTitle: 'Account registration',
     loginHint: 'Enter your registered ID and password to log in.',
@@ -933,6 +1009,7 @@ const HOME_COPY = {
   photoLocationNoGps: '找不到该图片的定位信息',
   photoLocationFailed: '无法读取这张照片',
   photoGpsNoteTitle: '照片定位',
+  restoreTrackDraft: '发现一条未保存路线草稿，是否恢复？',
     loginTitle: '账号登录',
     registerTitle: '账号注册',
     loginHint: '输入已经注册的 ID 和密码登录。',
@@ -1117,6 +1194,7 @@ const HOME_COPY = {
   photoLocationNoGps: '이 사진에는 사용할 수 있는 GPS가 없습니다',
   photoLocationFailed: '이 사진을 읽을 수 없습니다',
   photoGpsNoteTitle: '사진 위치',
+  restoreTrackDraft: '저장하지 않은 경로 임시 기록이 있습니다. 복원할까요?',
     loginTitle: '계정 로그인',
     registerTitle: '계정 가입',
     loginHint: '등록한 ID와 비밀번호로 로그인하세요.',
@@ -2593,13 +2671,16 @@ export default function App() {
   const photoLocationStatusTimerRef = React.useRef<number | null>(null);
   const hasRequestedEntryLocationRef = React.useRef(false);
   const autoOpenedManualAccountRef = React.useRef<string | null>(null);
-  const cleanedMediaAccountRef = React.useRef<string | null>(null);
-  const isCleaningMediaRef = React.useRef(false);
-
+  const checkedTrackDraftAccountRef = React.useRef<string | null>(null);
   const trackingStateRef = React.useRef({ isTracking, isPaused });
+  const trackDraftStateRef = React.useRef({ paths: trackPaths, time: trackTime });
   useEffect(() => {
     trackingStateRef.current = { isTracking, isPaused };
   }, [isTracking, isPaused]);
+
+  useEffect(() => {
+    trackDraftStateRef.current = { paths: trackPaths, time: trackTime };
+  }, [trackPaths, trackTime]);
 
   const appendTrackPoint = React.useCallback((
     newLoc: [number, number],
@@ -2941,6 +3022,7 @@ export default function App() {
     if (isSignedIn) return;
     hasRequestedEntryLocationRef.current = false;
     autoOpenedManualAccountRef.current = null;
+    checkedTrackDraftAccountRef.current = null;
     hasSyncedDefaultStarToGpsRef.current = false;
     setHasSeenInitialPermissionPrompt(false);
     setActiveView('home');
@@ -3011,6 +3093,51 @@ export default function App() {
       if (interval) clearInterval(interval);
     };
   }, [isTracking, isPaused]);
+
+  useEffect(() => {
+    if (!isSignedIn || isTracking) return;
+    const account = normalizeAccountId(profile.account);
+    if (!account || checkedTrackDraftAccountRef.current === account) return;
+    checkedTrackDraftAccountRef.current = account;
+
+    const draft = readTrackDraft(account);
+    if (!draft) return;
+
+    const restorePrompt = (HOME_COPY[language as keyof typeof HOME_COPY] || HOME_COPY.en).restoreTrackDraft;
+    if (window.confirm(restorePrompt)) {
+      setTrackPaths(draft.paths);
+      setTrackTime(draft.time);
+      setIsTracking(true);
+      setIsPaused(true);
+      trackingStateRef.current = { isTracking: true, isPaused: true };
+      lastTrackPointRef.current = null;
+      trackingStartedAtRef.current = Date.now();
+      setActiveView('map');
+      setActiveHomePanel(null);
+    } else {
+      clearTrackDraft(account);
+    }
+  }, [isSignedIn, isTracking, language, profile.account]);
+
+  useEffect(() => {
+    if (!isSignedIn || !isTracking) return;
+    const account = normalizeAccountId(profile.account);
+    if (!account) return;
+
+    const saveDraft = () => {
+      const paths = trackDraftStateRef.current.paths.filter(path => path.length > 0);
+      if (paths.length === 0) return;
+      writeTrackDraft(account, {
+        paths,
+        time: trackDraftStateRef.current.time,
+        savedAt: Date.now(),
+      });
+    };
+
+    saveDraft();
+    const interval = window.setInterval(saveDraft, 4000);
+    return () => window.clearInterval(interval);
+  }, [isSignedIn, isTracking, profile.account]);
 
   useEffect(() => {
     const shouldWatchLocation = isWatchingUserLocation || isTracking;
@@ -3307,7 +3434,7 @@ export default function App() {
   }), [buildDefaultProfileName, language]);
 
   const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null) => {
-    const remoteState = (cloudState || {}) as PersistedAppState;
+    const remoteState = normalizePersistedAppState((cloudState || {}) as PersistedAppState) || {};
     const remoteProfile = remoteState.profile || {};
     const avatarImage = remoteProfile.avatarImage?.provider === 'supabase' && remoteProfile.avatarImage.path
       ? remoteProfile.avatarImage
@@ -3354,8 +3481,6 @@ export default function App() {
 
     if (!session?.user) {
       cloudReadyToSaveRef.current = false;
-      cleanedMediaAccountRef.current = null;
-      isCleaningMediaRef.current = false;
       setIsSignedIn(false);
       setActiveHomePanel(null);
       return;
@@ -3368,8 +3493,6 @@ export default function App() {
       console.error('Could not load cloud account data:', error);
       setLoginError(getCloudAuthErrorMessage(error, 'login'));
       cloudReadyToSaveRef.current = false;
-      cleanedMediaAccountRef.current = null;
-      isCleaningMediaRef.current = false;
       setIsSignedIn(false);
       setActiveHomePanel(null);
       void signOutCloudAccount();
@@ -3583,8 +3706,6 @@ export default function App() {
     setLoginPassword('');
     setIsPasswordRevealed(false);
     setLoginError('');
-    cleanedMediaAccountRef.current = null;
-    isCleaningMediaRef.current = false;
   };
 
   const getReferencedStoredMedia = React.useCallback(() => (
@@ -3627,39 +3748,6 @@ export default function App() {
       window.removeEventListener('focus', retryDeletes);
     };
   }, [isSignedIn, profile.account]);
-
-  useEffect(() => {
-    if (!isSupabaseMediaEnabled || !isSignedIn) return;
-    const account = normalizeAccountId(profile.account);
-    if (!account || cleanedMediaAccountRef.current === account) return;
-
-    const cleanupMedia = () => {
-      if (cleanedMediaAccountRef.current === account) return;
-      if (isCleaningMediaRef.current) return;
-      isCleaningMediaRef.current = true;
-      const referencedPaths = getReferencedStoredMedia().map(metadata => metadata.path);
-      void cleanupUnreferencedUserMedia(referencedPaths)
-        .then(() => {
-          cleanedMediaAccountRef.current = account;
-        })
-        .catch(error => {
-          console.warn('Could not clean unreferenced media:', error);
-        })
-        .finally(() => {
-          isCleaningMediaRef.current = false;
-        });
-    };
-
-    const cleanupTimer = window.setTimeout(cleanupMedia, 1200);
-    window.addEventListener('online', cleanupMedia);
-    window.addEventListener('focus', cleanupMedia);
-
-    return () => {
-      window.clearTimeout(cleanupTimer);
-      window.removeEventListener('online', cleanupMedia);
-      window.removeEventListener('focus', cleanupMedia);
-    };
-  }, [getReferencedStoredMedia, isSignedIn, profile.account]);
 
   useEffect(() => {
     if (!isCloudBackendEnabled) return;
@@ -5053,6 +5141,34 @@ export default function App() {
     moveReaderCaretToContentEnd();
   }, [homeCopy.noteImageAlt, homeCopy.removeImage, moveReaderCaretToContentEnd, readerRecord?.note.id]);
 
+  const handleReaderPaste = React.useCallback(async (
+    target: 'title' | 'content',
+    event: React.ClipboardEvent<HTMLElement>
+  ) => {
+    event.preventDefault();
+
+    if (target === 'content') {
+      const imageFiles = Array.from(event.clipboardData.files).filter((file): file is File => (
+        file instanceof File && file.type.startsWith('image/')
+      ));
+      if (imageFiles.length > 0) {
+        for (const file of imageFiles) {
+          await insertReaderImage(file);
+        }
+        return;
+      }
+    }
+
+    const rawText = event.clipboardData.getData('text/plain');
+    const text = target === 'title' ? rawText.replace(/\s+/g, ' ').trim() : rawText;
+    if (!text) return;
+
+    const element = getReaderElementForTarget(target);
+    if (!element) return;
+    insertStyledReaderText(element, getReaderSelectionRange(target), text, {});
+    handleReaderInput();
+  }, [getReaderElementForTarget, getReaderSelectionRange, handleReaderInput, insertReaderImage, insertStyledReaderText]);
+
   const handleReaderImageInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     await insertReaderImage(file);
@@ -5370,6 +5486,7 @@ export default function App() {
                 
                 {/* Route */}
                 <button className={btnClass} onClick={() => {
+                  clearTrackDraft(profile.account);
                   void startHeadingWatch();
                   const startedAt = Date.now();
                   trackingStartedAtRef.current = startedAt;
@@ -5468,6 +5585,7 @@ export default function App() {
               onClick={() => {
                 lastTrackPointRef.current = null;
                 trackingStartedAtRef.current = 0;
+                clearTrackDraft(profile.account);
                 setIsTracking(false);
                 setTrackPaths([]);
                 setTrackTime(0);
@@ -5490,6 +5608,7 @@ export default function App() {
                 }
                 lastTrackPointRef.current = null;
                 trackingStartedAtRef.current = 0;
+                clearTrackDraft(profile.account);
                 setIsTracking(false);
                 setTrackPaths([]);
                 setTrackTime(0);
@@ -6712,6 +6831,7 @@ export default function App() {
                       style={{ color: readerRecord.note.color || '#D2936D' }}
                       onBeforeInput={event => handleReaderBeforeInput('title', event)}
                       onInput={handleReaderInput}
+                      onPaste={event => handleReaderPaste('title', event)}
                       onFocus={saveReaderSelection}
                       onKeyUp={saveReaderSelection}
                       onMouseUp={saveReaderSelection}
@@ -6726,6 +6846,7 @@ export default function App() {
                       style={{ fontSize: `${readerRecord.note.fontSize || 20}px` }}
                       onBeforeInput={event => handleReaderBeforeInput('content', event)}
                       onInput={handleReaderInput}
+                      onPaste={event => handleReaderPaste('content', event)}
                       onFocus={saveReaderSelection}
                       onKeyUp={saveReaderSelection}
                       onMouseUp={saveReaderSelection}
