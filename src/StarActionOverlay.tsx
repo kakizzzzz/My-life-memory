@@ -4,15 +4,7 @@ import { useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Eye, Palette, Edit2, Trash2, Copy, ExternalLink } from 'lucide-react';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
-
-type StarData = {
-  id: string;
-  lat: number;
-  lng: number;
-  createdAt?: number;
-  tagOrder?: number;
-  color?: string;
-};
+import type { StarData } from './types/app';
 
 const writeClipboardText = async (text: string) => {
   if (navigator.clipboard?.writeText) {

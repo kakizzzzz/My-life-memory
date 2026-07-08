@@ -28,6 +28,18 @@ import {
 } from './lib/mediaStorage';
 import { sanitizeRichHtml, sanitizeRichHtmlFields } from './lib/htmlSanitizer';
 import { normalizePersistedAppState } from './lib/appStateNormalize';
+import type {
+  AppView,
+  HomePanel,
+  MapStyle,
+  NoteData,
+  PersistedAppState,
+  StarData,
+  SystemTheme,
+  TrackData,
+  TrackDraftData,
+  UserProfile,
+} from './types/app';
 import {
   getCloudSession,
   loadCloudAccountData,
@@ -99,60 +111,9 @@ function PhotoGpsStarIcon({ size = 24, strokeWidth = 2.2 }: { size?: number; str
   );
 }
 
-type NoteData = {
-  id: string;
-  title: string;
-  titleHtml?: string;
-  content: string;
-  contentHtml?: string;
-  imageUrl?: string;
-  imageUrls?: string[];
-  images?: StoredImageMetadata[];
-  fontSize?: number;
-  titleFontSize?: number;
-  createdAt?: number;
-  updatedAt?: number;
-  color?: string;
-};
-
-export type StarData = {
-  id: string;
-  lat: number;
-  lng: number;
-  createdAt?: number;
-  tagOrder?: number;
-  tagGroupId?: number;
-  color?: string;
-  notes?: NoteData[];
-};
-
-type TrackData = {
-  id: string;
-  paths: [number, number][][];
-  color?: string;
-  time?: number;
-  distance?: number;
-};
-
-type TrackDraftData = {
-  paths: [number, number][][];
-  time: number;
-  savedAt: number;
-};
-
-type MapStyle = 'light' | 'dark' | 'aerial';
-type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchResults';
-type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'apiSecurity' | 'mcp' | 'export' | null;
 type RecordsFilter = 'all' | 'monthly' | 'annual';
 type SearchField = 'coordinate' | 'text';
 type RecordsCalendarMode = 'month' | 'year';
-
-type SystemTheme = {
-  page: string;
-  card: string;
-  icon: string;
-  dark: string;
-};
 
 const UI_ICON_STROKE = 2.2;
 const MAP_TOOL_ICON_STROKE = UI_ICON_STROKE;
@@ -200,28 +161,10 @@ function MapStyleThumbnail({ styleName }: { styleName: MapStyle }) {
   );
 }
 
-type UserProfile = {
-  name: string;
-  account: string;
-  password: string;
-  avatarUrl: string;
-  avatarImage?: StoredImageMetadata;
-};
-
 type UploadedImage = {
   id: string;
   src: string;
   title: string;
-};
-
-type PersistedAppState = {
-  mapStyle?: MapStyle;
-  systemTheme?: Partial<SystemTheme>;
-  profile?: Partial<UserProfile>;
-  isSignedIn?: boolean;
-  language?: string;
-  stars?: StarData[];
-  savedTracks?: TrackData[];
 };
 
 type EditingNoteTarget = {

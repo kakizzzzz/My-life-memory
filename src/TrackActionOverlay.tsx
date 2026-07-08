@@ -4,14 +4,7 @@ import { useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Eye, Palette, Trash2, Clock, Route } from 'lucide-react';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
-
-type TrackData = {
-  id: string;
-  paths: [number, number][][];
-  color?: string;
-  time?: number;
-  distance?: number;
-};
+import type { TrackData } from './types/app';
 
 const DEFAULT_COLORS = [
   '#D2936D', '#B6A5B9', '#EDC727', '#88AA9A', '#C4D4C5', '#D0D5C1',

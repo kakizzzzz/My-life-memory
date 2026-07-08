@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { X, Palette, ImageIcon, Camera, Check, ChevronsLeft, ChevronsRight, Plus, Trash2, Underline } from 'lucide-react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
-import { StarData } from './App';
 import {
   dehydrateStorageMediaHtml,
   deleteImageFromStorageReliably,
@@ -15,14 +14,7 @@ import {
   type StoredImageMetadata,
 } from './lib/mediaStorage';
 import { sanitizeRichHtml } from './lib/htmlSanitizer';
-
-type NoteData = NonNullable<StarData['notes']>[number] & {
-  titleHtml?: string;
-  contentHtml?: string;
-  imageUrls?: string[];
-  images?: StoredImageMetadata[];
-  titleFontSize?: number;
-};
+import type { NoteData, StarData } from './types/app';
 
 interface NoteEditorModalProps {
   star: StarData;
