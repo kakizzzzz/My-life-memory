@@ -1,15 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { MapContainer, TileLayer, Marker, useMap, Polyline, CircleMarker } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Tag, Route, Star, X, Plus, Minus, Pause, Play, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, CalendarDays, Camera, Eye, EyeOff, Underline, KeyRound, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import * as exifr from 'exifr';
+import { DraggableStarMarker } from './DraggableStarMarker';
 import { StarActionOverlay } from './StarActionOverlay';
 import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
 import { LoginWorldMapBackground } from './LoginWorldMapBackground';
+import {
+  FlyToTarget,
+  MapEventHandlers,
+  MapViewportSync,
+  MapZoomTracker,
+  StarNavigationOverlay,
+} from './MapRuntimeComponents';
+import { MapStyleThumbnail } from './MapStyleThumbnail';
+import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
 import { SearchResultsScreen } from './SearchResultsScreen';
 import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
 import { isCloudBackendEnabled, supabaseConfigMessage, supabaseFunctionUrl } from './lib/supabaseClient';
@@ -130,78 +139,12 @@ function createLocationIcon(mapStyle: string, iconColor = '#c3c3c3', heading = 0
   });
 }
 
-function PhotoGpsStarIcon({ size = 24, strokeWidth = 2.2 }: { size?: number; strokeWidth?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path
-        d="M3.2 16.25 7.3 12.1 3.1 8.75 8.85 8.1 12 3 15.15 8.1 20.9 8.75 16.7 12.1 20.8 16.25"
-      />
-      <path
-        d="M8.95 16.35 12 12.85 15.05 16.35M12 12.85V18.35M7.2 19.7H16.8"
-      />
-    </svg>
-  );
-}
-
 type RecordsFilter = 'all' | 'monthly' | 'annual';
 type SearchField = 'coordinate' | 'text';
 type RecordsCalendarMode = 'month' | 'year';
 
 const UI_ICON_STROKE = 2.2;
 const MAP_TOOL_ICON_STROKE = UI_ICON_STROKE;
-
-function MapStyleThumbnail({ styleName }: { styleName: MapStyle }) {
-  const palette = {
-    light: {
-      background: '#e7e7e7',
-      water: '#d4d4d4',
-      land: '#ededed',
-      major: '#ffffff',
-      minor: '#bcbcbc',
-      point: '#9f9f9f',
-    },
-    dark: {
-      background: '#172630',
-      water: '#243947',
-      land: '#20313b',
-      major: '#8da5b1',
-      minor: '#526a75',
-      point: '#b5c2c8',
-    },
-    aerial: {
-      background: '#456c5c',
-      water: '#365f73',
-      land: '#6f7f55',
-      major: '#d8cda8',
-      minor: '#8c8c69',
-      point: '#f0e8c9',
-    },
-  }[styleName];
-
-  return (
-    <div className="h-full w-full overflow-hidden" style={{ background: palette.background }}>
-      <svg viewBox="0 0 48 48" className="h-full w-full" fill="none" preserveAspectRatio="none" aria-hidden="true">
-        <path d="M-4 31 C7 24 14 28 22 22 C30 16 35 18 52 7 L52 52 L-4 52 Z" fill={palette.water} opacity={styleName === 'light' ? 0.72 : 0.9} />
-        <path d="M-5 10 C7 2 15 8 23 5 C32 2 39 7 53 -2 L53 18 C41 23 31 20 24 25 C16 31 7 26 -5 34 Z" fill={palette.land} opacity={styleName === 'aerial' ? 0.85 : 0.58} />
-        <path d="M-5 38 C9 31 18 38 28 31 C37 25 42 28 53 21" stroke={palette.major} strokeWidth="4.4" strokeLinecap="round" opacity={styleName === 'aerial' ? 0.6 : 0.74} />
-        <path d="M2 9 C11 16 17 18 25 16 C33 14 39 18 47 25" stroke={palette.major} strokeWidth="3" strokeLinecap="round" opacity={styleName === 'aerial' ? 0.5 : 0.72} />
-        <path d="M12 -4 C13 9 14 19 17 28 C20 36 22 42 23 52" stroke={palette.minor} strokeWidth="2.1" strokeLinecap="round" opacity={styleName === 'light' ? 0.62 : 0.72} />
-        <path d="M34 -4 C30 7 30 14 34 22 C38 30 38 38 34 52" stroke={palette.minor} strokeWidth="2.1" strokeLinecap="round" opacity={styleName === 'light' ? 0.54 : 0.7} />
-        <circle cx="31.5" cy="19" r="2.4" fill={palette.point} opacity="0.86" />
-      </svg>
-    </div>
-  );
-}
 
 type UploadedImage = {
   id: string;
@@ -1394,323 +1337,6 @@ const hasMeaningfulNoteContent = (note: NoteData) => {
     (title && title !== 'New Note' && title !== 'Untitled note')
   );
 };
-
-function FlyToTarget({ target }: { target: [number, number] | null }) {
-  const map = useMap();
-  
-  useEffect(() => {
-    if (target) {
-      map.invalidateSize({ pan: false, debounceMoveend: true });
-      const currentCenter = map.getCenter();
-      const targetLatLng = L.latLng(target);
-      const distance = currentCenter.distanceTo(targetLatLng);
-      
-      // If we are already close, just pan smoothly to avoid zoom bouncing
-      if (distance < 200 && map.getZoom() === 16) {
-        map.panTo(target, { animate: true, duration: 0.5 });
-      } else {
-        map.flyTo(target, 16, { animate: true, duration: 1.2 });
-      }
-    }
-  }, [target, map]);
-  
-  return null;
-}
-
-function MapViewportSync({ location, shouldFollow }: { location: [number, number]; shouldFollow: boolean }) {
-  const map = useMap();
-  const locationRef = React.useRef(location);
-  const shouldFollowRef = React.useRef(shouldFollow);
-
-  useEffect(() => {
-    locationRef.current = location;
-    shouldFollowRef.current = shouldFollow;
-  }, [location, shouldFollow]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const frameIds: number[] = [];
-    const timeoutIds: number[] = [];
-
-    const recenterIfNeeded = () => {
-      if (!shouldFollowRef.current) return;
-      map.panTo(locationRef.current, { animate: false });
-    };
-
-    const syncMapSize = () => {
-      const run = () => {
-        map.invalidateSize({ pan: false, debounceMoveend: true });
-        recenterIfNeeded();
-      };
-
-      frameIds.push(window.requestAnimationFrame(run));
-    };
-
-    const scheduleViewportSync = () => {
-      syncMapSize();
-      [120, 360, 900].forEach(delay => {
-        timeoutIds.push(window.setTimeout(syncMapSize, delay));
-      });
-    };
-
-    scheduleViewportSync();
-
-    window.addEventListener('resize', scheduleViewportSync);
-    window.addEventListener('orientationchange', scheduleViewportSync);
-    window.addEventListener('pageshow', scheduleViewportSync);
-    window.visualViewport?.addEventListener('resize', scheduleViewportSync);
-    window.visualViewport?.addEventListener('scroll', scheduleViewportSync);
-
-    return () => {
-      frameIds.forEach(frameId => window.cancelAnimationFrame(frameId));
-      timeoutIds.forEach(timeoutId => window.clearTimeout(timeoutId));
-      window.removeEventListener('resize', scheduleViewportSync);
-      window.removeEventListener('orientationchange', scheduleViewportSync);
-      window.removeEventListener('pageshow', scheduleViewportSync);
-      window.visualViewport?.removeEventListener('resize', scheduleViewportSync);
-      window.visualViewport?.removeEventListener('scroll', scheduleViewportSync);
-    };
-  }, [map]);
-
-  useEffect(() => {
-    map.invalidateSize({ pan: false, debounceMoveend: true });
-    if (shouldFollow) {
-      map.panTo(location, { animate: true, duration: 0.35 });
-    }
-  }, [location, map, shouldFollow]);
-
-  return null;
-}
-
-function MapZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
-  const map = useMap();
-
-  useEffect(() => {
-    const updateZoom = () => onZoomChange(map.getZoom());
-
-    updateZoom();
-    map.on('zoomend', updateZoom);
-    return () => {
-      map.off('zoomend', updateZoom);
-    };
-  }, [map, onZoomChange]);
-
-  return null;
-}
-
-function StarNavigationOverlay({ activeTag, stars, onPrev, onNext }: { activeTag: { order: number, groupId: number } | null, stars: StarData[], onPrev: () => void, onNext: () => void }) {
-  const map = useMap();
-  const [pos, setPos] = useState({ x: -100, y: -100 });
-  const containerRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (containerRef.current) {
-      L.DomEvent.disableClickPropagation(containerRef.current);
-      L.DomEvent.disableScrollPropagation(containerRef.current);
-    }
-  }, [activeTag]);
-
-  useEffect(() => {
-    if (!activeTag) return;
-    const star = stars.find(s => s.tagOrder === activeTag.order && s.tagGroupId === activeTag.groupId);
-    if (!star) return;
-
-    const updatePos = () => {
-      const pt = map.latLngToLayerPoint([star.lat, star.lng]);
-      setPos({ x: pt.x, y: pt.y });
-    };
-
-    updatePos();
-    map.on('zoom', updatePos);
-    map.on('viewreset', updatePos);
-    return () => {
-      map.off('zoom', updatePos);
-      map.off('viewreset', updatePos);
-    };
-  }, [map, activeTag, stars]);
-
-  if (!activeTag || !stars.find(s => s.tagOrder === activeTag.order && s.tagGroupId === activeTag.groupId)) return null;
-
-  return createPortal(
-    <div ref={containerRef} style={{ position: 'absolute', top: pos.y - 45, left: pos.x, transform: 'translate(-50%, -50%)', zIndex: 1000, display: 'flex', gap: '8px', pointerEvents: 'auto' }}>
-      <button 
-        onClick={(e) => { e.stopPropagation(); onPrev(); }} 
-        className="w-10 h-10 rounded-full bg-[var(--app-active-surface)] border-2 border-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 shadow-md transition-transform active:scale-95"
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="11 17 6 12 11 7"></polyline>
-          <polyline points="18 17 13 12 18 7"></polyline>
-        </svg>
-      </button>
-      <button 
-        onClick={(e) => { e.stopPropagation(); onNext(); }} 
-        className="w-10 h-10 rounded-full bg-[var(--app-active-surface)] border-2 border-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 shadow-md transition-transform active:scale-95"
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="13 17 18 12 13 7"></polyline>
-          <polyline points="6 17 11 12 6 7"></polyline>
-        </svg>
-      </button>
-    </div>,
-    map.getPanes().popupPane
-  );
-}
-
-function createStarIcon(tagNumber?: number, isSelected?: boolean, colorHex?: string, isAerial?: boolean, badgeColor = '#c3c3c3') {
-  const color = colorHex || '#EDC727';
-  const badgeBg = isAerial ? '#ffffff' : badgeColor;
-
-  const badgeHtml = tagNumber ? `
-    <div style="position:absolute; bottom:-2px; right:-2px; background:${badgeBg}; color:black; font-weight:700; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:12px; font-family:Afacad, sans-serif; z-index:9999; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-      ${tagNumber}
-    </div>
-  ` : '';
-
-  const strokeColor = isSelected ? '#000000' : color;
-  const gradientId = `starGrad_${color.replace('#','')}${isSelected ? 'Selected' : ''}`;
-
-  return new L.DivIcon({
-    className: 'app-star-div-icon',
-    html: `
-      <div class="app-star-marker" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.15)) drop-shadow(0px 2px 4px rgba(0,0,0,0.12)); position: relative;">
-        <svg width="36" height="36" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="overflow: visible; ${isSelected ? 'z-index: 10;' : ''}">
-          <defs>
-            <linearGradient id="${gradientId}" x1="0" y1="0" x2="0" y2="24" gradientUnits="userSpaceOnUse">
-              <stop offset="15%" stop-color="${color}" />
-              <stop offset="100%" stop-color="#ffffff" />
-            </linearGradient>
-          </defs>
-          <polygon 
-            points="12 4 14.35 8.76 19.61 9.53 15.8 13.24 16.7 18.47 12 16 7.3 18.47 8.2 13.24 4.39 9.53 9.65 8.76" 
-            fill="${strokeColor}" 
-            stroke="${strokeColor}" 
-            stroke-width="5.5" 
-            stroke-linejoin="round"
-          />
-          <polygon 
-            points="12 4 14.35 8.76 19.61 9.53 15.8 13.24 16.7 18.47 12 16 7.3 18.47 8.2 13.24 4.39 9.53 9.65 8.76" 
-            fill="url(#${gradientId})" 
-            stroke="url(#${gradientId})" 
-            stroke-width="4.5" 
-            stroke-linejoin="round"
-          />
-        </svg>
-        ${badgeHtml}
-      </div>
-    `,
-    iconSize: [44, 44],
-    iconAnchor: [22, 22]
-  });
-}
-
-function DraggableStarMarker({
-  star,
-  isSelected,
-  mapStyle,
-  badgeColor,
-  onSelect,
-  onMove,
-}: {
-  star: StarData;
-  isSelected: boolean;
-  mapStyle: MapStyle;
-  badgeColor: string;
-  onSelect: (id: string, event: L.LeafletMouseEvent) => void;
-  onMove: (id: string, lat: number, lng: number) => void;
-}) {
-  const [markerPosition, setMarkerPosition] = React.useState<[number, number]>([star.lat, star.lng]);
-  const isDraggingRef = React.useRef(false);
-
-  useEffect(() => {
-    if (!isDraggingRef.current) setMarkerPosition([star.lat, star.lng]);
-  }, [star.lat, star.lng]);
-
-  const icon = React.useMemo(
-    () => createStarIcon(star.tagOrder, isSelected, star.color, mapStyle === 'aerial', badgeColor),
-    [badgeColor, isSelected, mapStyle, star.color, star.tagOrder]
-  );
-
-  const eventHandlers = React.useMemo(() => ({
-    click: (event: L.LeafletMouseEvent) => {
-      onSelect(star.id, event);
-    },
-    dragstart: () => {
-      isDraggingRef.current = true;
-    },
-    drag: (event: L.LeafletEvent) => {
-      const marker = event.target as L.Marker;
-      const position = marker.getLatLng();
-      setMarkerPosition([position.lat, position.lng]);
-    },
-    dragend: (event: L.LeafletEvent) => {
-      const marker = event.target as L.Marker;
-      const position = marker.getLatLng();
-      setMarkerPosition([position.lat, position.lng]);
-      isDraggingRef.current = false;
-      onMove(star.id, position.lat, position.lng);
-    },
-  }), [onMove, onSelect, star.id]);
-
-  return (
-    <Marker
-      position={markerPosition}
-      icon={icon}
-      draggable
-      eventHandlers={eventHandlers}
-    />
-  );
-}
-
-function MapEventHandlers({
-  onDrop,
-  onMapClick,
-  onMapReady,
-}: {
-  onDrop: (e: DragEvent, map: L.Map) => void;
-  onMapClick: () => void;
-  onMapReady: (map: L.Map | null) => void;
-}) {
-  const map = useMap();
-  
-  const clickRef = React.useRef(onMapClick);
-  useEffect(() => {
-    clickRef.current = onMapClick;
-  }, [onMapClick]);
-
-  useEffect(() => {
-    onMapReady(map);
-    return () => onMapReady(null);
-  }, [map, onMapReady]);
-
-  useEffect(() => {
-    const container = map.getContainer();
-    
-    const handleDragOver = (e: DragEvent) => {
-      e.preventDefault(); // allow drop
-    };
-    
-    const handleDrop = (e: DragEvent) => {
-      e.preventDefault();
-      onDrop(e, map);
-    };
-    
-    container.addEventListener('dragover', handleDragOver);
-    container.addEventListener('drop', handleDrop);
-    
-    const handleClick = () => {
-      if (clickRef.current) clickRef.current();
-    };
-    map.on('click', handleClick);
-
-    return () => {
-      container.removeEventListener('dragover', handleDragOver);
-      container.removeEventListener('drop', handleDrop);
-      map.off('click', handleClick);
-    };
-  }, [map, onDrop]);
-  return null;
-}
 
 export default function App() {
   const [persistedAppState] = useState<PersistedAppState | null>(() => readPersistedAppState());
