@@ -159,6 +159,18 @@ const escapeHtml = (value: string) => (
   }[char] || char))
 );
 
+const cssColorToHex = (color: string, fallback = '#D2936D') => {
+  if (!color) return fallback;
+  if (color.startsWith('#')) return color;
+  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (!match) return fallback;
+  return [match[1], match[2], match[3]]
+    .map(value => Number(value).toString(16).padStart(2, '0'))
+    .join('')
+    .replace(/^/, '#')
+    .toUpperCase();
+};
+
 const textToHtml = (content: string) => (
   content
     .split(/\n\s*\n/)
@@ -621,6 +633,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
         setActiveTextTarget('title');
         setSelectedFontSize(getFontSizeFromRange(range, titleEditor, currentNote?.titleFontSize || 18));
         setSelectedUnderline(getUnderlineFromRange(range, titleEditor));
+        setSelectedColor(getColorFromRange(range, titleEditor, currentNote?.color || '#D2936D'));
         return;
       }
     }
@@ -629,6 +642,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     setActiveTextTarget('title');
     setSelectedFontSize(currentNote?.titleFontSize || 18);
     setSelectedUnderline(false);
+    setSelectedColor(currentNote?.color || '#D2936D');
   };
 
   const rangeIsInsideEditor = (range: Range) => {
@@ -729,10 +743,46 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     return getUnderlineFromNode(range.startContainer, container);
   };
 
+  const getColorFromNode = (
+    node: Node | null,
+    container = editorRef.current,
+    fallbackColor = currentNote?.color || '#D2936D'
+  ) => {
+    if (!container || !node) return fallbackColor;
+
+    const element = node.nodeType === Node.ELEMENT_NODE
+      ? node as Element
+      : node.parentElement;
+    const target = element instanceof HTMLElement && container.contains(element)
+      ? element
+      : container;
+    return cssColorToHex(window.getComputedStyle(target).color, fallbackColor);
+  };
+
+  const getColorFromRange = (
+    range: Range,
+    container = editorRef.current,
+    fallbackColor = currentNote?.color || '#D2936D'
+  ) => {
+    if (!range.collapsed) {
+      const selectedTextNode = getFirstTextNodeInRange(range, container);
+      if (selectedTextNode) return getColorFromNode(selectedTextNode, container, fallbackColor);
+    }
+
+    if (range.startContainer.nodeType === Node.ELEMENT_NODE) {
+      const rangeContainer = range.startContainer;
+      const childAtCaret = rangeContainer.childNodes[range.startOffset] || rangeContainer.childNodes[range.startOffset - 1];
+      if (childAtCaret) return getColorFromNode(childAtCaret, container, fallbackColor);
+    }
+
+    return getColorFromNode(range.startContainer, container, fallbackColor);
+  };
+
   const syncToolbarFontSizeFromRange = (range: Range) => {
     if (!rangeIsInsideEditor(range)) return;
     setSelectedFontSize(getFontSizeFromRange(range));
     setSelectedUnderline(getUnderlineFromRange(range));
+    setSelectedColor(getColorFromRange(range));
   };
 
   const saveEditorSelection = () => {
@@ -1016,7 +1066,57 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
   const handleTextColor = (color: string) => {
     setSelectedColor(color);
-    applyStyleToSelection({ color });
+
+    if (activeTextTarget === 'title' || document.activeElement === titleEditorRef.current) {
+      clearPendingEditorStyles();
+      const titleEditor = titleEditorRef.current;
+      const titleRange = getTitleSelectionRange();
+
+      if (titleEditor && titleRange && !titleRange.collapsed) {
+        clearPendingTitleStyles();
+        applyStyleToRangeInElement(titleEditor, titleRange, { color }, syncTitleContent);
+      } else if (titleEditor && titleRange && hasMeaningfulContent(titleEditor)) {
+        pendingTitleStylesRef.current = {
+          ...pendingTitleStylesRef.current,
+          color,
+        };
+        restoreRangeInElement(titleEditor, titleRange);
+      } else if (titleEditor) {
+        pendingTitleStylesRef.current = {
+          ...pendingTitleStylesRef.current,
+          color,
+        };
+        setNotes(prev => {
+          const next = [...prev];
+          next[currentIndex] = { ...next[currentIndex], color };
+          return next;
+        });
+        titleEditor.focus();
+      }
+      return;
+    }
+
+    const editor = editorRef.current;
+    const range = getEditorSelectionRange();
+    const editorHasContent = Boolean(editor && hasMeaningfulContent(editor));
+
+    if (editor && range && !range.collapsed && rangeIsInsideEditor(range)) {
+      clearPendingEditorStyles();
+      applyStyleToSelection({ color });
+    } else if (range && editorHasContent) {
+      pendingEditorStylesRef.current = {
+        ...pendingEditorStylesRef.current,
+        color,
+      };
+      setActiveTextTarget('editor');
+      restoreEditorRange(range);
+    } else if (editor) {
+      pendingEditorStylesRef.current = {
+        ...pendingEditorStylesRef.current,
+        color,
+      };
+      moveCaretToEditorEnd();
+    }
   };
 
   const getContainingEditorBlock = (node: Node) => {
@@ -1427,8 +1527,8 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
       updatedAt: Date.now(),
       color: '#D2936D'
     };
-    setNotes([newNote, ...notes]);
-    setCurrentIndex(0);
+    setNotes(prev => [...prev, newNote]);
+    setCurrentIndex(notes.length);
   };
 
   const handleDeleteNote = () => {
