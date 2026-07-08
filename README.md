@@ -16,7 +16,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Tap a star to center it on the map, edit its notes, view and copy coordinates, or choose Apple Maps, AMap, Baidu Maps, or Google Maps for native map handoff.
 - Write rich notes with text color, font size, underline, photos, camera capture, direct full-screen editing, and saved creation timestamps.
 - Browse records by timeline, month/year filters, calendar markers, and a dedicated search results page that lists every matching note with match counts.
-- Track walking routes, view route statistics, location rankings, star-colored bar charts, and a dotted world-map overview.
+- Track adaptive movement routes, view route statistics, location rankings, star-colored bar charts, and a dotted world-map overview.
 - Export a readable HTML memory report with note text, dates, coordinates, and embedded images instead of raw app-state JSON.
 - Change the account password from the profile screen through Supabase Auth without storing readable passwords in app state.
 - Sync per-user data with Supabase Auth, RLS-protected tables, and private Storage.

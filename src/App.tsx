@@ -328,13 +328,131 @@ const GEOLOCATION_OPTIONS: PositionOptions = {
   maximumAge: 0,
   timeout: 15000,
 };
-const TRACK_MAX_ACCURACY_METERS = 75;
+const TRACK_MAX_ACCURACY_METERS = 150;
 const TRACK_MIN_DISTANCE_METERS = 2;
-const TRACK_MAX_SEGMENT_METERS = 35;
-const TRACK_MAX_SPEED_MPS = 4.5;
+const TRACK_MAX_DYNAMIC_MIN_DISTANCE_METERS = 20;
+const TRACK_MAX_PLAUSIBLE_SPEED_MPS = 90;
+const TRACK_MAX_SEGMENT_GAP_MS = 60_000;
 const TRACK_MIN_POINT_INTERVAL_MS = 500;
 const TRACK_STALE_POSITION_GRACE_MS = 2000;
 const CLOUD_PASSWORD_MIN_LENGTH = 6;
+
+type TrackPoint = {
+  location: [number, number];
+  timestamp: number;
+  accuracy?: number;
+};
+
+type TrackPointMetadata = {
+  accuracy?: number;
+  timestamp?: number;
+  speed?: number | null;
+};
+
+type TrackPointDecision = {
+  action: 'accept' | 'reject' | 'segment';
+  distanceMeters: number;
+  elapsedMs: number;
+};
+
+const clampTrackValue = (value: number, min: number, max: number) => (
+  Math.min(max, Math.max(min, value))
+);
+
+const getTrackAccuracy = (accuracy: unknown) => (
+  typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy >= 0
+    ? accuracy
+    : undefined
+);
+
+const getDynamicTrackMinDistance = ({
+  previousAccuracy,
+  nextAccuracy,
+  computedSpeed,
+  reportedSpeed,
+}: {
+  previousAccuracy?: number;
+  nextAccuracy?: number;
+  computedSpeed: number;
+  reportedSpeed: number | null;
+}) => {
+  const accuracyReference = Math.max(previousAccuracy ?? 0, nextAccuracy ?? 0);
+  const speedReference = Math.max(computedSpeed, reportedSpeed ?? 0);
+  const accuracyNoiseFloor = accuracyReference * 0.1;
+  const speedNoiseFloor = speedReference * 0.8;
+  return clampTrackValue(
+    Math.max(TRACK_MIN_DISTANCE_METERS, accuracyNoiseFloor, speedNoiseFloor),
+    TRACK_MIN_DISTANCE_METERS,
+    TRACK_MAX_DYNAMIC_MIN_DISTANCE_METERS
+  );
+};
+
+const getDynamicTrackMaxSegmentDistance = (
+  elapsedSeconds: number,
+  previousAccuracy?: number,
+  nextAccuracy?: number
+) => {
+  const accuracyPadding = Math.max(previousAccuracy ?? 0, nextAccuracy ?? 0) * 2;
+  return Math.max(80, elapsedSeconds * TRACK_MAX_PLAUSIBLE_SPEED_MPS + accuracyPadding);
+};
+
+// Adaptive movement recording: this keeps one route algorithm for walking,
+// cycling, driving, and normal transit without exposing a transport-mode UI.
+const shouldAcceptTrackPoint = (
+  previousPoint: TrackPoint | null,
+  nextPoint: TrackPoint,
+  metadata: TrackPointMetadata = {}
+): TrackPointDecision => {
+  const nextAccuracy = getTrackAccuracy(metadata.accuracy ?? nextPoint.accuracy);
+  if (nextAccuracy !== undefined && nextAccuracy > TRACK_MAX_ACCURACY_METERS) {
+    return { action: 'reject', distanceMeters: 0, elapsedMs: 0 };
+  }
+
+  if (!previousPoint) {
+    return { action: 'segment', distanceMeters: 0, elapsedMs: 0 };
+  }
+
+  const distanceMeters = L.latLng(previousPoint.location).distanceTo(L.latLng(nextPoint.location));
+  const elapsedMs = Math.max(0, nextPoint.timestamp - previousPoint.timestamp);
+  const elapsedSeconds = elapsedMs / 1000;
+  const computedSpeed = elapsedSeconds > 0 ? distanceMeters / elapsedSeconds : 0;
+  const reportedSpeed = (
+    typeof metadata.speed === 'number' && Number.isFinite(metadata.speed) && metadata.speed >= 0
+  ) ? metadata.speed : null;
+
+  if (elapsedMs < TRACK_MIN_POINT_INTERVAL_MS) {
+    return { action: 'reject', distanceMeters, elapsedMs };
+  }
+
+  const dynamicMinDistance = getDynamicTrackMinDistance({
+    previousAccuracy: previousPoint.accuracy,
+    nextAccuracy,
+    computedSpeed,
+    reportedSpeed,
+  });
+  if (distanceMeters < dynamicMinDistance) {
+    return { action: 'reject', distanceMeters, elapsedMs };
+  }
+
+  if (computedSpeed > TRACK_MAX_PLAUSIBLE_SPEED_MPS) {
+    return { action: 'reject', distanceMeters, elapsedMs };
+  }
+
+  if (elapsedMs > TRACK_MAX_SEGMENT_GAP_MS) {
+    return { action: 'segment', distanceMeters, elapsedMs };
+  }
+
+  const dynamicMaxDistance = getDynamicTrackMaxSegmentDistance(
+    elapsedSeconds,
+    previousPoint.accuracy,
+    nextAccuracy
+  );
+  if (distanceMeters > dynamicMaxDistance) {
+    return { action: 'segment', distanceMeters, elapsedMs };
+  }
+
+  return { action: 'accept', distanceMeters, elapsedMs };
+};
 
 const createClientId = () => (
   typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -681,7 +799,7 @@ const HOME_COPY = {
     initialPermissionsTitle: 'Location permission',
     initialPermissionsBody: 'Allow location to center the map on your current position and update the origin marker.',
     notNow: 'Later',
-    manualIntro: 'My life memory is a private life map. It starts from your current location, lets you place stars for meaningful places, and connects notes, photos, walking routes, coordinates, and statistics into one personal memory space.',
+    manualIntro: 'My life memory is a private life map. It starts from your current location, lets you place stars for meaningful places, and connects notes, photos, movement routes, coordinates, and statistics into one personal memory space.',
     manualSections: [
       { title: 'Map and stars', body: 'A star is one place memory. Tap an empty spot on the map to place a star directly, or drag the star tool onto the map to create it more deliberately. After a star is placed, you can still drag it to adjust the location. Tap a star to write notes, add photos, view coordinates, copy them, or choose another map app to open the place.' },
       { title: 'Location and direction', body: 'Open permissions to request real GPS and device direction. The black origin marker is your current position, and the translucent probe shows the phone-facing direction. On mobile Safari, direction data usually requires HTTPS and a user tap. Walking updates depend on GPS accuracy, so outdoor movement is more reliable than indoor testing.' },
@@ -696,7 +814,7 @@ const HOME_COPY = {
     manualIconHome: 'Home contains profile editing, theme colors, image gallery, permissions, this manual, and account exit.',
     manualIconStar: 'Star creates a place memory. You can tap the map to place it, drag the star tool onto the map, tap an existing star to edit it, and drag a placed star to refine its location.',
     manualIconLocation: 'Location returns the map to your current GPS origin. The direction probe rotates with phone orientation when browser permission and hardware support are available.',
-    manualIconRoute: 'Route starts, pauses, saves, or reviews a walking route. Distance depends on GPS accuracy and updates while location points arrive.',
+    manualIconRoute: 'Route starts, pauses, saves, or reviews an adaptive movement record. It uses one GPS filter for walking, cycling, driving, and transit; distance depends on GPS accuracy and updates while location points arrive.',
     manualIconCamera: 'Camera opens photo capture or image selection for a note; on mobile it can use the full-screen camera flow when the browser allows it.',
     manualIconPhotoGps: 'The star upload icon, drawn as a star with an upload arrow, reads GPS from one original photo and creates a star with a photo note at that location. If the photo has no usable location data, it only shows a short notice and does not create a star.',
     manualIconSave: 'Save writes the current note edits, including text, images, color, and font-size changes.',
@@ -829,7 +947,7 @@ const HOME_COPY = {
     initialPermissionsTitle: '定位权限',
     initialPermissionsBody: '允许定位后，地图会回到你当前的位置，并更新原点。',
     notNow: '稍后',
-    manualIntro: 'My life memory 是一个私人生活地图。它从你的当前位置出发，用星星记录重要地点，再把文字、图片、步行路线、坐标和统计放进同一个记忆空间里。',
+    manualIntro: 'My life memory 是一个私人生活地图。它从你的当前位置出发，用星星记录重要地点，再把文字、图片、移动路线、坐标和统计放进同一个记忆空间里。',
     manualSections: [
       { title: '地图与星星', body: '星星代表一个地点记忆。你可以点击地图上的空白位置直接创建星星，也可以把星星工具拖到地图上创建；星星放好以后仍然可以拖动调整位置。点开星星后，可以写笔记、添加照片、查看坐标、复制坐标，也可以选择 Apple 地图、高德、百度或 Google 地图打开这个地点。' },
       { title: '定位与方向', body: '打开权限会请求真实 GPS 和手机方向。黑色原点代表你当前的位置，半透明探头表示手机朝向；浏览器和手机支持时，转动手机探头会跟着旋转，走动时位置会随着 GPS 更新。移动端 Safari 通常需要 HTTPS 和用户点击后才能读取方向，室内 GPS 也可能不如室外稳定。' },
@@ -844,7 +962,7 @@ const HOME_COPY = {
     manualIconHome: '主页图标会进入个人区域，用来修改信息、更换主题、查看图片仓库、打开权限、阅读手册或退出账号。',
     manualIconStar: '星星图标用于创建地点记忆。可以点击地图创建，也可以把星星拖到地图上创建；已经放好的星星也可以拖动调整位置，点开后可以编辑笔记和照片。',
     manualIconLocation: '定位图标会让地图回到当前 GPS 原点。原点旁的半透明探头代表手机朝向，权限和设备支持时会随手机转动。',
-    manualIconRoute: '路线图标用于开始、暂停、保存或查看步行路线。路线距离会根据 GPS 点计算，GPS 精度越好越准确。',
+    manualIconRoute: '路线图标用于开始、暂停、保存或查看自适应移动记录。它用同一套 GPS 过滤逻辑适配步行、骑行、坐车等场景，路线距离会根据 GPS 点计算，GPS 精度越好越准确。',
     manualIconCamera: '相机图标用于拍照或给笔记添加图片。移动端浏览器允许时，可以进入更接近全屏的拍摄体验。',
     manualIconPhotoGps: '星星上传图标是星星里的上传箭头，用于读取一张原始照片里的 GPS 信息，并在照片地点自动创建星星和带图笔记。如果照片没有可用定位，只会短暂提示，不会创建星星。',
     manualIconSave: '保存图标用于保存当前笔记修改，包括文字、图片、颜色和字号等内容。',
@@ -977,7 +1095,7 @@ const HOME_COPY = {
     initialPermissionsTitle: '위치 권한',
     initialPermissionsBody: '위치를 허용하면 지도가 현재 위치로 이동하고 원점이 업데이트됩니다.',
     notNow: '나중에',
-    manualIntro: 'My life memory는 현재 위치에서 시작해 별표로 중요한 장소를 남기고, 글, 사진, 도보 경로, 좌표, 통계를 하나의 개인 기억 지도에 연결하는 앱입니다.',
+    manualIntro: 'My life memory는 현재 위치에서 시작해 별표로 중요한 장소를 남기고, 글, 사진, 이동 경로, 좌표, 통계를 하나의 개인 기억 지도에 연결하는 앱입니다.',
     manualSections: [
       { title: '지도와 별표', body: '별표는 하나의 장소 기억입니다. 지도 빈 곳을 탭해 바로 만들 수 있고, 별표 도구를 지도 위로 끌어 더 정확히 만들 수도 있습니다. 만든 뒤에도 별표를 끌어 위치를 조정할 수 있습니다. 별표를 열면 노트 작성, 사진 추가, 좌표 보기, 좌표 복사, 다른 지도 앱에서 열기를 할 수 있습니다.' },
       { title: '위치와 방향', body: '권한을 열면 실제 GPS와 휴대폰 방향을 요청합니다. 검은 원점은 현재 위치이고 반투명 표시는 휴대폰이 향하는 방향입니다. 모바일 Safari에서는 보통 HTTPS와 사용자 탭이 필요하며, 실내보다 실외 GPS가 더 안정적입니다.' },
@@ -992,7 +1110,7 @@ const HOME_COPY = {
     manualIconHome: '홈 아이콘은 프로필, 테마, 이미지 갤러리, 권한, 사용 설명서, 로그아웃을 여는 개인 영역입니다.',
     manualIconStar: '별표 아이콘은 장소 기억을 만듭니다. 지도를 탭하거나 별표를 끌어 만들 수 있고, 만든 별표도 끌어서 위치를 조정할 수 있습니다.',
     manualIconLocation: '위치 아이콘은 지도를 현재 GPS 원점으로 되돌립니다. 방향 표시는 권한과 기기가 지원할 때 휴대폰 방향에 맞춰 회전합니다.',
-    manualIconRoute: '경로 아이콘은 도보 경로를 시작, 일시정지, 저장, 확인할 때 사용합니다. 거리는 GPS 포인트를 기준으로 계산됩니다.',
+    manualIconRoute: '경로 아이콘은 적응형 이동 기록을 시작, 일시정지, 저장, 확인할 때 사용합니다. 걷기, 자전거, 차량, 대중교통을 하나의 GPS 필터로 처리하며 거리는 GPS 포인트를 기준으로 계산됩니다.',
     manualIconCamera: '카메라 아이콘은 사진을 촬영하거나 노트에 이미지를 추가합니다. 모바일 브라우저가 허용하면 더 큰 촬영 화면을 사용할 수 있습니다.',
     manualIconPhotoGps: '별표 안의 업로드 화살표 아이콘은 원본 사진의 GPS를 읽어 해당 위치에 사진 노트가 포함된 별표를 만듭니다. 사용할 수 있는 위치 정보가 없으면 짧게 알림만 표시하고 별표는 만들지 않습니다.',
     manualIconSave: '저장 아이콘은 현재 노트의 텍스트, 이미지, 색상, 글자 크기 변경을 저장합니다.',
@@ -2334,7 +2452,7 @@ export default function App() {
   const gpsWatchIdRef = React.useRef<number | null>(null);
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
-  const lastTrackPointRef = React.useRef<{ location: [number, number]; timestamp: number; accuracy?: number } | null>(null);
+  const lastTrackPointRef = React.useRef<TrackPoint | null>(null);
   const trackingStartedAtRef = React.useRef(0);
   const lastCompassHeadingAtRef = React.useRef(0);
   const isRequestingHeadingPermissionRef = React.useRef(false);
@@ -2356,11 +2474,12 @@ export default function App() {
 
   const appendTrackPoint = React.useCallback((
     newLoc: [number, number],
-    metadata: { accuracy?: number; timestamp?: number; speed?: number | null } = {}
+    metadata: TrackPointMetadata = {}
   ) => {
-    const accuracy = Number.isFinite(metadata.accuracy) ? metadata.accuracy : undefined;
+    const accuracy = getTrackAccuracy(metadata.accuracy);
     const timestamp = Number.isFinite(metadata.timestamp) ? metadata.timestamp as number : Date.now();
     const previousAcceptedPoint = lastTrackPointRef.current;
+    const nextPoint: TrackPoint = { location: newLoc, timestamp, accuracy };
 
     if (
       trackingStartedAtRef.current > 0 &&
@@ -2368,8 +2487,6 @@ export default function App() {
     ) {
       return;
     }
-
-    if (accuracy !== undefined && accuracy > TRACK_MAX_ACCURACY_METERS) return;
 
     const startNewSegment = () => {
       setTrackPaths(prev => {
@@ -2387,30 +2504,16 @@ export default function App() {
         }
         return [...newPaths, [newLoc]];
       });
-      lastTrackPointRef.current = { location: newLoc, timestamp, accuracy };
+      lastTrackPointRef.current = nextPoint;
     };
 
-    if (!previousAcceptedPoint) {
-      startNewSegment();
+    const decision = shouldAcceptTrackPoint(previousAcceptedPoint, nextPoint, metadata);
+
+    if (decision.action === 'reject') {
       return;
     }
 
-    const distanceMeters = L.latLng(previousAcceptedPoint.location).distanceTo(L.latLng(newLoc));
-    const elapsedMs = Math.max(0, timestamp - previousAcceptedPoint.timestamp);
-    const elapsedSeconds = elapsedMs / 1000;
-    const computedSpeed = elapsedSeconds > 0 ? distanceMeters / elapsedSeconds : 0;
-    const reportedSpeed = (
-      typeof metadata.speed === 'number' && Number.isFinite(metadata.speed)
-    ) ? metadata.speed : null;
-
-    if (elapsedMs < TRACK_MIN_POINT_INTERVAL_MS) return;
-    if (distanceMeters < TRACK_MIN_DISTANCE_METERS) return;
-
-    if (
-      distanceMeters > TRACK_MAX_SEGMENT_METERS ||
-      computedSpeed > TRACK_MAX_SPEED_MPS ||
-      (reportedSpeed !== null && reportedSpeed > TRACK_MAX_SPEED_MPS)
-    ) {
+    if (decision.action === 'segment') {
       startNewSegment();
       return;
     }
@@ -2431,7 +2534,7 @@ export default function App() {
       newPaths[lastIndex] = currentSegment;
       return newPaths;
     });
-    lastTrackPointRef.current = { location: newLoc, timestamp, accuracy };
+    lastTrackPointRef.current = nextPoint;
   }, []);
 
   const syncDefaultStarNearUser = React.useCallback((newLoc: [number, number], force = false) => {
