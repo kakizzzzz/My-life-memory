@@ -3,6 +3,7 @@ import { isCloudBackendEnabled, supabase } from './supabaseClient';
 export const MEDIA_BUCKET = 'life-media';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+const PENDING_MEDIA_DELETE_STORAGE_KEY = 'my-life-memory-pending-media-deletes-v1';
 
 export type StoredImageMetadata = {
   provider: 'supabase';
@@ -26,6 +27,61 @@ export const isSupabaseMediaEnabled = Boolean(isCloudBackendEnabled && supabase)
 const cacheKeyForMetadata = (metadata: Pick<StoredImageMetadata, 'bucket' | 'path'>) => (
   `${metadata.bucket}/${metadata.path}`
 );
+
+const sameStoredImage = (
+  a: Pick<StoredImageMetadata, 'bucket' | 'path'>,
+  b: Pick<StoredImageMetadata, 'bucket' | 'path'>
+) => (
+  cacheKeyForMetadata(a) === cacheKeyForMetadata(b)
+);
+
+const uniqueMetadata = (metadataList: StoredImageMetadata[]) => (
+  metadataList.filter((metadata, index, list) => (
+    list.findIndex(item => sameStoredImage(item, metadata)) === index
+  ))
+);
+
+const readPendingDeletes = () => {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw = window.localStorage.getItem(PENDING_MEDIA_DELETE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((metadata): metadata is StoredImageMetadata => (
+      metadata?.provider === 'supabase' &&
+      typeof metadata.bucket === 'string' &&
+      typeof metadata.path === 'string' &&
+      metadata.path.length > 0
+    ));
+  } catch {
+    return [];
+  }
+};
+
+const writePendingDeletes = (metadataList: StoredImageMetadata[]) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const uniqueList = uniqueMetadata(metadataList);
+    if (uniqueList.length === 0) {
+      window.localStorage.removeItem(PENDING_MEDIA_DELETE_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(PENDING_MEDIA_DELETE_STORAGE_KEY, JSON.stringify(uniqueList));
+  } catch {
+    // Best effort. Storage cleanup will retry whenever pending metadata can be persisted again.
+  }
+};
+
+const queueImageDeletion = (metadata: StoredImageMetadata) => {
+  writePendingDeletes([...readPendingDeletes(), metadata]);
+};
+
+const removeQueuedImageDeletion = (metadata: StoredImageMetadata) => {
+  writePendingDeletes(readPendingDeletes().filter(item => !sameStoredImage(item, metadata)));
+};
 
 const safePart = (value?: string) => (
   String(value || '')
@@ -143,15 +199,46 @@ export const uploadImageToStorage = async (
 };
 
 export const deleteImageFromStorage = async (metadata: StoredImageMetadata) => {
-  if (!supabase || metadata.provider !== 'supabase' || !metadata.path) return;
+  if (!supabase || metadata.provider !== 'supabase' || !metadata.path) return true;
 
-  await supabase.storage
-    .from(metadata.bucket || MEDIA_BUCKET)
-    .remove([metadata.path])
-    .catch(error => {
+  try {
+    const { error } = await supabase.storage
+      .from(metadata.bucket || MEDIA_BUCKET)
+      .remove([metadata.path]);
+
+    if (error) {
       console.warn('Could not delete Supabase Storage image:', error);
-    });
-  signedUrlCache.delete(cacheKeyForMetadata(metadata));
+      return false;
+    }
+
+    signedUrlCache.delete(cacheKeyForMetadata(metadata));
+    return true;
+  } catch (error) {
+    console.warn('Could not delete Supabase Storage image:', error);
+    return false;
+  }
+};
+
+export const deleteImageFromStorageReliably = async (metadata: StoredImageMetadata) => {
+  const deleted = await deleteImageFromStorage(metadata);
+  if (deleted) {
+    removeQueuedImageDeletion(metadata);
+  } else {
+    queueImageDeletion(metadata);
+  }
+  return deleted;
+};
+
+export const retryPendingImageDeletions = async () => {
+  const pendingDeletes = uniqueMetadata(readPendingDeletes());
+  if (pendingDeletes.length === 0) return;
+
+  const remainingDeletes: StoredImageMetadata[] = [];
+  for (const metadata of pendingDeletes) {
+    const deleted = await deleteImageFromStorage(metadata);
+    if (!deleted) remainingDeletes.push(metadata);
+  }
+  writePendingDeletes(remainingDeletes);
 };
 
 export const imageMetadataFromElement = (element: Element | null): StoredImageMetadata | null => {

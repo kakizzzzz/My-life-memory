@@ -15,10 +15,11 @@ import {
   buildStorageImageSrc,
   createSignedImageUrl,
   dehydrateStorageMediaHtml,
-  deleteImageFromStorage,
+  deleteImageFromStorageReliably,
   hydrateStorageMediaHtml,
   imageMetadataFromElement,
   isSupabaseMediaEnabled,
+  retryPendingImageDeletions,
   storageImageAttrsHtml,
   storagePlaceholderSrc,
   uploadImageToStorage,
@@ -1328,6 +1329,12 @@ const uniqueStoredImages = (metadataList: StoredImageMetadata[]) => (
   ))
 );
 
+const getRemovedStoredImages = (previousImages: StoredImageMetadata[], nextImages: StoredImageMetadata[]) => (
+  uniqueStoredImages(previousImages).filter(previous => (
+    !nextImages.some(next => next.bucket === previous.bucket && next.path === previous.path)
+  ))
+);
+
 const getStoredImagesFromNote = (note?: NoteData) => (
   uniqueStoredImages([
     ...(note?.images || []),
@@ -1448,7 +1455,7 @@ const hasImageExportError = (value: unknown): boolean => {
 
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
-    void deleteImageFromStorage(metadata);
+    void deleteImageFromStorageReliably(metadata);
   });
 };
 
@@ -3239,6 +3246,23 @@ export default function App() {
   }, [isSignedIn, profile.avatarImage, profile.account, stars]);
 
   useEffect(() => {
+    if (!isSupabaseMediaEnabled || !isSignedIn) return;
+
+    const retryDeletes = () => {
+      void retryPendingImageDeletions();
+    };
+
+    retryDeletes();
+    window.addEventListener('online', retryDeletes);
+    window.addEventListener('focus', retryDeletes);
+
+    return () => {
+      window.removeEventListener('online', retryDeletes);
+      window.removeEventListener('focus', retryDeletes);
+    };
+  }, [isSignedIn, profile.account]);
+
+  useEffect(() => {
     if (!isCloudBackendEnabled) return;
 
     let isMounted = true;
@@ -3709,7 +3733,7 @@ export default function App() {
 
     setProfile(prev => ({ ...prev, avatarUrl, avatarImage }));
     if (previousAvatarImage && previousAvatarImage.key !== avatarImage?.key) {
-      void deleteImageFromStorage(previousAvatarImage);
+      void deleteImageFromStorageReliably(previousAvatarImage);
     }
     event.target.value = '';
   };
@@ -4099,6 +4123,7 @@ export default function App() {
     const content = htmlToText(contentHtml);
     const timestamp = Date.now();
     const images = extractStoredImagesFromHtml(contentHtml);
+    deleteStoredImages(getRemovedStoredImages(getStoredImagesFromNote(readerRecord.note), images));
 
     setStars(prev => prev.map(star => {
       if (star.id !== readerRecord.star.id) return star;
@@ -4495,7 +4520,7 @@ export default function App() {
       event.preventDefault();
       const figure = removeButton.closest('[data-note-image="true"]');
       const metadata = imageMetadataFromElement(figure);
-      if (metadata) void deleteImageFromStorage(metadata);
+      if (metadata) void deleteImageFromStorageReliably(metadata);
       figure?.remove();
       if (editor) ensureReaderEditableTailAfterMedia(editor);
       return;

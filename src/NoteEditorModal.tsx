@@ -5,7 +5,7 @@ import { HexColorInput, HexColorPicker } from 'react-colorful';
 import { StarData } from './App';
 import {
   dehydrateStorageMediaHtml,
-  deleteImageFromStorage,
+  deleteImageFromStorageReliably,
   hydrateStorageMediaHtml,
   imageMetadataFromElement,
   isSupabaseMediaEnabled,
@@ -451,6 +451,12 @@ const uniqueStoredImages = (metadataList: StoredImageMetadata[]) => (
   ))
 );
 
+const getRemovedStoredImages = (previousImages: StoredImageMetadata[], nextImages: StoredImageMetadata[]) => (
+  uniqueStoredImages(previousImages).filter(previous => (
+    !nextImages.some(next => next.bucket === previous.bucket && next.path === previous.path)
+  ))
+);
+
 const getStoredImagesFromNote = (note?: NoteData) => (
   uniqueStoredImages([
     ...(note?.images || []),
@@ -460,7 +466,7 @@ const getStoredImagesFromNote = (note?: NoteData) => (
 
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
-    void deleteImageFromStorage(metadata);
+    void deleteImageFromStorageReliably(metadata);
   });
 };
 
@@ -1377,7 +1383,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
       e.preventDefault();
       const figure = removeButton.closest('[data-note-image="true"]');
       const metadata = imageMetadataFromElement(figure);
-      if (metadata) void deleteImageFromStorage(metadata);
+      if (metadata) void deleteImageFromStorageReliably(metadata);
       figure?.remove();
       syncEditorContent();
       return;
@@ -1471,13 +1477,15 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
       clone.querySelectorAll('[data-remove-image="true"]').forEach(button => button.remove());
       clone.querySelectorAll('[data-preview-image="true"]').forEach(button => button.remove());
       const contentHtml = dehydrateStorageMediaHtml(clone.innerHTML);
+      const images = extractStoredImagesFromHtml(contentHtml);
+      deleteStoredImages(getRemovedStoredImages(getStoredImagesFromNote(note), images));
       return {
         ...note,
         title: titleEditor ? getTitlePlainText(titleEditor) : note.title,
         titleHtml: titleEditor ? titleEditor.innerHTML : note.titleHtml,
         content: clone.innerText.trim(),
         contentHtml,
-        images: extractStoredImagesFromHtml(contentHtml),
+        images,
         createdAt,
         updatedAt: savedAt,
         imageUrl: undefined,
