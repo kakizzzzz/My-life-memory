@@ -115,6 +115,13 @@ serve(async request => {
     const tokenPrefix = `${plainToken.slice(0, 12)}...`;
     const name = getString(body.name, 'My Life Memory MCP').trim().slice(0, 80) || 'My Life Memory MCP';
 
+    const { error: cleanupError } = await admin
+      .from('mcp_tokens')
+      .delete()
+      .eq('user_id', userId);
+
+    if (cleanupError) return errorResponse('setup_required', cleanupError.message, 500);
+
     const { data, error } = await admin
       .from('mcp_tokens')
       .insert({
@@ -136,7 +143,7 @@ serve(async request => {
 
     const { error } = await admin
       .from('mcp_tokens')
-      .update({ revoked_at: new Date().toISOString() })
+      .delete()
       .eq('id', tokenId)
       .eq('user_id', userId);
 

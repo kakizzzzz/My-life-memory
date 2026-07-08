@@ -16,6 +16,18 @@ create index if not exists mcp_tokens_active_hash_idx
   on public.mcp_tokens (token_hash)
   where revoked_at is null;
 
+delete from public.mcp_tokens
+where revoked_at is not null
+   or id not in (
+    select distinct on (user_id) id
+    from public.mcp_tokens
+    where revoked_at is null
+    order by user_id, created_at desc
+  );
+
+create unique index if not exists mcp_tokens_one_per_user_idx
+  on public.mcp_tokens (user_id);
+
 alter table public.mcp_tokens enable row level security;
 
 revoke all on public.mcp_tokens from anon, authenticated;

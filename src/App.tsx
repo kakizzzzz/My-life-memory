@@ -135,7 +135,7 @@ type TrackData = {
 
 type MapStyle = 'light' | 'dark' | 'aerial';
 type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchResults';
-type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'mcp' | null;
+type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'mcp' | 'export' | null;
 type RecordsFilter = 'all' | 'monthly' | 'annual';
 type SearchField = 'coordinate' | 'text';
 type RecordsCalendarMode = 'month' | 'year';
@@ -804,7 +804,6 @@ const HOME_COPY = {
     mcpGenerateToken: 'Generate MCP token',
     mcpGenerating: 'Generating...',
     mcpTokenReady: 'Token generated. Copy it now.',
-    mcpCopyToken: 'Copy token',
     mcpCopyEndpoint: 'Copy endpoint',
     mcpCopyHeader: 'Copy header value',
     mcpCopied: 'Copied',
@@ -976,7 +975,6 @@ const HOME_COPY = {
     mcpGenerateToken: '生成 MCP Token',
     mcpGenerating: '生成中...',
     mcpTokenReady: 'Token 已生成，请现在复制',
-    mcpCopyToken: '复制 Token',
     mcpCopyEndpoint: '复制地址',
     mcpCopyHeader: '复制请求头内容',
     mcpCopied: '已复制',
@@ -1148,7 +1146,6 @@ const HOME_COPY = {
     mcpGenerateToken: 'MCP 토큰 생성',
     mcpGenerating: '생성 중...',
     mcpTokenReady: '토큰이 생성되었습니다. 지금 복사하세요.',
-    mcpCopyToken: '토큰 복사',
     mcpCopyEndpoint: '주소 복사',
     mcpCopyHeader: '헤더 값 복사',
     mcpCopied: '복사됨',
@@ -2419,7 +2416,6 @@ export default function App() {
   const [isMapStyleMenuOpen, setIsMapStyleMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<AppView>(() => initialSignedIn ? 'map' : 'home');
   const [activeHomePanel, setActiveHomePanel] = useState<HomePanel>(null);
-  const [isUserManualOpen, setIsUserManualOpen] = useState(false);
   const [isInitialPermissionPromptOpen, setIsInitialPermissionPromptOpen] = useState(false);
   const [hasSeenInitialPermissionPrompt, setHasSeenInitialPermissionPrompt] = useState(() => (
     readInitialPermissionPromptSeen()
@@ -2854,7 +2850,8 @@ export default function App() {
     if (readAutoUserManualSeen(account)) return;
 
     markAutoUserManualSeen(account);
-    setIsUserManualOpen(true);
+    setActiveView('home');
+    setActiveHomePanel('manual');
   }, [isSignedIn, profile.account]);
 
   useEffect(() => {
@@ -2893,7 +2890,6 @@ export default function App() {
     hasSyncedDefaultStarToGpsRef.current = false;
     setActiveView('home');
     setActiveHomePanel(null);
-    setIsUserManualOpen(false);
     setIsInitialPermissionPromptOpen(false);
     setIsMenuOpen(false);
     setIsMapStyleMenuOpen(false);
@@ -3671,7 +3667,15 @@ export default function App() {
       homeScrollRef.current.scrollTop = 0;
       homeScrollRef.current.scrollLeft = 0;
     }
-    setActiveHomePanel(current => current === 'mcp' ? 'settings' : null);
+    setActiveHomePanel(current => (
+      current === 'language' ||
+      current === 'permissions' ||
+      current === 'manual' ||
+      current === 'mcp' ||
+      current === 'export'
+        ? 'settings'
+        : null
+    ));
   }, []);
 
   const openRecordsCalendarPanel = () => {
@@ -4314,7 +4318,7 @@ export default function App() {
     try {
       const result = await createCloudMcpToken(`${profile.account || 'My'} MCP`);
       setMcpPlainToken(result.token);
-      setMcpTokens(current => [result.tokenInfo, ...current.filter(token => token.id !== result.tokenInfo.id)]);
+      setMcpTokens([result.tokenInfo]);
       setMcpTokenStatus(homeCopy.mcpTokenReady);
     } catch (error) {
       console.error('Could not create MCP token:', error);
@@ -4433,15 +4437,22 @@ export default function App() {
     }
   };
 
-  const homeMenuItems: { panel: Exclude<HomePanel, 'mcp' | null>; label: string; icon: React.ReactNode }[] = [
+  const homeMenuItems: { panel: Extract<HomePanel, 'profile' | 'theme' | 'gallery' | 'settings'>; label: string; icon: React.ReactNode }[] = [
     { panel: 'profile', label: homeCopy.modify, icon: <Database size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'theme', label: homeCopy.theme, icon: <Palette size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'gallery', label: homeCopy.gallery, icon: <ImageIcon size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'settings', label: homeCopy.settings, icon: <Settings size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
   ];
-  const activeHomeTitle = activeHomePanel === 'mcp'
-    ? homeCopy.mcpAccess
-    : homeMenuItems.find(item => item.panel === activeHomePanel)?.label || homeCopy.settings;
+  const settingsSubpageTitles: Partial<Record<Exclude<HomePanel, null>, string>> = {
+    language: homeCopy.language,
+    permissions: homeCopy.openPermissionsHint,
+    manual: homeCopy.userManual,
+    mcp: homeCopy.mcpAccess,
+    export: homeCopy.exportData,
+  };
+  const activeHomeTitle = settingsSubpageTitles[activeHomePanel] ||
+    homeMenuItems.find(item => item.panel === activeHomePanel)?.label ||
+    homeCopy.settings;
   const cloudMcpEndpoint = getCloudMcpEndpoint();
   const mcpHeaderValue = mcpPlainToken ? `Bearer ${mcpPlainToken}` : homeCopy.mcpHeaderValueHint;
   const themeColorControls: { key: keyof SystemTheme; label: string }[] = [
@@ -4449,6 +4460,18 @@ export default function App() {
     { key: 'card', label: homeCopy.card },
     { key: 'icon', label: homeCopy.icon },
     { key: 'dark', label: homeCopy.dark },
+  ];
+  const settingsMenuItems: {
+    panel: Extract<HomePanel, 'language' | 'permissions' | 'manual' | 'mcp' | 'export'>;
+    label: string;
+    icon: React.ReactNode;
+    hidden?: boolean;
+  }[] = [
+    { panel: 'language', label: homeCopy.language, icon: <Languages size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
+    { panel: 'permissions', label: homeCopy.openPermissionsHint, icon: <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
+    { panel: 'manual', label: homeCopy.userManual, icon: <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
+    { panel: 'mcp', label: homeCopy.mcpAccess, icon: <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
+    { panel: 'export', label: homeCopy.exportData, icon: <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
   ];
 
   const getBottomNavClass = (view: AppView) => (
@@ -6131,6 +6154,44 @@ export default function App() {
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
+                    className="mt-4 space-y-3"
+                  >
+                    {settingsMenuItems.filter(item => !item.hidden).map(item => (
+                      <button
+                        type="button"
+                        key={item.panel}
+                        onClick={() => setActiveHomePanel(item.panel)}
+                        className="flex h-[52px] w-full items-center rounded-[14px] bg-[var(--app-card)] px-3 text-left text-black transition-transform active:scale-[0.99]"
+                      >
+                        <span className="mr-3 flex shrink-0 items-center justify-center text-black/60">
+                          {item.icon}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-black/60">{item.label}</span>
+                        <ChevronRight size={24} strokeWidth={UI_ICON_STROKE} className="ml-3 text-black/15" />
+                      </button>
+                    ))}
+                    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+                        {homeCopy.accountAccess}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
+                      >
+                        {homeCopy.exit}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {isSignedIn && activeHomePanel === 'language' && (
+                  <motion.div
+                    key="language-panel"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
                     className="mt-4"
                   >
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
@@ -6151,7 +6212,18 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
+                  </motion.div>
+                )}
+
+                {isSignedIn && activeHomePanel === 'permissions' && (
+                  <motion.div
+                    key="permissions-panel"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="mt-4"
+                  >
+                    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
                         <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
                         {homeCopy.openPermissionsHint}
@@ -6170,33 +6242,72 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
-                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+                  </motion.div>
+                )}
+
+                {isSignedIn && activeHomePanel === 'manual' && (
+                  <motion.div
+                    key="manual-panel"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="mt-4"
+                  >
+                    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+                      <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-black/60">
                         <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
                         {homeCopy.userManual}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsUserManualOpen(true)}
-                        className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
-                      >
-                        {homeCopy.openManual}
-                      </button>
+                      <div className="max-h-[58dvh] overflow-y-auto overscroll-contain pr-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+                        <div className="text-[13px] font-medium leading-snug text-black/55">
+                          {homeCopy.manualIntro}
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {homeCopy.manualSections.map(section => (
+                            <div key={section.title}>
+                              <div className="text-[13px] font-semibold leading-tight text-black">
+                                {section.title}
+                              </div>
+                              <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
+                                {section.body}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-5 text-[13px] font-semibold leading-tight text-black">
+                          {homeCopy.manualIconsTitle}
+                        </div>
+                        <div className="mt-3 space-y-2.5 pb-1">
+                          {manualIconGuide.map(item => (
+                            <div key={`${item.label}-${item.body}`} className="flex min-w-0 items-start gap-2">
+                              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black">
+                                {item.icon}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block text-[12px] font-semibold leading-tight text-black">
+                                  {item.label}
+                                </span>
+                                <span className="mt-0.5 block text-[11px] font-medium leading-snug text-black/52">
+                                  {item.body}
+                                </span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    {isCloudBackendEnabled && (
-                      <button
-                        type="button"
-                        onClick={() => setActiveHomePanel('mcp')}
-                        className="mt-3 flex h-[52px] w-full items-center rounded-[14px] bg-[var(--app-card)] px-3 text-left text-black transition-transform active:scale-[0.99]"
-                      >
-                        <span className="mr-3 flex shrink-0 items-center justify-center text-black/60">
-                          <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-black/60">{homeCopy.mcpAccess}</span>
-                        <ChevronRight size={24} strokeWidth={UI_ICON_STROKE} className="ml-3 text-black/15" />
-                      </button>
-                    )}
-                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
+                  </motion.div>
+                )}
+
+                {isSignedIn && activeHomePanel === 'export' && (
+                  <motion.div
+                    key="export-panel"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="mt-4"
+                  >
+                    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
                       <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
                         <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
                         {homeCopy.exportData}
@@ -6214,19 +6325,6 @@ export default function App() {
                           {exportDataStatus}
                         </div>
                       )}
-                    </div>
-                    <div className="mt-3 rounded-[14px] bg-[var(--app-card)] p-3">
-                      <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
-                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                        {homeCopy.accountAccess}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleSignOut}
-                        className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
-                      >
-                        {homeCopy.exit}
-                      </button>
                     </div>
                   </motion.div>
                 )}
@@ -6290,15 +6388,6 @@ export default function App() {
                       >
                         {isMcpTokenBusy ? homeCopy.mcpGenerating : homeCopy.mcpGenerateToken}
                       </button>
-                      {mcpPlainToken && (
-                        <button
-                          type="button"
-                          onClick={() => handleCopyMcpText(mcpPlainToken)}
-                          className="mt-2 h-9 w-full rounded-full bg-white/70 text-[12px] font-medium text-black transition-transform active:scale-[0.98]"
-                        >
-                          {homeCopy.mcpCopyToken}
-                        </button>
-                      )}
                       {(mcpTokenStatus || mcpPlainToken) && (
                         <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
                           {mcpTokenStatus || homeCopy.mcpTokenWarning}
@@ -6477,80 +6566,6 @@ export default function App() {
                 {isChangingPassword ? homeCopy.changingPassword : homeCopy.savePassword}
               </button>
             </motion.form>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isUserManualOpen && isSignedIn && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[2300] flex items-center justify-center bg-black/35 px-5 py-[calc(env(safe-area-inset-top)+1rem)] pointer-events-auto"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 16, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
-              transition={{ duration: 0.18 }}
-              className="flex max-h-[82dvh] w-full max-w-[390px] flex-col rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
-            >
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2 text-[18px] font-medium leading-tight">
-                  <BookOpen size={24} strokeWidth={UI_ICON_STROKE} />
-                  <span className="truncate">{homeCopy.userManual}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsUserManualOpen(false)}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black transition-transform active:scale-95"
-                  aria-label={homeCopy.closeManual}
-                >
-                  <X size={20} strokeWidth={UI_ICON_STROKE} />
-                </button>
-              </div>
-              <div
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
-                style={{ WebkitOverflowScrolling: 'touch' }}
-              >
-                <div className="text-[13px] font-medium leading-snug text-black/55">
-                  {homeCopy.manualIntro}
-                </div>
-                <div className="mt-4 space-y-3">
-                  {homeCopy.manualSections.map(section => (
-                    <div key={section.title}>
-                      <div className="text-[13px] font-semibold leading-tight text-black">
-                        {section.title}
-                      </div>
-                      <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
-                        {section.body}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-5 text-[13px] font-semibold leading-tight text-black">
-                  {homeCopy.manualIconsTitle}
-                </div>
-                <div className="mt-3 space-y-2.5 pb-1">
-                  {manualIconGuide.map(item => (
-                    <div key={`${item.label}-${item.body}`} className="flex min-w-0 items-start gap-2">
-                      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black">
-                        {item.icon}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-[12px] font-semibold leading-tight text-black">
-                          {item.label}
-                        </span>
-                        <span className="mt-0.5 block text-[11px] font-medium leading-snug text-black/52">
-                          {item.body}
-                        </span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

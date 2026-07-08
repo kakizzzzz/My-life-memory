@@ -121,7 +121,7 @@ Mobile MCP client settings:
 
 GitHub Pages is a static web host and cannot serve MCP directly. The mobile MCP server address should be the Supabase Edge Function URL, not the Pages URL.
 
-Each user generates their own MCP token in the app Settings screen. The full token is shown once; Supabase stores only its SHA-256 hash in `public.mcp_tokens`. The cloud MCP function resolves the token to one `user_id`, then calls `memory-api` with `MEMORY_API_INTERNAL_TOKEN`. The mobile client should not receive Supabase credentials, service role keys, app account IDs, or app passwords. The deployed function supports Streamable HTTP; SSE fallback is not needed for this project version.
+Each user generates their own MCP token in the app Settings screen. The full token is shown once; Supabase stores only its SHA-256 hash in `public.mcp_tokens`. Each user can have only one active MCP token; generating a new one replaces the old row, and revoking deletes it. The cloud MCP function resolves the token to one `user_id`, then calls `memory-api` with `MEMORY_API_INTERNAL_TOKEN`. The mobile client should not receive Supabase credentials, service role keys, app account IDs, or app passwords. The deployed function supports Streamable HTTP; SSE fallback is not needed for this project version.
 
 ## Storage Rules
 
@@ -168,7 +168,7 @@ If the app says cloud setup is blocked, run `supabase/fix-permissions.sql` once,
 - Never put the invite code in frontend code, Vite env vars, localStorage, app state, README examples, or exported files.
 - Existing accounts log in normally; only new registration goes through `register-with-invite`.
 - `memory-api` requires a user bearer token and must never accept service-role credentials from clients.
-- Cloud MCP tokens are per-user and stored only as hashes in `mcp_tokens`.
+- Cloud MCP tokens are per-user and stored only as one active hash per user in `mcp_tokens`.
 - MCP should run locally with a normal user account or user access token, not a service-role key.
 - MCP write/delete tools are disabled by default.
 - Keep `life-media` private.

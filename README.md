@@ -111,7 +111,7 @@ Users generate their own MCP token inside the app:
 3. Open AI memory access.
 4. Generate an MCP token and copy it immediately.
 
-Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <generated-user-mcp-token>`. The full token is shown only once. Supabase stores only a SHA-256 hash in `public.mcp_tokens`, so each token maps to exactly one user and cannot read another account's data. The phone never receives the Supabase URL, publishable key, service role key, or app password.
+Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <generated-user-mcp-token>`. The full token is shown only once. Each user can have only one active MCP token; generating a new one replaces the old row, and revoking deletes it. Supabase stores only a SHA-256 hash in `public.mcp_tokens`, so each token maps to exactly one user and cannot read another account's data. The phone never receives the Supabase URL, publishable key, service role key, or app password.
 
 By default, MCP exposes only read-only tools. To expose write tools in either the cloud function or the local stdio server:
 
@@ -205,7 +205,7 @@ For GitHub Pages:
 - `service_role` belongs only in trusted server environments and is not needed for this app.
 - Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
 - The `memory-api` Edge Function must authenticate a real user bearer token, or a private internal MCP call with a resolved `user_id`, before reading or changing app state.
-- Cloud MCP tokens are per-user. The app shows the full token once, stores only a hash in `public.mcp_tokens`, and can revoke active tokens from Settings.
+- Cloud MCP tokens are per-user. The app shows the full token once, stores only one active hash per user in `public.mcp_tokens`, and can delete the active token from Settings.
 - The local MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.
 - MCP write/delete tools are hidden unless explicitly enabled by local environment variables.
 - The invite code must live only in Supabase Function Secrets as `INVITE_CODE`.
