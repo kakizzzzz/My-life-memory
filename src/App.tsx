@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, CircleMarker } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Route, Star, X, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, Camera, Underline, KeyRound, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import * as exifr from 'exifr';
-import { DraggableStarMarker } from './DraggableStarMarker';
 import { StarActionOverlay } from './StarActionOverlay';
 import { TrackActionOverlay } from './TrackActionOverlay';
 import { NoteEditorModal } from './NoteEditorModal';
@@ -17,6 +16,7 @@ import {
   MapZoomTracker,
   StarNavigationOverlay,
 } from './MapRuntimeComponents';
+import { MapDataLayers } from './MapDataLayers';
 import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
 import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingControlsOverlay } from './MapControlsOverlay';
 import { SearchResultsScreen } from './SearchResultsScreen';
@@ -59,7 +59,6 @@ import {
   getBearingBetweenPoints,
   getPointsEveryXMeters,
   getTrackAccuracy,
-  getVisibleRouteDots,
   ROUTE_DETAIL_DOT_MIN_ZOOM,
   shouldAcceptTrackPoint,
   type TrackPoint,
@@ -3475,100 +3474,23 @@ export default function App() {
             language={language}
           />
           <TrackActionOverlay selectedTrackId={selectedTrackId} savedTracks={savedTracks} onUpdateTrack={onUpdateTrack} onDeleteTrack={onDeleteTrack} selectedLatLng={selectedTrackLatLng} language={language} />
-          
-          {tagPolylines.map((line) => line.positions.length > 1 && (
-            <Polyline 
-              key={`tagline-${line.groupId}`}
-              positions={line.positions} 
-              pathOptions={{ color: line.color, dashArray: '1, 10', weight: 2.5, lineCap: 'round', lineJoin: 'round' }} 
-            />
-          ))}
-
-          {isTracking && trackPaths.map((path, idx) => {
-            if (path.length < 2) return null;
-            const dots = getVisibleRouteDots(path, showRouteDetailDots);
-            return (
-              <React.Fragment key={`track-group-${idx}`}>
-                <Polyline 
-                  positions={path} 
-                  pathOptions={{ color: '#EDC727', weight: 2.5, lineCap: 'round', lineJoin: 'round' }} 
-                />
-                {dots.map((dot, dIdx) => (
-                  <CircleMarker
-                    key={`track-dot-${idx}-${dIdx}`}
-                    center={dot}
-                    radius={4}
-                    pathOptions={{ color: 'transparent', fillColor: '#EDC727', fillOpacity: 1, weight: 0 }}
-                    interactive={false}
-                  />
-                ))}
-              </React.Fragment>
-            );
-          })}
-
-          {savedTracks.map(track => 
-            track.paths.map((path, idx) => {
-              if (path.length < 2) return null;
-              const dots = getVisibleRouteDots(path, showRouteDetailDots);
-              return (
-                <React.Fragment key={`saved-track-group-${track.id}-${idx}`}>
-                  {/* Invisible wider polyline to catch clicks easily */}
-                  <Polyline 
-                    positions={path} 
-                    pathOptions={{ color: 'transparent', weight: 25 }} 
-                    eventHandlers={{
-                      click: (e) => {
-                        L.DomEvent.stopPropagation(e as any);
-                        setSelectedTrackId(track.id);
-                        if ((e as any).latlng) setSelectedTrackLatLng([(e as any).latlng.lat, (e as any).latlng.lng]);
-                      }
-                    }}
-                  />
-                  {/* Visible path */}
-                  <Polyline 
-                    positions={path} 
-                    pathOptions={{ color: track.color || '#EDC727', weight: 2.5, lineCap: 'round', lineJoin: 'round' }} 
-                    eventHandlers={{
-                      click: (e) => {
-                        L.DomEvent.stopPropagation(e as any);
-                        setSelectedTrackId(track.id);
-                        if ((e as any).latlng) setSelectedTrackLatLng([(e as any).latlng.lat, (e as any).latlng.lng]);
-                      }
-                    }}
-                  />
-                  {/* Interactive dots every 100 meters */}
-                  {dots.map((dot, dIdx) => (
-                    <CircleMarker
-                      key={`saved-track-dot-${track.id}-${idx}-${dIdx}`}
-                      center={dot}
-                      radius={4}
-                      pathOptions={{ color: 'transparent', fillColor: track.color || '#EDC727', fillOpacity: 1, weight: 0 }}
-                      eventHandlers={{
-                        click: (e) => {
-                          L.DomEvent.stopPropagation(e as any);
-                          setSelectedTrackId(track.id);
-                          setSelectedTrackLatLng(dot);
-                        }
-                      }}
-                    />
-                  ))}
-                </React.Fragment>
-              );
-            })
-          )}
-
-          {stars.map(star => (
-            <React.Fragment key={star.id}>
-              <DraggableStarMarker
-                star={star}
-                isSelected={selectedStarId === star.id}
-                mapStyle={mapStyle}
-                badgeColor={systemTheme.icon}
-                onSelect={onStarClick}
-                onMove={onMoveStar}
-              />
-            </React.Fragment>
-          ))}
+          <MapDataLayers
+            tagPolylines={tagPolylines}
+            isTracking={isTracking}
+            trackPaths={trackPaths}
+            savedTracks={savedTracks}
+            showRouteDetailDots={showRouteDetailDots}
+            stars={stars}
+            selectedStarId={selectedStarId}
+            mapStyle={mapStyle}
+            badgeColor={systemTheme.icon}
+            onSelectTrack={(trackId, latLng) => {
+              setSelectedTrackId(trackId);
+              if (latLng) setSelectedTrackLatLng(latLng);
+            }}
+            onSelectStar={onStarClick}
+            onMoveStar={onMoveStar}
+          />
         </MapContainer>
       </div>
 
