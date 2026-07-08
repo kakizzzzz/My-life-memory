@@ -790,7 +790,7 @@ const HOME_COPY = {
     cloudEmailConfirmRequired: 'Disable Supabase email confirmation first',
     noImages: 'No uploaded images yet',
     openPermissions: 'Open permissions',
-    openPermissionsHint: 'Request location and direction permissions',
+    openPermissionsHint: 'Request location',
     userManual: 'User manual',
     openManual: 'Open manual',
     closeManual: 'Close manual',
@@ -961,7 +961,7 @@ const HOME_COPY = {
     cloudEmailConfirmRequired: '请先关闭 Supabase 邮箱确认',
     noImages: '还没有上传过图片',
     openPermissions: '打开权限',
-    openPermissionsHint: '请求定位与方向权限',
+    openPermissionsHint: '请求定位',
     userManual: '用户手册',
     openManual: '打开查阅',
     closeManual: '关闭手册',
@@ -1132,7 +1132,7 @@ const HOME_COPY = {
     cloudEmailConfirmRequired: '먼저 Supabase 이메일 확인을 꺼주세요',
     noImages: '업로드한 이미지가 없습니다',
     openPermissions: '권한 열기',
-    openPermissionsHint: '위치 및 방향 권한 요청',
+    openPermissionsHint: '위치 요청',
     userManual: '사용 설명서',
     openManual: '열어 보기',
     closeManual: '설명서 닫기',
@@ -6149,11 +6149,7 @@ export default function App() {
                 )}
 
                 {isSignedIn && activeHomePanel === 'settings' && (
-                  <motion.div
-                    key="settings-panel"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
+                  <div
                     className="mt-4 space-y-3"
                   >
                     {settingsMenuItems.filter(item => !item.hidden).map(item => (
@@ -6183,15 +6179,11 @@ export default function App() {
                         {homeCopy.exit}
                       </button>
                     </div>
-                  </motion.div>
+                  </div>
                 )}
 
                 {isSignedIn && activeHomePanel === 'language' && (
-                  <motion.div
-                    key="language-panel"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
+                  <div
                     className="mt-4"
                   >
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
@@ -6212,15 +6204,11 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                  </motion.div>
+                  </div>
                 )}
 
                 {isSignedIn && activeHomePanel === 'permissions' && (
-                  <motion.div
-                    key="permissions-panel"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
+                  <div
                     className="mt-4"
                   >
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
@@ -6242,15 +6230,11 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                  </motion.div>
+                  </div>
                 )}
 
                 {isSignedIn && activeHomePanel === 'manual' && (
-                  <motion.div
-                    key="manual-panel"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
+                  <div
                     className="mt-4"
                   >
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
@@ -6296,15 +6280,11 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  </motion.div>
+                  </div>
                 )}
 
                 {isSignedIn && activeHomePanel === 'export' && (
-                  <motion.div
-                    key="export-panel"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
+                  <div
                     className="mt-4"
                   >
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
@@ -6326,15 +6306,11 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                  </motion.div>
+                  </div>
                 )}
 
                 {isSignedIn && activeHomePanel === 'mcp' && (
-                  <motion.div
-                    key="mcp-panel"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
+                  <div
                     className="mt-4 space-y-3"
                   >
                     <div className="rounded-[14px] bg-[var(--app-card)] p-3">
@@ -6420,7 +6396,7 @@ export default function App() {
                         )}
                       </div>
                     </div>
-                  </motion.div>
+                  </div>
                 )}
               </AnimatePresence>
 

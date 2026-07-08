@@ -105,149 +105,6 @@ const readTools = [
   },
 ];
 
-const writeTools = [
-  {
-    name: 'create_star',
-    title: 'Create Memory Star',
-    description: 'Create one star/location.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        lat: { type: 'number', minimum: -90, maximum: 90 },
-        lng: { type: 'number', minimum: -180, maximum: 180 },
-        color: { type: 'string' },
-        note: {
-          type: 'object',
-          properties: {
-            content: { type: 'string', default: '' },
-            contentHtml: { type: 'string', default: '' },
-          },
-          additionalProperties: false,
-        },
-      },
-      required: ['lat', 'lng'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'update_star',
-    title: 'Update Memory Star',
-    description: 'Move or recolor one star/location.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        starId: { type: 'string', minLength: 1 },
-        updates: {
-          type: 'object',
-          properties: {
-            lat: { type: 'number', minimum: -90, maximum: 90 },
-            lng: { type: 'number', minimum: -180, maximum: 180 },
-            color: { type: 'string' },
-            tagOrder: { type: 'number' },
-            tagGroupId: { type: 'number' },
-          },
-          additionalProperties: false,
-        },
-      },
-      required: ['starId', 'updates'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'add_note_to_star',
-    title: 'Add Note To Star',
-    description: 'Add a text note to one star/location.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        starId: { type: 'string', minLength: 1 },
-        note: {
-          type: 'object',
-          properties: {
-            content: { type: 'string', default: '' },
-            contentHtml: { type: 'string', default: '' },
-            color: { type: 'string' },
-          },
-          additionalProperties: false,
-        },
-      },
-      required: ['starId', 'note'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'update_note',
-    title: 'Update Note',
-    description: 'Update note text, html, color, images, or font settings. Creation time is not editable.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        starId: { type: 'string', minLength: 1 },
-        noteId: { type: 'string', minLength: 1 },
-        updates: {
-          type: 'object',
-          properties: {
-            content: { type: 'string' },
-            contentHtml: { type: 'string' },
-            color: { type: 'string' },
-            fontSize: { type: 'number' },
-            titleFontSize: { type: 'number' },
-          },
-          additionalProperties: false,
-        },
-      },
-      required: ['starId', 'noteId', 'updates'],
-      additionalProperties: false,
-    },
-  },
-];
-
-const deleteTools = [
-  {
-    name: 'delete_note',
-    title: 'Delete Note',
-    description: 'Delete one note and its referenced storage media. Requires confirm=DELETE.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        starId: { type: 'string', minLength: 1 },
-        noteId: { type: 'string', minLength: 1 },
-        confirm: { type: 'string', const: 'DELETE' },
-      },
-      required: ['starId', 'noteId', 'confirm'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'delete_star',
-    title: 'Delete Star',
-    description: 'Delete one star, its notes, and referenced storage media. Requires confirm=DELETE.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        starId: { type: 'string', minLength: 1 },
-        confirm: { type: 'string', const: 'DELETE' },
-      },
-      required: ['starId', 'confirm'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'delete_route',
-    title: 'Delete Route',
-    description: 'Delete one saved GPS route. Requires confirm=DELETE.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        routeId: { type: 'string', minLength: 1 },
-        confirm: { type: 'string', const: 'DELETE' },
-      },
-      required: ['routeId', 'confirm'],
-      additionalProperties: false,
-    },
-  },
-];
-
 const jsonResponse = (body: unknown, status = 200, extraHeaders: Record<string, string> = {}) => (
   new Response(JSON.stringify(body), {
     status,
@@ -304,8 +161,6 @@ const getConfig = () => {
   const memoryApiInternalToken = Deno.env.get('MEMORY_API_INTERNAL_TOKEN') || '';
   const memoryApiUrl = Deno.env.get('MLM_MEMORY_API_URL') || (supabaseUrl ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/memory-api` : '');
   const timeZone = Deno.env.get('MLM_TIME_ZONE') || 'Asia/Shanghai';
-  const enableWrites = Deno.env.get('MLM_MCP_ENABLE_WRITES') === 'true';
-  const enableDeletes = enableWrites && Deno.env.get('MLM_MCP_ENABLE_DELETES') === 'true';
 
   return {
     supabaseUrl: supabaseUrl.replace(/\/$/, ''),
@@ -314,8 +169,6 @@ const getConfig = () => {
     memoryApiInternalToken,
     memoryApiUrl,
     timeZone,
-    enableWrites,
-    enableDeletes,
   };
 };
 
@@ -356,12 +209,6 @@ const authenticateMcpRequest = async (request: Request, config: ReturnType<typeo
     });
   }
 
-  const { error: updateError } = await admin
-    .from('mcp_tokens')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('id', data.id);
-  if (updateError) console.warn('Could not update MCP token last_used_at:', updateError.message);
-
   return {
     userId: data.user_id,
   };
@@ -390,17 +237,7 @@ const callMemoryApi = async (config: ReturnType<typeof getConfig>, userId: strin
   return payload;
 };
 
-const availableTools = (config: ReturnType<typeof getConfig>) => [
-  ...readTools,
-  ...(config.enableWrites ? writeTools : []),
-  ...(config.enableDeletes ? deleteTools : []),
-];
-
-const toolActionInput = (toolName: string, input: Record<string, unknown>) => {
-  if (writeTools.some(tool => tool.name === toolName)) return { ...input, confirmWrite: true };
-  if (deleteTools.some(tool => tool.name === toolName)) return { ...input, confirmWrite: true };
-  return input;
-};
+const availableTools = () => readTools;
 
 const handleRpcMessage = async (message: Record<string, unknown>, config: ReturnType<typeof getConfig>, userId: string) => {
   const id = message.id;
@@ -432,7 +269,7 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
 
   if (method === 'tools/list') {
     return rpcResult(id, {
-      tools: availableTools(config),
+      tools: availableTools(),
     });
   }
 
@@ -441,11 +278,11 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
     const args = params.arguments && typeof params.arguments === 'object'
       ? params.arguments as Record<string, unknown>
       : {};
-    const tools = availableTools(config);
+    const tools = availableTools();
     if (!tools.some(tool => tool.name === toolName)) {
       return rpcError(id, -32602, `Unknown or disabled tool: ${toolName}`);
     }
-    const payload = await callMemoryApi(config, userId, toolName, toolActionInput(toolName, args));
+    const payload = await callMemoryApi(config, userId, toolName, args);
     return rpcResult(id, {
       content: [
         {

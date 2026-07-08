@@ -63,7 +63,7 @@ Supported read actions:
 - `summarize_memory_range`
 - `export_memory_report`
 
-Supported write/delete actions are present for future use:
+Authenticated direct API clients may also call these write/delete actions for future controlled integrations:
 
 - `create_star`
 - `update_star`
@@ -113,18 +113,7 @@ Users generate their own MCP token inside the app:
 
 Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <generated-user-mcp-token>`. The full token is shown only once. Each user can have only one active MCP token; generating a new one replaces the old row, and revoking deletes it. Supabase stores only a SHA-256 hash in `public.mcp_tokens`, so each token maps to exactly one user and cannot read another account's data. The phone never receives the Supabase URL, publishable key, service role key, or app password.
 
-By default, MCP exposes only read-only tools. To expose write tools in either the cloud function or the local stdio server:
-
-```bash
-MLM_MCP_ENABLE_WRITES=true
-```
-
-To expose destructive delete tools as well:
-
-```bash
-MLM_MCP_ENABLE_WRITES=true
-MLM_MCP_ENABLE_DELETES=true
-```
+MCP exposes only read-only tools. This keeps AI clients useful for retrieval and analysis without letting them create, edit, or delete the user's private memories.
 
 ## Local Development
 
@@ -207,7 +196,7 @@ For GitHub Pages:
 - The `memory-api` Edge Function must authenticate a real user bearer token, or a private internal MCP call with a resolved `user_id`, before reading or changing app state.
 - Cloud MCP tokens are per-user. The app shows the full token once, stores only one active hash per user in `public.mcp_tokens`, and can delete the active token from Settings.
 - The local MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.
-- MCP write/delete tools are hidden unless explicitly enabled by local environment variables.
+- MCP is read-only. Direct Memory API write/delete actions require normal user authentication and explicit confirmation fields.
 - The invite code must live only in Supabase Function Secrets as `INVITE_CODE`.
 - After deployment, disable public Supabase Email signup so registration cannot bypass the Edge Function.
 - RLS ensures users can read/write only their own profile, app state, and Storage objects.
