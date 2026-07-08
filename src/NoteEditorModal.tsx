@@ -1511,7 +1511,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
             <div ref={toolbarRef} className="flex w-full max-w-full items-center gap-0.5 overflow-visible">
               <button onClick={handleSave} className={toolbarEdgeButtonClass} aria-label={copy.closeEditor}>
-                <X size={15} strokeWidth={2.5} />
+                <X size={15} strokeWidth={2.3} />
               </button>
 
               <div className={fontButtonSlotClass}>
@@ -1548,7 +1548,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                   className={`${toolbarButtonClass} ${selectedUnderline ? 'bg-[var(--app-dark)] text-white hover:brightness-100' : ''}`}
                   aria-label={copy.underline}
                 >
-                  <Underline size={14} strokeWidth={2.5} />
+                  <Underline size={14} strokeWidth={2.3} />
                 </button>
               </div>
 
@@ -1559,7 +1559,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                   className={toolbarButtonClass}
                   aria-label={copy.noteColor}
                 >
-                  <Palette size={14} strokeWidth={2.5} />
+                  <Palette size={14} strokeWidth={2.3} />
                 </button>
 
                 {activePanel === 'color' && (
@@ -1619,7 +1619,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                   aria-label={copy.insertImage}
                   disabled={isProcessingImage}
                 >
-                  <ImageIcon size={14} strokeWidth={2.5} />
+                  <ImageIcon size={14} strokeWidth={2.3} />
                 </button>
               </div>
 
@@ -1631,12 +1631,12 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                   aria-label={copy.takePhoto}
                   disabled={isProcessingImage || isCameraOpen}
                 >
-                  <Camera size={14} strokeWidth={2.5} />
+                  <Camera size={14} strokeWidth={2.3} />
                 </button>
               </div>
 
               <button onClick={handleSave} className={toolbarEdgeButtonClass} aria-label={copy.saveNote}>
-                <Check size={15} strokeWidth={2.5} />
+                <Check size={15} strokeWidth={2.3} />
               </button>
             </div>
           </div>
@@ -1725,21 +1725,21 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
             className={disabledBottomButtonClass}
             aria-label={copy.previousNote}
           >
-            <ChevronsLeft size={24} strokeWidth={2.5} />
+            <ChevronsLeft size={24} strokeWidth={2.3} />
           </button>
           <button
             onClick={handleAddNote}
             className={bottomButtonClass}
             aria-label={copy.createNote}
           >
-            <Plus size={28} strokeWidth={2.5} />
+            <Plus size={28} strokeWidth={2.3} />
           </button>
           <button
             onClick={handleDeleteNote}
             className={bottomButtonClass}
             aria-label={copy.deleteNote}
           >
-            <Trash2 size={24} strokeWidth={2.5} />
+            <Trash2 size={24} strokeWidth={2.3} />
           </button>
           <button
             onClick={() => setCurrentIndex(i => Math.min(notes.length - 1, i + 1))}
@@ -1747,7 +1747,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
             className={disabledBottomButtonClass}
             aria-label={copy.nextNote}
           >
-            <ChevronsRight size={24} strokeWidth={2.5} />
+            <ChevronsRight size={24} strokeWidth={2.3} />
           </button>
         </div>
       </motion.div>
@@ -1759,7 +1759,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
             className="absolute right-5 top-5 w-10 h-10 rounded-full bg-white/15 text-white inline-flex items-center justify-center hover:bg-white/25"
             aria-label={copy.closeImagePreview}
           >
-            <X size={22} strokeWidth={2.5} />
+            <X size={22} strokeWidth={2.3} />
           </button>
           <img
             src={previewImageUrl}

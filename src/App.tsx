@@ -140,6 +140,9 @@ type SystemTheme = {
   dark: string;
 };
 
+const UI_ICON_STROKE = 2.3;
+const MAP_TOOL_ICON_STROKE = UI_ICON_STROKE;
+
 function MapStyleThumbnail({ styleName }: { styleName: MapStyle }) {
   const palette = {
     light: {
@@ -310,7 +313,7 @@ const LANGUAGE_LOCALES: Record<string, string> = {
 };
 
 const HOME_SETTINGS_ICON_SIZE = 24;
-const HOME_SETTINGS_ICON_STROKE = 2;
+const HOME_SETTINGS_ICON_STROKE = UI_ICON_STROKE;
 const DEFAULT_RECORD_STAR_ID = 'default-record-star';
 const DEFAULT_USER_LOCATION: [number, number] = [31.2304, 121.4737];
 const DEFAULT_RECORD_STAR_LOCATION: [number, number] = [31.2312, 121.4744];
@@ -670,6 +673,9 @@ const HOME_COPY = {
     exportDataReady: 'JSON exported',
     exportDataPartial: 'JSON exported. Some images could not be embedded.',
     exportDataFailed: 'Could not export data',
+    searchResultsTitle: 'Search results',
+    searchResultsFor: 'for',
+    noSearchResults: 'No matching notes',
     initialPermissionsTitle: 'Location permission',
     initialPermissionsBody: 'Allow location to center the map on your current position and update the origin marker.',
     notNow: 'Later',
@@ -815,6 +821,9 @@ const HOME_COPY = {
     exportDataReady: 'JSON 已导出',
     exportDataPartial: 'JSON 已导出，部分图片未能写入文件',
     exportDataFailed: '导出失败',
+    searchResultsTitle: '搜索结果',
+    searchResultsFor: '关于',
+    noSearchResults: '没有匹配的笔记',
     initialPermissionsTitle: '定位权限',
     initialPermissionsBody: '允许定位后，地图会回到你当前的位置，并更新原点。',
     notNow: '稍后',
@@ -960,6 +969,9 @@ const HOME_COPY = {
     exportDataReady: 'JSON을 내보냈습니다',
     exportDataPartial: 'JSON을 내보냈습니다. 일부 이미지는 포함하지 못했습니다.',
     exportDataFailed: '데이터를 내보내지 못했습니다',
+    searchResultsTitle: '검색 결과',
+    searchResultsFor: '검색어',
+    noSearchResults: '일치하는 노트가 없습니다',
     initialPermissionsTitle: '위치 권한',
     initialPermissionsBody: '위치를 허용하면 지도가 현재 위치로 이동하고 원점이 업데이트됩니다.',
     notNow: '나중에',
@@ -1430,6 +1442,53 @@ const htmlToText = (html?: string) => {
   return (container.textContent || '').replace(/\s+/g, ' ').trim();
 };
 
+const getSearchPreviewText = (text: string, query: string, maxLength = 96) => {
+  const normalizedText = text.replace(/\s+/g, ' ').trim();
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedText || normalizedText.length <= maxLength) return normalizedText;
+  if (!normalizedQuery) return `${normalizedText.slice(0, maxLength).trim()}...`;
+
+  const matchIndex = normalizedText.toLowerCase().indexOf(normalizedQuery);
+  if (matchIndex < 0) return `${normalizedText.slice(0, maxLength).trim()}...`;
+
+  const start = Math.max(0, matchIndex - Math.floor((maxLength - normalizedQuery.length) / 2));
+  const end = Math.min(normalizedText.length, start + maxLength);
+  const prefix = start > 0 ? '...' : '';
+  const suffix = end < normalizedText.length ? '...' : '';
+  return `${prefix}${normalizedText.slice(start, end).trim()}${suffix}`;
+};
+
+function SearchHighlightedText({ text, query }: { text: string; query: string }) {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return <>{text}</>;
+
+  const lowerText = text.toLowerCase();
+  const lowerQuery = normalizedQuery.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  let matchIndex = lowerText.indexOf(lowerQuery);
+
+  while (matchIndex >= 0) {
+    if (matchIndex > cursor) {
+      parts.push(text.slice(cursor, matchIndex));
+    }
+    const matchEnd = matchIndex + normalizedQuery.length;
+    parts.push(
+      <mark key={`${matchIndex}-${matchEnd}`} className="rounded-[3px] bg-[#EDC727] px-[1px] text-black">
+        {text.slice(matchIndex, matchEnd)}
+      </mark>
+    );
+    cursor = matchEnd;
+    matchIndex = lowerText.indexOf(lowerQuery, cursor);
+  }
+
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor));
+  }
+
+  return <>{parts}</>;
+}
+
 const escapeHtml = (value: string) => (
   value.replace(/[&<>"']/g, char => ({
     '&': '&amp;',
@@ -1809,7 +1868,7 @@ function StarNavigationOverlay({ activeTag, stars, onPrev, onNext }: { activeTag
         onClick={(e) => { e.stopPropagation(); onPrev(); }} 
         className="w-10 h-10 rounded-full bg-[var(--app-active-surface)] border-2 border-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 shadow-md transition-transform active:scale-95"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="11 17 6 12 11 7"></polyline>
           <polyline points="18 17 13 12 18 7"></polyline>
         </svg>
@@ -1818,7 +1877,7 @@ function StarNavigationOverlay({ activeTag, stars, onPrev, onNext }: { activeTag
         onClick={(e) => { e.stopPropagation(); onNext(); }} 
         className="w-10 h-10 rounded-full bg-[var(--app-active-surface)] border-2 border-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 shadow-md transition-transform active:scale-95"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="13 17 18 12 13 7"></polyline>
           <polyline points="6 17 11 12 6 7"></polyline>
         </svg>
@@ -2023,6 +2082,7 @@ export default function App() {
   const [activeSearchField, setActiveSearchField] = useState<SearchField>('text');
   const [coordinateSearch, setCoordinateSearch] = useState('');
   const [textSearch, setTextSearch] = useState('');
+  const [submittedTextSearch, setSubmittedTextSearch] = useState('');
   const [systemTheme, setSystemTheme] = useState<SystemTheme>(() => ({
     ...DEFAULT_SYSTEM_THEME,
     ...(persistedAppState?.systemTheme || {}),
@@ -3267,19 +3327,19 @@ export default function App() {
     ''
   );
   const manualIconGuide = [
-    { icon: <MapIcon size={18} strokeWidth={2.1} />, label: homeCopy.bottomMap, body: homeCopy.manualIconMap },
-    { icon: <PieChart size={18} strokeWidth={2.1} />, label: homeCopy.bottomStats, body: homeCopy.manualIconStats },
-    { icon: <BookOpen size={18} strokeWidth={2.1} />, label: homeCopy.bottomNotes, body: homeCopy.manualIconRecords },
-    { icon: <Home size={18} strokeWidth={2.1} />, label: homeCopy.bottomHome, body: homeCopy.manualIconHome },
-    { icon: <Star size={18} strokeWidth={2.1} />, label: homeCopy.starLabel, body: homeCopy.manualIconStar },
-    { icon: <MapPin size={18} strokeWidth={2.1} />, label: homeCopy.openPermissions, body: homeCopy.manualIconLocation },
-    { icon: <Route size={18} strokeWidth={2.1} />, label: homeCopy.manualSections[3].title, body: homeCopy.manualIconRoute },
-    { icon: <Camera size={18} strokeWidth={2.1} />, label: homeCopy.readerAddPhoto, body: homeCopy.manualIconCamera },
-    { icon: <PhotoGpsStarIcon size={18} strokeWidth={2.1} />, label: homeCopy.uploadPhotoLocation, body: homeCopy.manualIconPhotoGps },
-    { icon: <Save size={18} strokeWidth={2.1} />, label: homeCopy.readerEdit, body: homeCopy.manualIconSave },
-    { icon: <Copy size={18} strokeWidth={2.1} />, label: homeCopy.manualIconCopy, body: homeCopy.manualIconCopy },
-    { icon: <Share size={18} strokeWidth={2.1} />, label: homeCopy.manualIconShare, body: homeCopy.manualIconShare },
-    { icon: <Search size={18} strokeWidth={2.1} />, label: homeCopy.search, body: homeCopy.manualIconSearch },
+    { icon: <MapIcon size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.bottomMap, body: homeCopy.manualIconMap },
+    { icon: <PieChart size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.bottomStats, body: homeCopy.manualIconStats },
+    { icon: <BookOpen size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.bottomNotes, body: homeCopy.manualIconRecords },
+    { icon: <Home size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.bottomHome, body: homeCopy.manualIconHome },
+    { icon: <Star size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.starLabel, body: homeCopy.manualIconStar },
+    { icon: <MapPin size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.openPermissions, body: homeCopy.manualIconLocation },
+    { icon: <Route size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.manualSections[3].title, body: homeCopy.manualIconRoute },
+    { icon: <Camera size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.readerAddPhoto, body: homeCopy.manualIconCamera },
+    { icon: <PhotoGpsStarIcon size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.uploadPhotoLocation, body: homeCopy.manualIconPhotoGps },
+    { icon: <Save size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.readerEdit, body: homeCopy.manualIconSave },
+    { icon: <Copy size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.manualIconCopy, body: homeCopy.manualIconCopy },
+    { icon: <Share size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.manualIconShare, body: homeCopy.manualIconShare },
+    { icon: <Search size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.search, body: homeCopy.manualIconSearch },
   ];
   const isOriginalSystemTheme = (Object.keys(DEFAULT_SYSTEM_THEME) as (keyof SystemTheme)[]).every(
     key => systemTheme[key].toLowerCase() === DEFAULT_SYSTEM_THEME[key].toLowerCase()
@@ -3374,6 +3434,37 @@ export default function App() {
       })
       .sort((a, b) => b.timestamp - a.timestamp);
   }, [homeCopy.noteLabel, homeCopy.untitledNote, recordsFilter, selectedRecordsDateKey, stars, textSearch]);
+
+  const searchResultRecords = React.useMemo(() => {
+    const query = submittedTextSearch.trim().toLowerCase();
+    if (!query) return [];
+
+    return stars
+      .flatMap((star, starIndex) => (
+        (star.notes || []).map((note, noteIndex) => {
+          const timestamp = getNoteTimestamp(note);
+          const title = htmlToText(note.titleHtml) || note.title || `${homeCopy.noteLabel} ${noteIndex + 1}`;
+          const text = htmlToText(note.contentHtml) || note.content || title || homeCopy.untitledNote;
+          const searchableText = `${title} ${text} ${star.lat.toFixed(4)} ${star.lng.toFixed(4)}`.toLowerCase();
+          return {
+            id: `${star.id}-${note.id}`,
+            starId: star.id,
+            noteId: note.id,
+            starIndex,
+            noteIndex,
+            title,
+            text,
+            timestamp,
+            color: star.color || '#EDC727',
+            matchCount: searchableText.split(query).length - 1,
+            hasContent: hasMeaningfulNoteContent(note),
+            isMatch: searchableText.includes(query),
+          };
+        })
+      ))
+      .filter(record => record.hasContent && record.isMatch)
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }, [homeCopy.noteLabel, homeCopy.untitledNote, stars, submittedTextSearch]);
 
   const recordsByDate = React.useMemo(() => {
     const groups = new Map<string, typeof noteRecords>();
@@ -3516,57 +3607,30 @@ export default function App() {
   };
 
   const handleTextSearch = () => {
-    const query = textSearch.trim().toLowerCase();
+    const query = textSearch.trim();
     if (!query) {
+      setSubmittedTextSearch('');
       closeSearchModal();
       return;
     }
 
     if (activeView === 'records') {
       setSelectedRecordsDateKey(null);
-      closeSearchModal();
-      return;
     }
 
-    const matchingRecord = stars
-      .flatMap(star => (
-        (star.notes || []).map(note => {
-          const timestamp = getNoteTimestamp(note);
-          const title = htmlToText(note.titleHtml) || note.title || homeCopy.untitledNote;
-          const text = htmlToText(note.contentHtml) || note.content || title;
-          return {
-            starId: star.id,
-            noteId: note.id,
-            lat: star.lat,
-            lng: star.lng,
-            timestamp,
-            searchableText: `${title} ${text} ${star.lat.toFixed(4)} ${star.lng.toFixed(4)}`.toLowerCase(),
-            hasContent: hasMeaningfulNoteContent(note),
-          };
-        })
-      ))
-      .filter(record => record.hasContent && record.searchableText.includes(query))
-      .sort((a, b) => b.timestamp - a.timestamp)[0];
-
-    if (matchingRecord) {
-      setActiveView('map');
-      setActiveHomePanel(null);
-      setSelectedRecordsDateKey(null);
-      setFlyTarget([matchingRecord.lat, matchingRecord.lng]);
-      setSelectedStarId(matchingRecord.starId);
-      setEditingNoteTarget({ starId: matchingRecord.starId, noteId: matchingRecord.noteId });
-    }
-
-    closeSearchModal();
+    setActiveSearchField('text');
+    setSubmittedTextSearch(query);
   };
 
   const openSearchModal = (field: SearchField = 'text') => {
     setActiveSearchField(field);
+    setSubmittedTextSearch('');
     setIsSearchOpen(true);
   };
 
   const closeSearchModal = () => {
     setIsSearchOpen(false);
+    setSubmittedTextSearch('');
   };
 
   const handleAvatarInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -4256,6 +4320,7 @@ export default function App() {
     setIsRecordsMenuOpen(false);
     setIsRecordsCalendarOpen(false);
     setIsSearchOpen(false);
+    setSubmittedTextSearch('');
     setIsReaderToolsOpen(false);
     setReaderActivePanel(null);
     setReaderShowCustomPicker(false);
@@ -4559,7 +4624,7 @@ export default function App() {
           className="pointer-events-none fixed z-[2400] flex h-11 w-11 items-center justify-center rounded-full text-[#EDC727] drop-shadow-lg"
           style={{ left: starDragPreview.x, top: starDragPreview.y, transform: 'translate(-50%, -50%)' }}
         >
-          <Star size={34} strokeWidth={2.4} fill="currentColor" />
+          <Star size={34} strokeWidth={UI_ICON_STROKE} fill="currentColor" />
         </div>
       )}
 
@@ -4584,7 +4649,7 @@ export default function App() {
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className={btnClass}
           >
-            {isMenuOpen ? <ChevronDown size={28} strokeWidth={2.5} /> : <Menu size={24} strokeWidth={2.5} />}
+            {isMenuOpen ? <ChevronDown size={28} strokeWidth={MAP_TOOL_ICON_STROKE} /> : <Menu size={24} strokeWidth={MAP_TOOL_ICON_STROKE} />}
           </button>
 
           <AnimatePresence>
@@ -4663,7 +4728,7 @@ export default function App() {
                 
                 {/* Map Pin */}
                 <button className={btnClass} onClick={handleLocateMe}>
-                  <MapPin size={24} strokeWidth={2} />
+                  <MapPin size={24} strokeWidth={MAP_TOOL_ICON_STROKE} />
                 </button>
                 
                 {/* Tag */}
@@ -4681,19 +4746,19 @@ export default function App() {
                           className={`w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all ${tagMode === 'add' ? 'bg-[var(--app-dark)] text-white shadow-md' : 'text-black hover:bg-black/10'}`}
                           onClick={() => setTagMode('add')}
                         >
-                          <Plus size={22} strokeWidth={3} />
+                          <Plus size={22} strokeWidth={UI_ICON_STROKE} />
                         </button>
                         <button 
                           className={`w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all ${tagMode === 'remove' ? 'bg-[var(--app-dark)] text-white shadow-md' : 'text-black hover:bg-black/10'}`}
                           onClick={() => setTagMode('remove')}
                         >
-                          <Minus size={22} strokeWidth={3} />
+                          <Minus size={22} strokeWidth={UI_ICON_STROKE} />
                         </button>
                         <button 
                           className="w-[40px] h-[40px] rounded-full flex items-center justify-center transition-colors text-black hover:bg-black/10"
                           onClick={toggleTagMenu}
                         >
-                          <ChevronRight size={26} strokeWidth={2.5} />
+                          <ChevronRight size={26} strokeWidth={UI_ICON_STROKE} />
                         </button>
                       </motion.div>
                     ) : (
@@ -4706,7 +4771,7 @@ export default function App() {
                         className="w-[48px] h-[48px] rounded-full bg-[var(--app-icon)] shadow-sm hover:brightness-95 transition-all flex items-center justify-center text-black"
                         onClick={toggleTagMenu}
                       >
-                        <Tag size={22} strokeWidth={2.5} fill="none" />
+                        <Tag size={22} strokeWidth={MAP_TOOL_ICON_STROKE} fill="none" />
                       </motion.button>
                     )}
                   </AnimatePresence>
@@ -4729,7 +4794,7 @@ export default function App() {
                   setTrackTime(0);
                   setIsMenuOpen(false);
                 }}>
-                  <Route size={24} strokeWidth={2} />
+                  <Route size={24} strokeWidth={MAP_TOOL_ICON_STROKE} />
                 </button>
                 
                 {/* Star */}
@@ -4747,7 +4812,7 @@ export default function App() {
                     }
                   }}
                 >
-                  <Star size={24} strokeWidth={2} fill="none" />
+                  <Star size={24} strokeWidth={MAP_TOOL_ICON_STROKE} fill="none" />
                 </button>
 
                 {/* Photo GPS */}
@@ -4759,7 +4824,7 @@ export default function App() {
                   aria-label={homeCopy.uploadPhotoLocation}
                   title={homeCopy.uploadPhotoLocation}
                 >
-                  <PhotoGpsStarIcon size={24} strokeWidth={2} />
+                  <PhotoGpsStarIcon size={24} strokeWidth={MAP_TOOL_ICON_STROKE} />
                 </button>
               </motion.div>
             )}
@@ -4801,7 +4866,7 @@ export default function App() {
                 }
               }}
             >
-              {isPaused ? <Play size={24} strokeWidth={2.5} /> : <Pause size={24} strokeWidth={2.5} />}
+              {isPaused ? <Play size={24} strokeWidth={UI_ICON_STROKE} /> : <Pause size={24} strokeWidth={UI_ICON_STROKE} />}
             </button>
           </div>
 
@@ -4818,7 +4883,7 @@ export default function App() {
                 setIsPaused(false);
               }}
             >
-              <X size={28} strokeWidth={2.5} />
+              <X size={28} strokeWidth={UI_ICON_STROKE} />
             </button>
             <button 
               className={btnClass}
@@ -4840,7 +4905,7 @@ export default function App() {
                 setIsPaused(false);
               }}
             >
-              <Save size={24} strokeWidth={2.5} />
+              <Save size={24} strokeWidth={UI_ICON_STROKE} />
             </button>
           </div>
         </>
@@ -4860,7 +4925,7 @@ export default function App() {
             }}
             aria-label={homeCopy.search}
           >
-            <Search size={24} strokeWidth={2.5} />
+            <Search size={24} strokeWidth={UI_ICON_STROKE} />
           </button>
         </div>
       )}
@@ -4884,7 +4949,7 @@ export default function App() {
                     className="relative z-20 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--app-icon)] text-black transition-colors"
                     aria-label={homeCopy.recordsMenu}
                   >
-                    {isRecordsMenuOpen ? <ChevronDown size={28} strokeWidth={2.5} /> : <Menu size={24} strokeWidth={2.5} />}
+                    {isRecordsMenuOpen ? <ChevronDown size={28} strokeWidth={UI_ICON_STROKE} /> : <Menu size={24} strokeWidth={UI_ICON_STROKE} />}
                   </button>
 
                   <AnimatePresence>
@@ -4900,7 +4965,7 @@ export default function App() {
                           className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm"
                           aria-label={homeCopy.calendar}
                         >
-                          <CalendarDays size={24} strokeWidth={2} />
+                          <CalendarDays size={24} strokeWidth={UI_ICON_STROKE} />
                         </button>
                         <button
                           onClick={() => {
@@ -4910,7 +4975,7 @@ export default function App() {
                           className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm"
                           aria-label={homeCopy.searchRecords}
                         >
-                          <Search size={28} strokeWidth={2} />
+                          <Search size={28} strokeWidth={UI_ICON_STROKE} />
                         </button>
                       </motion.div>
                     )}
@@ -5011,7 +5076,7 @@ export default function App() {
                           className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm transition-transform active:scale-95"
                           aria-label={homeCopy.closeCalendar}
                         >
-                          <X size={24} strokeWidth={2.5} />
+                          <X size={24} strokeWidth={UI_ICON_STROKE} />
                         </button>
                       </div>
 
@@ -5260,7 +5325,7 @@ export default function App() {
                     <img src={profileAvatarSrc} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-[var(--app-card)]">
-                      <UserRound size={42} strokeWidth={2} />
+                      <UserRound size={42} strokeWidth={UI_ICON_STROKE} />
                     </div>
                   )}
                 </button>
@@ -5282,7 +5347,7 @@ export default function App() {
                     <span className="min-w-0 flex-1 truncate text-[18px] font-medium leading-tight">{item.label}</span>
                     <ChevronRight
                       size={28}
-                      strokeWidth={2}
+                      strokeWidth={UI_ICON_STROKE}
                       className="ml-3 text-black/15"
                     />
                   </button>
@@ -5298,7 +5363,7 @@ export default function App() {
                   className="mb-5 isolate flex h-11 items-center gap-2 overflow-hidden rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black no-underline outline-none"
                   aria-label={homeCopy.back}
                 >
-                  <ChevronLeft size={24} strokeWidth={2} />
+                  <ChevronLeft size={24} strokeWidth={UI_ICON_STROKE} />
                   <span className="block translate-y-[-1px] leading-none no-underline [text-decoration:none]">{activeHomeTitle}</span>
                 </button>
               )}
@@ -5326,7 +5391,7 @@ export default function App() {
                         <img src={profileAvatarSrc} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
-                          <UserRound size={42} strokeWidth={2} />
+                          <UserRound size={42} strokeWidth={UI_ICON_STROKE} />
                         </div>
                       )}
                     </button>
@@ -5385,9 +5450,9 @@ export default function App() {
                             title={isPasswordRevealed ? homeCopy.hidePassword : homeCopy.showPassword}
                           >
                             {isPasswordRevealed ? (
-                              <EyeOff size={18} strokeWidth={2.1} />
+                              <EyeOff size={18} strokeWidth={UI_ICON_STROKE} />
                             ) : (
-                              <Eye size={18} strokeWidth={2.1} />
+                              <Eye size={18} strokeWidth={UI_ICON_STROKE} />
                             )}
                           </button>
                         </div>
@@ -5641,7 +5706,7 @@ export default function App() {
               className="w-full max-w-[360px] rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
             >
               <div className="mb-2 flex items-center gap-2 text-[17px] font-medium leading-tight">
-                <MapPin size={22} strokeWidth={2.2} />
+                <MapPin size={22} strokeWidth={UI_ICON_STROKE} />
                 {homeCopy.initialPermissionsTitle}
               </div>
               <div className="text-[13px] font-medium leading-snug text-black/55">
@@ -5690,7 +5755,7 @@ export default function App() {
             >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2 text-[18px] font-medium leading-tight">
-                  <Lock size={23} strokeWidth={2.2} />
+                  <Lock size={23} strokeWidth={UI_ICON_STROKE} />
                   <span className="truncate">{homeCopy.changePassword}</span>
                 </div>
                 <button
@@ -5705,7 +5770,7 @@ export default function App() {
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black transition-transform active:scale-95"
                   aria-label={homeCopy.closeManual}
                 >
-                  <X size={20} strokeWidth={2.2} />
+                  <X size={20} strokeWidth={UI_ICON_STROKE} />
                 </button>
               </div>
               <div className="mb-3 text-[12px] font-medium leading-snug text-black/45">
@@ -5783,7 +5848,7 @@ export default function App() {
             >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2 text-[18px] font-medium leading-tight">
-                  <BookOpen size={24} strokeWidth={2.2} />
+                  <BookOpen size={24} strokeWidth={UI_ICON_STROKE} />
                   <span className="truncate">{homeCopy.userManual}</span>
                 </div>
                 <button
@@ -5792,7 +5857,7 @@ export default function App() {
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black transition-transform active:scale-95"
                   aria-label={homeCopy.closeManual}
                 >
-                  <X size={20} strokeWidth={2.2} />
+                  <X size={20} strokeWidth={UI_ICON_STROKE} />
                 </button>
               </div>
               <div
@@ -5877,7 +5942,7 @@ export default function App() {
                     className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm transition-transform active:scale-95"
                     aria-label={homeCopy.backToRecords}
                   >
-                    <ChevronsLeft size={30} strokeWidth={2.5} />
+                    <ChevronsLeft size={30} strokeWidth={UI_ICON_STROKE} />
                   </button>
 
                   {readerRecord && (
@@ -5946,7 +6011,7 @@ export default function App() {
                         saveReaderDraft();
                         setReaderActivePanel(null);
                       }} aria-label={homeCopy.readerEdit}>
-                        <Save size={24} strokeWidth={2.4} />
+                        <Save size={24} strokeWidth={UI_ICON_STROKE} />
                       </button>
                       <div className="relative">
                         <button
@@ -5984,13 +6049,13 @@ export default function App() {
                         }}
                         aria-label={homeCopy.readerUnderline}
                       >
-                        <Underline size={24} strokeWidth={2.4} />
+                        <Underline size={24} strokeWidth={UI_ICON_STROKE} />
                       </button>
                       <button className={readerToolButtonClass} onClick={() => readerCameraInputRef.current?.click()} aria-label={homeCopy.readerAddPhoto}>
-                        <Camera size={24} strokeWidth={2.4} />
+                        <Camera size={24} strokeWidth={UI_ICON_STROKE} />
                       </button>
                       <button className={readerToolButtonClass} onClick={() => readerImageInputRef.current?.click()} aria-label={homeCopy.readerJumpImage}>
-                        <ImageIcon size={24} strokeWidth={2.4} />
+                        <ImageIcon size={24} strokeWidth={UI_ICON_STROKE} />
                       </button>
                       <div className="relative">
                         <button
@@ -6001,7 +6066,7 @@ export default function App() {
                           }}
                           aria-label={homeCopy.readerEditColor}
                         >
-                          <Palette size={24} strokeWidth={2.4} />
+                          <Palette size={24} strokeWidth={UI_ICON_STROKE} />
                         </button>
                         {readerActivePanel === 'color' && (
                           <div className="absolute right-[calc(100%+10px)] top-1/2 z-[1030] flex -translate-y-1/2 flex-col items-center">
@@ -6054,7 +6119,7 @@ export default function App() {
                         setReaderActivePanel(null);
                         setIsReaderToolsOpen(false);
                       }} aria-label={homeCopy.readerCollapseTools}>
-                        <ChevronUp size={30} strokeWidth={2.5} />
+                        <ChevronUp size={30} strokeWidth={UI_ICON_STROKE} />
                       </button>
                     </motion.div>
                   )}
@@ -6062,12 +6127,12 @@ export default function App() {
 
                 {!isReaderToolsOpen && (
                   <button className={readerToolButtonClass} onClick={() => setIsReaderToolsOpen(true)} aria-label={homeCopy.readerExpandTools}>
-                    <Menu size={24} strokeWidth={2.5} />
+                    <Menu size={24} strokeWidth={UI_ICON_STROKE} />
                   </button>
                 )}
 
                 <button className={readerToolButtonClass} onClick={locateReaderRecord} aria-label={homeCopy.readerLocate}>
-                  <MapPin size={26} strokeWidth={2.4} />
+                  <MapPin size={26} strokeWidth={UI_ICON_STROKE} />
                 </button>
               </div>
             )}
@@ -6137,7 +6202,10 @@ export default function App() {
                     value={textSearch}
                     onFocus={() => setActiveSearchField('text')}
                     onPointerDown={() => setActiveSearchField('text')}
-                    onChange={event => setTextSearch(event.target.value)}
+                    onChange={event => {
+                      setTextSearch(event.target.value);
+                      setSubmittedTextSearch('');
+                    }}
                     placeholder={homeCopy.searchPlaceholder}
                     className="min-w-0 flex-1 bg-transparent pr-10 text-[15px] font-medium outline-none placeholder:text-black/25"
                   />
@@ -6148,9 +6216,57 @@ export default function App() {
                   style={{ top: activeSearchField === 'coordinate' ? 6 : 62 }}
                   aria-label={homeCopy.runSearch}
                 >
-                  <Search size={28} strokeWidth={2.5} />
+                  <Search size={28} strokeWidth={UI_ICON_STROKE} />
                 </button>
               </div>
+              {activeSearchField === 'text' && submittedTextSearch.trim() && (
+                <div className="mt-3 max-h-[min(62dvh,28rem)] overflow-y-auto rounded-[20px] bg-[var(--app-page)] p-3 shadow-lg">
+                  <div className="mb-3 px-1">
+                    <div className="text-[22px] font-bold leading-tight text-black">
+                      {homeCopy.searchResultsTitle}
+                    </div>
+                    <div className="mt-0.5 text-[17px] font-semibold leading-tight text-black/60">
+                      {homeCopy.searchResultsFor} &quot;{submittedTextSearch.trim()}&quot;
+                    </div>
+                  </div>
+
+                  {searchResultRecords.length > 0 ? (
+                    <div className="flex flex-col gap-2.5">
+                      {searchResultRecords.map(record => {
+                        const previewText = getSearchPreviewText(record.text || record.title, submittedTextSearch);
+                        return (
+                          <button
+                            key={record.id}
+                            type="button"
+                            onClick={() => openReaderFromRecord(record.starId, record.noteId)}
+                            className="relative flex min-h-[76px] w-full items-center gap-2 rounded-[16px] bg-[var(--app-card)] px-4 py-3 pr-9 text-left shadow-sm transition-transform active:scale-[0.99]"
+                          >
+                            <span
+                              className="absolute right-[-6px] top-[-7px] flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-[12px] font-bold text-black"
+                              style={{ backgroundColor: record.color }}
+                            >
+                              {Math.max(1, record.matchCount)}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="line-clamp-3 block text-[13px] font-medium leading-snug text-black/82">
+                                <SearchHighlightedText text={previewText} query={submittedTextSearch} />
+                              </span>
+                              <span className="mt-1 block text-[11px] font-medium text-black/35">
+                                {formatRecordMonth(record.timestamp)} {formatRecordTime(record.timestamp, languageLocale)}
+                              </span>
+                            </span>
+                            <ChevronRight className="shrink-0 text-black/28" size={24} strokeWidth={UI_ICON_STROKE} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-[16px] bg-[var(--app-card)] px-4 py-5 text-center text-[14px] font-medium text-black/42">
+                      {homeCopy.noSearchResults}
+                    </div>
+                  )}
+                </div>
+              )}
             </motion.form>
           </motion.div>
         )}
@@ -6172,7 +6288,7 @@ export default function App() {
             className={getBottomNavClass('map')}
             aria-label={homeCopy.bottomMap}
           >
-            <MapIcon size={24} strokeWidth={2} />
+            <MapIcon size={24} strokeWidth={UI_ICON_STROKE} />
           </motion.button>
 
           <motion.button
@@ -6191,7 +6307,7 @@ export default function App() {
             className={getBottomNavClass('stats')}
             aria-label={homeCopy.bottomStats}
           >
-            <PieChart size={24} strokeWidth={2} />
+            <PieChart size={24} strokeWidth={UI_ICON_STROKE} />
           </motion.button>
           
           <motion.button
@@ -6208,7 +6324,7 @@ export default function App() {
             className={getBottomNavClass('records')}
             aria-label={homeCopy.bottomNotes}
           >
-            <BookOpen size={24} strokeWidth={2} />
+            <BookOpen size={24} strokeWidth={UI_ICON_STROKE} />
           </motion.button>
           
           <motion.button
@@ -6225,7 +6341,7 @@ export default function App() {
             className={getBottomNavClass('home')}
             aria-label={homeCopy.bottomHome}
           >
-            <Home size={24} strokeWidth={2} />
+            <Home size={24} strokeWidth={UI_ICON_STROKE} />
           </motion.button>
         </div>
       </div>
@@ -6253,14 +6369,14 @@ export default function App() {
             className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
             aria-label={homeCopy.closeImagePreview}
           >
-            <X size={22} strokeWidth={2.4} />
+            <X size={22} strokeWidth={UI_ICON_STROKE} />
           </button>
           <button
             onClick={() => downloadGalleryImage(galleryPreviewImage)}
             className="absolute right-[4.25rem] top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
             aria-label={homeCopy.downloadImage}
           >
-            <Download size={21} strokeWidth={2.4} />
+            <Download size={21} strokeWidth={UI_ICON_STROKE} />
           </button>
           <img
             src={galleryPreviewImage.src}
