@@ -11,25 +11,29 @@ My Life Memory can run in two modes:
 2. Deploy the Supabase Edge Functions:
    - `register-with-invite`
    - `memory-api`
+   - `mcp-token`
+   - `mcp`
 3. Store the invite code only in Supabase Function Secrets as `INVITE_CODE`.
-4. Keep `SUPABASE_SERVICE_ROLE_KEY` only in the Edge Function/server environment.
-5. After the invite function is deployed, disable public Email signup in Authentication settings so new accounts cannot bypass the invite flow.
-6. Open SQL Editor and run `supabase/schema.sql`.
+4. Store a long random `MEMORY_API_INTERNAL_TOKEN` in Supabase Function Secrets. It is used only between the cloud MCP function and `memory-api`.
+5. Keep `SUPABASE_SERVICE_ROLE_KEY` only in the Edge Function/server environment.
+6. After the invite function is deployed, disable public Email signup in Authentication settings so new accounts cannot bypass the invite flow.
+7. Open SQL Editor and run `supabase/schema.sql`.
    This creates:
    - `profiles`
    - `app_states`
+   - `mcp_tokens`
    - private Storage bucket `life-media`
    - RLS policies for per-user rows
    - Storage policies for per-user image paths
-7. Copy `.env.example` to `.env.local`.
-8. Fill:
+8. Copy `.env.example` to `.env.local`.
+9. Fill:
 
 ```bash
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 ```
 
-9. Restart the dev server.
+10. Restart the dev server.
 
 ## Memory API
 
@@ -101,13 +105,11 @@ MLM_MCP_ENABLE_WRITES=true
 MLM_MCP_ENABLE_DELETES=true
 ```
 
-For mobile MCP clients, deploy the cloud MCP Edge Function and use it directly:
+For mobile MCP clients, deploy the cloud MCP Edge Functions and use them directly:
 
 ```bash
-supabase functions secrets set \
-  MLM_ACCOUNT=your-account-id \
-  MCP_AUTH_TOKEN=choose-a-long-random-token
-
+supabase functions secrets set MEMORY_API_INTERNAL_TOKEN=choose-a-long-random-server-token
+supabase functions deploy mcp-token
 supabase functions deploy mcp
 ```
 
@@ -115,11 +117,11 @@ Mobile MCP client settings:
 
 - Transport: Streamable HTTP
 - URL: `https://your-project-ref.supabase.co/functions/v1/mcp`
-- Authorization: `Bearer <MCP_AUTH_TOKEN>`
+- Authorization: `Bearer <user-mcp-token-generated-in-the-app>`
 
 GitHub Pages is a static web host and cannot serve MCP directly. The mobile MCP server address should be the Supabase Edge Function URL, not the Pages URL.
 
-The mobile client should not receive Supabase credentials or the app account ID. They stay in Supabase Function Secrets. The cloud MCP function does not store the app password. The deployed function supports Streamable HTTP; SSE fallback is not needed for this project version.
+Each user generates their own MCP token in the app Settings screen. The full token is shown once; Supabase stores only its SHA-256 hash in `public.mcp_tokens`. The cloud MCP function resolves the token to one `user_id`, then calls `memory-api` with `MEMORY_API_INTERNAL_TOKEN`. The mobile client should not receive Supabase credentials, service role keys, app account IDs, or app passwords. The deployed function supports Streamable HTTP; SSE fallback is not needed for this project version.
 
 ## Storage Rules
 
@@ -166,6 +168,7 @@ If the app says cloud setup is blocked, run `supabase/fix-permissions.sql` once,
 - Never put the invite code in frontend code, Vite env vars, localStorage, app state, README examples, or exported files.
 - Existing accounts log in normally; only new registration goes through `register-with-invite`.
 - `memory-api` requires a user bearer token and must never accept service-role credentials from clients.
+- Cloud MCP tokens are per-user and stored only as hashes in `mcp_tokens`.
 - MCP should run locally with a normal user account or user access token, not a service-role key.
 - MCP write/delete tools are disabled by default.
 - Keep `life-media` private.

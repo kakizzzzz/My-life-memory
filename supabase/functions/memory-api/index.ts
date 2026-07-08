@@ -67,10 +67,6 @@ const getString = (value: unknown, fallback = '') => (
   typeof value === 'string' ? value : fallback
 );
 
-const normalizeAccountId = (accountId: unknown) => (
-  typeof accountId === 'string' ? accountId.trim().toLowerCase() : ''
-);
-
 const getNumber = (value: unknown, fallback = 0) => {
   const number = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -370,43 +366,6 @@ const loadMemory = async (admin: ReturnType<typeof createClient>, token: string)
   return loadMemoryForUserId(admin, userData.user.id);
 };
 
-const loadMemoryByAccount = async (admin: ReturnType<typeof createClient>, accountId: string) => {
-  const normalizedAccount = normalizeAccountId(accountId);
-  if (!normalizedAccount) {
-    throw new Response(JSON.stringify({ error: { code: 'bad_request', message: 'Account ID is required.' } }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  const { data: profileRow, error: profileError } = await admin
-    .from('profiles')
-    .select('id,account_id')
-    .eq('account_id', normalizedAccount)
-    .maybeSingle();
-
-  if (profileError) {
-    throw new Response(JSON.stringify({
-      error: {
-        code: 'setup_required',
-        message: profileError.message || 'Could not load memory profile.',
-      },
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  if (!profileRow?.id) {
-    throw new Response(JSON.stringify({ error: { code: 'not_found', message: 'Account was not found.' } }), {
-      status: 404,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  return loadMemoryForUserId(admin, profileRow.id, normalizedAccount);
-};
-
 const saveState = async (admin: ReturnType<typeof createClient>, userId: string, state: Record<string, unknown>) => {
   const { error } = await admin
     .from('app_states')
@@ -454,7 +413,7 @@ serve(async request => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const internalToken = Deno.env.get('MCP_AUTH_TOKEN') || Deno.env.get('MEMORY_API_INTERNAL_TOKEN') || '';
+  const internalToken = Deno.env.get('MEMORY_API_INTERNAL_TOKEN') || '';
   if (!supabaseUrl || !serviceRoleKey) {
     return errorResponse('setup_required', 'Memory API is not configured.', 500);
   }
@@ -477,9 +436,19 @@ serve(async request => {
     const authHeader = request.headers.get('authorization') || '';
     const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1] || '';
     const internalHeader = request.headers.get('x-memory-api-internal-token') || '';
-    const memory = internalToken && internalHeader === internalToken
-      ? await loadMemoryByAccount(admin, getString(body.accountId || body.account))
-      : await loadMemory(admin, token);
+    let memory: Awaited<ReturnType<typeof loadMemoryForUserId>>;
+    if (internalHeader) {
+      if (!internalToken || internalHeader !== internalToken) {
+        return errorResponse('unauthorized', 'Invalid internal Memory API token.', 401);
+      }
+      const internalUserId = getString(body.userId);
+      if (!internalUserId) {
+        return errorResponse('bad_request', 'Internal Memory API requests require userId.', 400);
+      }
+      memory = await loadMemoryForUserId(admin, internalUserId);
+    } else {
+      memory = await loadMemory(admin, token);
+    }
     const action = getString(body.action);
     const timeZone = getString(body.timeZone, 'Asia/Shanghai');
     const stars = getStars(memory.state);

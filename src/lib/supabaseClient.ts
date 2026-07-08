@@ -43,6 +43,7 @@ const getSupabaseProjectRef = (url?: string) => {
 };
 
 export const supabaseProjectRef = getSupabaseProjectRef(supabaseUrl);
+export const supabasePublishableKey = supabaseAnonKey || '';
 
 export const isSupabaseConfigValid =
   Boolean(supabaseUrl) &&
@@ -65,6 +66,12 @@ export const supabaseConfigMessage = isSupabaseConfigValid
           : 'Supabase config is invalid.';
 
 export const isCloudBackendEnabled = isSupabaseConfigValid;
+
+export const supabaseFunctionUrl = (functionName: string) => (
+  isCloudBackendEnabled && supabaseUrl
+    ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/${functionName}`
+    : ''
+);
 
 export const supabase = isCloudBackendEnabled
   ? createClient(supabaseUrl, supabaseAnonKey, {

@@ -1,5 +1,12 @@
 import type { User } from '@supabase/supabase-js';
-import { isCloudBackendEnabled, supabase, supabaseProjectRef, type CloudSession } from './supabaseClient';
+import {
+  isCloudBackendEnabled,
+  supabase,
+  supabaseFunctionUrl,
+  supabaseProjectRef,
+  supabasePublishableKey,
+  type CloudSession,
+} from './supabaseClient';
 
 export type CloudProfile = {
   account: string;
@@ -8,6 +15,15 @@ export type CloudProfile = {
 };
 
 export type CloudAppState = Record<string, unknown>;
+
+export type CloudMcpTokenInfo = {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+};
 
 export type CloudAuthErrorDetails = {
   phase: 'signup' | 'signin' | 'set_session' | 'profile_save' | 'state_save' | 'state_load' | 'setup';
@@ -749,6 +765,64 @@ export const saveCloudAppState = async (state: CloudAppState) => {
     }, { onConflict: 'user_id' });
 
   if (error) throw error;
+};
+
+const readCloudFunctionResponse = async <T>(response: Response): Promise<T> => {
+  const text = await response.text();
+  let payload: (T & { error?: { message?: string; code?: string } }) | null = null;
+  try {
+    payload = text ? JSON.parse(text) as T & { error?: { message?: string; code?: string } } : null;
+  } catch {
+    payload = null;
+  }
+  if (!response.ok || payload?.error) {
+    throw new Error(payload?.error?.message || `Cloud function failed with HTTP ${response.status}`);
+  }
+  return payload as T;
+};
+
+const callMcpTokenFunction = async <T>(body: Record<string, unknown>) => {
+  const client = requireSupabase();
+  const { data, error } = await client.auth.getSession();
+  if (error) throw error;
+  const token = data.session?.access_token;
+  if (!token) throw new Error('No active cloud session.');
+
+  const endpoint = supabaseFunctionUrl('mcp-token');
+  if (!endpoint) throw new Error('Cloud backend is not configured.');
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      apikey: supabasePublishableKey,
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  return readCloudFunctionResponse<T>(response);
+};
+
+export const getCloudMcpEndpoint = () => supabaseFunctionUrl('mcp');
+
+export const listCloudMcpTokens = async () => {
+  const payload = await callMcpTokenFunction<{ ok: true; tokens: CloudMcpTokenInfo[] }>({ action: 'list' });
+  return payload.tokens || [];
+};
+
+export const createCloudMcpToken = async (name = 'My Life Memory MCP') => {
+  return callMcpTokenFunction<{ ok: true; token: string; tokenInfo: CloudMcpTokenInfo }>({
+    action: 'create',
+    name,
+  });
+};
+
+export const revokeCloudMcpToken = async (tokenId: string) => {
+  return callMcpTokenFunction<{ ok: true }>({
+    action: 'revoke',
+    tokenId,
+  });
 };
 
 export const updateCloudPassword = async ({

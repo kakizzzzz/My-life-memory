@@ -6,7 +6,7 @@ select current_database() as db_name;
 select table_schema, table_name
 from information_schema.tables
 where table_schema = 'public'
-  and table_name in ('profiles', 'app_states')
+  and table_name in ('profiles', 'app_states', 'mcp_tokens')
 order by table_name;
 
 -- 3) Confirm private storage bucket exists.
@@ -23,7 +23,7 @@ select
   privilege_type
 from information_schema.table_privileges
 where table_schema = 'public'
-  and table_name in ('profiles', 'app_states')
+  and table_name in ('profiles', 'app_states', 'mcp_tokens')
   and grantee = 'authenticated'
 order by table_name, privilege_type;
 
@@ -39,7 +39,7 @@ select
   with_check
 from pg_policies
 where schemaname = 'public'
-  and tablename in ('profiles', 'app_states')
+  and tablename in ('profiles', 'app_states', 'mcp_tokens')
 order by tablename, cmd, policyname;
 
 -- 6) Confirm storage object policies.
@@ -65,3 +65,10 @@ select current_setting('role') as current_role;
 select count(*) as app_states_with_profile_password
 from public.app_states
 where state #> '{profile,password}' is not null;
+
+-- 9) Confirm MCP tokens store hashes only.
+select
+  count(*) as active_mcp_tokens,
+  count(*) filter (where token_hash like 'mlm_%') as suspicious_plaintext_tokens
+from public.mcp_tokens
+where revoked_at is null;

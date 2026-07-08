@@ -31,7 +31,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Leaflet + React Leaflet
 - Motion for small UI transitions
 - Supabase Auth, Postgres, Row Level Security, and private Storage
-- Supabase Edge Functions for invite registration and the Memory API
+- Supabase Edge Functions for invite registration, the Memory API, MCP token management, and cloud MCP
 - Local Model Context Protocol (MCP) server for AI clients
 - GitHub Pages for static hosting
 
@@ -98,14 +98,20 @@ Mobile MCP clients should use the cloud MCP Edge Function:
 https://your-project-ref.supabase.co/functions/v1/mcp
 ```
 
-Cloud MCP secrets:
+Cloud MCP server secrets:
 
 ```bash
-MLM_ACCOUNT=your-account-id
-MCP_AUTH_TOKEN=choose-a-long-random-token
+MEMORY_API_INTERNAL_TOKEN=choose-a-long-random-server-token
 ```
 
-Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <MCP_AUTH_TOKEN>`. The phone never receives the Supabase URL, publishable key, or app account ID; those stay in Supabase Function Secrets. The cloud MCP function does not store the app password.
+Users generate their own MCP token inside the app:
+
+1. Log in to My Life Memory.
+2. Open Settings.
+3. Open AI memory access.
+4. Generate an MCP token and copy it immediately.
+
+Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <generated-user-mcp-token>`. The full token is shown only once. Supabase stores only a SHA-256 hash in `public.mcp_tokens`, so each token maps to exactly one user and cannot read another account's data. The phone never receives the Supabase URL, publishable key, service role key, or app password.
 
 By default, MCP exposes only read-only tools. To expose write tools in either the cloud function or the local stdio server:
 
@@ -149,11 +155,12 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
    - `public.app_states`
    - private Storage bucket `life-media`
    - RLS policies for both tables and `storage.objects`
-5. Deploy the Supabase Edge Functions `register-with-invite` and `memory-api`.
+5. Deploy the Supabase Edge Functions `register-with-invite`, `memory-api`, `mcp-token`, and `mcp`.
 6. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
-7. The function also requires Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-8. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
-9. If table grants are missing, run `supabase/fix-permissions.sql`.
+7. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
+8. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+9. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
+10. If table grants are missing, run `supabase/fix-permissions.sql`.
 
 Storage paths are user scoped:
 
@@ -186,6 +193,7 @@ For GitHub Pages:
    - change the password from the profile screen
    - export a readable HTML report
    - call `memory-api` with a logged-in user's bearer token
+   - generate an MCP token in Settings and list cloud MCP read-only tools from a mobile/HTTP MCP client
    - start the local MCP server and list read-only tools
    - reload on another device/browser
    - delete the image and confirm it disappears
@@ -196,8 +204,9 @@ For GitHub Pages:
 - The frontend must use only the Supabase publishable/anon key.
 - `service_role` belongs only in trusted server environments and is not needed for this app.
 - Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
-- The `memory-api` Edge Function must authenticate a real user bearer token before reading or changing app state.
-- The MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.
+- The `memory-api` Edge Function must authenticate a real user bearer token, or a private internal MCP call with a resolved `user_id`, before reading or changing app state.
+- Cloud MCP tokens are per-user. The app shows the full token once, stores only a hash in `public.mcp_tokens`, and can revoke active tokens from Settings.
+- The local MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.
 - MCP write/delete tools are hidden unless explicitly enabled by local environment variables.
 - The invite code must live only in Supabase Function Secrets as `INVITE_CODE`.
 - After deployment, disable public Supabase Email signup so registration cannot bypass the Edge Function.

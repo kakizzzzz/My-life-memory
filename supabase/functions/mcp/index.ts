@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -272,9 +273,19 @@ const rpcError = (id: unknown, code: number, message: string, data?: unknown) =>
 
 const getString = (value: unknown) => (typeof value === 'string' ? value : '');
 
-const normalizeAccountId = (accountId: unknown) => (
-  typeof accountId === 'string' ? accountId.trim().toLowerCase() : ''
+const bytesToHex = (bytes: Uint8Array) => (
+  Array.from(bytes).map(byte => byte.toString(16).padStart(2, '0')).join('')
 );
+
+const sha256Hex = async (value: string) => {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return bytesToHex(new Uint8Array(hash));
+};
+
+const getBearerToken = (request: Request) => {
+  const authorization = request.headers.get('authorization') || '';
+  return authorization.match(/^Bearer\s+(.+)$/i)?.[1] || '';
+};
 
 const readJsonResponse = async (response: Response) => {
   const text = await response.text();
@@ -288,9 +299,9 @@ const readJsonResponse = async (response: Response) => {
 
 const getConfig = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || Deno.env.get('MLM_SUPABASE_URL') || '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('MLM_SUPABASE_ANON_KEY') || '';
-  const account = normalizeAccountId(Deno.env.get('MLM_ACCOUNT') || '');
-  const mcpAuthToken = Deno.env.get('MCP_AUTH_TOKEN') || '';
+  const memoryApiInternalToken = Deno.env.get('MEMORY_API_INTERNAL_TOKEN') || '';
   const memoryApiUrl = Deno.env.get('MLM_MEMORY_API_URL') || (supabaseUrl ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/memory-api` : '');
   const timeZone = Deno.env.get('MLM_TIME_ZONE') || 'Asia/Shanghai';
   const enableWrites = Deno.env.get('MLM_MCP_ENABLE_WRITES') === 'true';
@@ -298,9 +309,9 @@ const getConfig = () => {
 
   return {
     supabaseUrl: supabaseUrl.replace(/\/$/, ''),
+    serviceRoleKey,
     supabaseAnonKey,
-    account,
-    mcpAuthToken,
+    memoryApiInternalToken,
     memoryApiUrl,
     timeZone,
     enableWrites,
@@ -308,21 +319,64 @@ const getConfig = () => {
   };
 };
 
-const requireAuthorized = (request: Request, mcpAuthToken: string) => {
-  const authorization = request.headers.get('authorization') || '';
-  return Boolean(mcpAuthToken && authorization === `Bearer ${mcpAuthToken}`);
+const authenticateMcpRequest = async (request: Request, config: ReturnType<typeof getConfig>) => {
+  const token = getBearerToken(request);
+  if (!token) {
+    throw new Response(JSON.stringify(rpcError(null, -32001, 'Unauthorized')), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const admin = createClient(config.supabaseUrl, config.serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+  const tokenHash = await sha256Hex(token);
+  const { data, error } = await admin
+    .from('mcp_tokens')
+    .select('id,user_id')
+    .eq('token_hash', tokenHash)
+    .is('revoked_at', null)
+    .maybeSingle();
+
+  if (error) {
+    throw new Response(JSON.stringify(rpcError(null, -32000, error.message || 'MCP token lookup failed.')), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (!data?.user_id) {
+    throw new Response(JSON.stringify(rpcError(null, -32001, 'Unauthorized')), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const { error: updateError } = await admin
+    .from('mcp_tokens')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', data.id);
+  if (updateError) console.warn('Could not update MCP token last_used_at:', updateError.message);
+
+  return {
+    userId: data.user_id,
+  };
 };
 
-const callMemoryApi = async (config: ReturnType<typeof getConfig>, action: string, input: Record<string, unknown> = {}) => {
+const callMemoryApi = async (config: ReturnType<typeof getConfig>, userId: string, action: string, input: Record<string, unknown> = {}) => {
   const response = await fetch(config.memoryApiUrl, {
     method: 'POST',
     headers: {
       apikey: config.supabaseAnonKey,
-      'x-memory-api-internal-token': config.mcpAuthToken,
+      'x-memory-api-internal-token': config.memoryApiInternalToken,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      accountId: config.account,
+      userId,
       timeZone: config.timeZone,
       ...input,
       action,
@@ -348,7 +402,7 @@ const toolActionInput = (toolName: string, input: Record<string, unknown>) => {
   return input;
 };
 
-const handleRpcMessage = async (message: Record<string, unknown>, config: ReturnType<typeof getConfig>) => {
+const handleRpcMessage = async (message: Record<string, unknown>, config: ReturnType<typeof getConfig>, userId: string) => {
   const id = message.id;
   const method = getString(message.method);
   const params = message.params && typeof message.params === 'object'
@@ -391,7 +445,7 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
     if (!tools.some(tool => tool.name === toolName)) {
       return rpcError(id, -32602, `Unknown or disabled tool: ${toolName}`);
     }
-    const payload = await callMemoryApi(config, toolName, toolActionInput(toolName, args));
+    const payload = await callMemoryApi(config, userId, toolName, toolActionInput(toolName, args));
     return rpcResult(id, {
       content: [
         {
@@ -413,15 +467,19 @@ serve(async request => {
   const config = getConfig();
   if (
     !config.supabaseUrl ||
+    !config.serviceRoleKey ||
     !config.supabaseAnonKey ||
-    !config.account ||
-    !config.mcpAuthToken ||
+    !config.memoryApiInternalToken ||
     !config.memoryApiUrl
   ) {
     return jsonResponse(rpcError(null, -32000, 'MCP service is not configured.'), 500);
   }
 
-  if (!requireAuthorized(request, config.mcpAuthToken)) {
+  let auth: { userId: string };
+  try {
+    auth = await authenticateMcpRequest(request, config);
+  } catch (error) {
+    if (error instanceof Response) return error;
     return jsonResponse(rpcError(null, -32001, 'Unauthorized'), 401);
   }
 
@@ -454,13 +512,13 @@ serve(async request => {
 
   try {
     if (Array.isArray(body)) {
-      const results = (await Promise.all(body.map(message => handleRpcMessage(message, config)))).filter(Boolean);
+      const results = (await Promise.all(body.map(message => handleRpcMessage(message, config, auth.userId)))).filter(Boolean);
       return jsonResponse(results);
     }
     if (!body || typeof body !== 'object') {
       return jsonResponse(rpcError(null, -32600, 'Invalid Request'), 400);
     }
-    const result = await handleRpcMessage(body as Record<string, unknown>, config);
+    const result = await handleRpcMessage(body as Record<string, unknown>, config, auth.userId);
     if (!result) return new Response(null, { status: 202, headers: corsHeaders });
     return jsonResponse(result);
   } catch (error) {
