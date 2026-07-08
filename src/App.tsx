@@ -24,14 +24,12 @@ import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from 
 import { isCloudBackendEnabled, supabaseConfigMessage, supabaseFunctionUrl } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
-  createSignedImageUrl,
   dehydrateStorageMediaHtml,
   deleteImageFromStorageReliably,
   hydrateStorageMediaHtml,
   imageMetadataFromElement,
   isSupabaseMediaEnabled,
   retryPendingImageDeletions,
-  storageImageAttrsHtml,
   storagePlaceholderSrc,
   uploadImageToStorage,
   warmStorageImageUrls,
@@ -39,6 +37,14 @@ import {
 } from './lib/mediaStorage';
 import { sanitizeRichHtml, sanitizeRichHtmlFields } from './lib/htmlSanitizer';
 import { normalizePersistedAppState } from './lib/appStateNormalize';
+import {
+  buildReadableExportHtml,
+  exportImageSource,
+  exportStoredImage,
+  getInlineExportImageSources,
+  hasImageExportError,
+  type ExportedImageData,
+} from './lib/exportReport';
 import {
   addMonths,
   dateFromCalendarDateKey,
@@ -58,6 +64,24 @@ import {
   type TrackPoint,
   type TrackPointMetadata,
 } from './lib/trackUtils';
+import {
+  cleanReaderHtml,
+  ensureReaderEditableTailAfterMedia,
+  escapeHtml,
+  extractImagesFromHtml,
+  extractStoredImagesFromHtml,
+  getLastReaderContentChild,
+  getReadableNoteHtml,
+  getReadableTitleHtml,
+  getRemovedStoredImages,
+  getStoredImagesFromNote,
+  hasMeaningfulNoteContent,
+  htmlToText,
+  imageToReaderHtml,
+  readerEditableTailHtml,
+  readerNodeHasMeaningfulContent,
+  uniqueStoredImages,
+} from './lib/noteHtmlUtils';
 import type {
   AppView,
   HomePanel,
@@ -664,279 +688,10 @@ const readPhotoGpsCoordinates = async (file: File): Promise<[number, number] | n
   }
 };
 
-const extractImagesFromHtml = (html?: string) => {
-  if (!html || typeof document === 'undefined') return [];
-  const container = document.createElement('div');
-  container.innerHTML = sanitizeRichHtml(html);
-  return Array.from(container.querySelectorAll('img'))
-    .map(image => image.getAttribute('src'))
-    .filter((src): src is string => Boolean(src));
-};
-
-const extractStoredImagesFromHtml = (html?: string) => {
-  if (!html || typeof document === 'undefined') return [];
-  const container = document.createElement('div');
-  container.innerHTML = sanitizeRichHtml(html);
-  return Array.from(container.querySelectorAll('[data-note-image="true"]'))
-    .map(figure => imageMetadataFromElement(figure))
-    .filter((metadata): metadata is StoredImageMetadata => Boolean(metadata));
-};
-
-const uniqueStoredImages = (metadataList: StoredImageMetadata[]) => (
-  metadataList.filter((metadata, index, list) => (
-    list.findIndex(item => item.bucket === metadata.bucket && item.path === metadata.path) === index
-  ))
-);
-
-const getRemovedStoredImages = (previousImages: StoredImageMetadata[], nextImages: StoredImageMetadata[]) => (
-  uniqueStoredImages(previousImages).filter(previous => (
-    !nextImages.some(next => next.bucket === previous.bucket && next.path === previous.path)
-  ))
-);
-
-const getStoredImagesFromNote = (note?: NoteData) => (
-  uniqueStoredImages([
-    ...(note?.images || []),
-    ...extractStoredImagesFromHtml(note?.contentHtml),
-  ])
-);
-
-type ExportedImageData = {
-  source: string;
-  provider: 'supabase' | 'inline' | 'external';
-  bucket?: string;
-  key?: string;
-  path?: string;
-  src?: string;
-  mimeType?: string;
-  size?: number;
-  createdAt?: number;
-  dataUrl?: string;
-  exportError?: string;
-};
-
-const getDataUrlMimeType = (dataUrl: string) => (
-  dataUrl.match(/^data:([^;,]+)/)?.[1] || 'application/octet-stream'
-);
-
-const getDataUrlApproxSize = (dataUrl: string) => {
-  const base64 = dataUrl.split(',')[1] || '';
-  return Math.max(0, Math.floor((base64.length * 3) / 4));
-};
-
-const fetchImageAsDataUrl = async (src: string) => {
-  if (src.startsWith('data:')) {
-    return {
-      dataUrl: src,
-      mimeType: getDataUrlMimeType(src),
-      size: getDataUrlApproxSize(src),
-    };
-  }
-
-  const response = await fetch(src);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const blob = await response.blob();
-  return {
-    dataUrl: await imageBlobToDataUrl(blob),
-    mimeType: blob.type || 'image/jpeg',
-    size: blob.size,
-  };
-};
-
-const exportImageSource = async (src: string, source: string): Promise<ExportedImageData | null> => {
-  if (!src || src.startsWith('storage://')) return null;
-
-  try {
-    const imageData = await fetchImageAsDataUrl(src);
-    return {
-      source,
-      provider: src.startsWith('data:') ? 'inline' : 'external',
-      src,
-      ...imageData,
-    };
-  } catch (error) {
-    return {
-      source,
-      provider: 'external',
-      src,
-      exportError: error instanceof Error ? error.message : String(error),
-    };
-  }
-};
-
-const exportStoredImage = async (metadata: StoredImageMetadata, source: string): Promise<ExportedImageData> => {
-  const baseImage = {
-    source,
-    provider: 'supabase' as const,
-    bucket: metadata.bucket,
-    key: metadata.key,
-    path: metadata.path,
-    mimeType: metadata.mimeType,
-    size: metadata.size,
-    createdAt: metadata.createdAt,
-  };
-
-  try {
-    const signedUrl = await createSignedImageUrl(metadata);
-    const imageData = signedUrl ? await fetchImageAsDataUrl(signedUrl) : null;
-    return {
-      ...baseImage,
-      src: storagePlaceholderSrc(metadata),
-      ...(imageData || {}),
-    };
-  } catch (error) {
-    return {
-      ...baseImage,
-      src: storagePlaceholderSrc(metadata),
-      exportError: error instanceof Error ? error.message : String(error),
-    };
-  }
-};
-
-const getInlineExportImageSources = (note?: NoteData) => {
-  const storedPlaceholders = new Set(getStoredImagesFromNote(note).map(storagePlaceholderSrc));
-  const sources = [
-    ...extractImagesFromHtml(note?.contentHtml),
-    ...getLegacyNoteImages(note),
-  ];
-
-  return Array.from(new Set(sources)).filter(src => (
-    Boolean(src) && !storedPlaceholders.has(src) && !src.startsWith('storage://')
-  ));
-};
-
-const hasImageExportError = (value: unknown): boolean => {
-  if (Array.isArray(value)) return value.some(hasImageExportError);
-  if (!value || typeof value !== 'object') return false;
-  if ('exportError' in value && Boolean((value as { exportError?: unknown }).exportError)) return true;
-  return Object.values(value).some(hasImageExportError);
-};
-
-const buildReadableExportHtml = ({
-  appName,
-  account,
-  profileName,
-  exportedAt,
-  locations,
-  locale,
-}: {
-  appName: string;
-  account: string;
-  profileName: string;
-  exportedAt: string;
-  locale: string;
-  locations: Array<{
-    index: number;
-    lat: number;
-    lng: number;
-    createdAt?: number | null;
-    notes: Array<{
-      title: string;
-      text: string;
-      timestamp: number;
-      images: ExportedImageData[];
-    }>;
-  }>;
-}) => {
-  const formatDate = (timestamp?: number | string | null) => {
-    const date = timestamp ? new Date(timestamp) : null;
-    if (!date || Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(date);
-  };
-
-  const imageHtml = (image: ExportedImageData, index: number) => {
-    if (!image.dataUrl) {
-      return `<div class="image-missing">Image ${index + 1} could not be embedded.</div>`;
-    }
-    return (
-      '<figure class="image-frame">' +
-        `<img src="${image.dataUrl}" alt="Exported image ${index + 1}" />` +
-      '</figure>'
-    );
-  };
-
-  const locationHtml = locations.map(location => (
-    `<section class="location">` +
-      `<div class="location-head">` +
-        `<div>` +
-          `<h2>Location ${location.index}</h2>` +
-          `<p class="meta">Coordinates: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}</p>` +
-          (location.createdAt ? `<p class="meta">Created: ${formatDate(location.createdAt)}</p>` : '') +
-        `</div>` +
-      `</div>` +
-      location.notes.map(note => (
-        `<article class="note">` +
-          `<h3>${escapeHtml(note.title || 'Untitled note')}</h3>` +
-          `<p class="meta">Time: ${formatDate(note.timestamp)}</p>` +
-          (note.text ? `<p class="note-text">${escapeHtml(note.text)}</p>` : '<p class="empty">No text</p>') +
-          (note.images.length > 0 ? `<div class="images">${note.images.map(imageHtml).join('')}</div>` : '') +
-        `</article>`
-      )).join('') +
-    `</section>`
-  )).join('');
-
-  return (
-    '<!doctype html>' +
-    `<html lang="${locale.startsWith('zh') ? 'zh-CN' : locale.startsWith('ko') ? 'ko-KR' : 'en'}">` +
-    '<head>' +
-      '<meta charset="utf-8" />' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
-      `<title>${escapeHtml(appName)} Export</title>` +
-      '<style>' +
-        'body{margin:0;background:#f4f4f4;color:#111;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55;}' +
-        '.page{max-width:860px;margin:0 auto;padding:42px 22px 64px;}' +
-        'header{margin-bottom:28px;}' +
-        'h1{margin:0 0 8px;font-size:34px;line-height:1.08;}' +
-        'h2{margin:0 0 6px;font-size:24px;}' +
-        'h3{margin:0 0 6px;font-size:20px;}' +
-        '.meta{margin:2px 0;color:#666;font-size:13px;}' +
-        '.summary{margin-top:14px;padding:14px 16px;border-radius:14px;background:#fff;}' +
-        '.location{margin:22px 0;padding:20px;border-radius:18px;background:#fff;box-shadow:0 1px 8px rgba(0,0,0,.04);}' +
-        '.location-head{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:16px;}' +
-        '.note{padding:14px 0;border-top:1px solid #f0f0f0;}' +
-        '.note:first-of-type{border-top:0;padding-top:0;}' +
-        '.note-text{white-space:pre-wrap;margin:12px 0;font-size:15px;}' +
-        '.empty{color:#999;font-size:14px;}' +
-        '.images{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:12px;}' +
-        '.image-frame{margin:0;border-radius:14px;overflow:hidden;background:#eee;}' +
-        '.image-frame img{display:block;width:100%;height:auto;}' +
-        '.image-missing{border-radius:12px;background:#f1f1f1;color:#777;padding:12px;font-size:13px;}' +
-        '@media print{body{background:#fff}.page{max-width:none;padding:0}.location{box-shadow:none;break-inside:avoid}}' +
-      '</style>' +
-    '</head>' +
-    '<body>' +
-      '<main class="page">' +
-        '<header>' +
-          `<h1>${escapeHtml(appName)}</h1>` +
-          `<p class="meta">Account: ${escapeHtml(account || 'user')}</p>` +
-          (profileName ? `<p class="meta">Name: ${escapeHtml(profileName)}</p>` : '') +
-          `<p class="meta">Exported: ${formatDate(exportedAt)}</p>` +
-          `<div class="summary">${locations.length} locations, ${locations.reduce((sum, location) => sum + location.notes.length, 0)} notes</div>` +
-        '</header>' +
-        (locationHtml || '<section class="location"><p class="empty">No notes yet.</p></section>') +
-      '</main>' +
-    '</body>' +
-    '</html>'
-  );
-};
-
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
     void deleteImageFromStorageReliably(metadata);
   });
-};
-
-const htmlToText = (html?: string) => {
-  if (!html || typeof document === 'undefined') return '';
-  const container = document.createElement('div');
-  container.innerHTML = sanitizeRichHtml(html);
-  return (container.textContent || '').replace(/\s+/g, ' ').trim();
 };
 
 const countSearchMatches = (text: string, query: string) => {
@@ -957,149 +712,6 @@ const countSearchMatches = (text: string, query: string) => {
   return count;
 };
 
-const escapeHtml = (value: string) => (
-  value.replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[char] || char))
-);
-
-const textToParagraphHtml = (content: string) => (
-  content
-    .split(/\n\s*\n/)
-    .filter(block => block.trim().length > 0)
-    .map(block => `<p>${escapeHtml(block).replace(/\n/g, '<br>')}</p>`)
-    .join('')
-);
-
-const getLegacyNoteImages = (note?: NoteData) => {
-  const imageUrls = Array.isArray(note?.imageUrls) ? note.imageUrls : [];
-  const legacyImageUrl = note?.imageUrl && !imageUrls.includes(note.imageUrl) ? [note.imageUrl] : [];
-  return [...imageUrls, ...legacyImageUrl];
-};
-
-const readerRemoveImageButtonHtml = (label = 'Remove image') => (
-  `<button type="button" data-remove-image="true" aria-label="${escapeHtml(label)}">` +
-    `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>` +
-  `</button>`
-);
-
-const imageToReaderHtml = (
-  src: string,
-  altText = 'Note attachment',
-  removeImageText = 'Remove image',
-  metadata?: StoredImageMetadata | null
-) => {
-  const mediaAttrs = metadata ? ` ${storageImageAttrsHtml(metadata)}` : '';
-  const imageSrc = metadata ? (src || storagePlaceholderSrc(metadata)) : src;
-  return (
-  `<figure class="note-inline-image" contenteditable="false" data-note-image="true">` +
-    `<img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(altText)}"${mediaAttrs} />` +
-    readerRemoveImageButtonHtml(removeImageText) +
-  `</figure>`
-  );
-};
-
-const readerEditableTailHtml = '<p data-note-tail="true"><br></p>';
-
-const getLastReaderContentChild = (element: HTMLElement) => {
-  let node = element.lastChild;
-  while (node && node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) {
-    node = node.previousSibling;
-  }
-  return node;
-};
-
-const readerNodeHasMeaningfulContent = (node: Node) => {
-  if (!(node instanceof HTMLElement)) return Boolean(node.textContent?.trim());
-  return Boolean(node.textContent?.trim() || node.querySelector('img'));
-};
-
-const appendReaderEditableTail = (element: HTMLElement) => {
-  const tail = document.createElement('p');
-  tail.dataset.noteTail = 'true';
-  tail.appendChild(document.createElement('br'));
-  element.appendChild(tail);
-  return tail;
-};
-
-const normalizeReaderEditableTailMarkers = (element: HTMLElement) => {
-  element.querySelectorAll<HTMLElement>('[data-note-tail="true"]').forEach(tail => {
-    if (readerNodeHasMeaningfulContent(tail)) {
-      delete tail.dataset.noteTail;
-    } else {
-      tail.replaceChildren(document.createElement('br'));
-    }
-  });
-};
-
-const ensureReaderEditableTailAfterMedia = (element: HTMLElement) => {
-  normalizeReaderEditableTailMarkers(element);
-  const lastChild = getLastReaderContentChild(element);
-  if (!lastChild) return appendReaderEditableTail(element);
-
-  if (
-    lastChild instanceof HTMLElement &&
-    lastChild.matches('p') &&
-    !readerNodeHasMeaningfulContent(lastChild)
-  ) {
-    lastChild.dataset.noteTail = 'true';
-    return lastChild;
-  }
-
-  if (
-    lastChild instanceof HTMLElement &&
-    (
-      lastChild.matches('[data-note-image="true"]') ||
-      lastChild.getAttribute('contenteditable') === 'false'
-    )
-  ) {
-    return appendReaderEditableTail(element);
-  }
-
-  return null;
-};
-
-const cleanReaderHtml = (html: string, imageAltText?: string, removeImageText?: string) => {
-  if (!html || typeof document === 'undefined') return html;
-  const container = document.createElement('div');
-  container.innerHTML = sanitizeRichHtml(html);
-  container
-    .querySelectorAll('[data-remove-image="true"], [data-preview-image="true"], button')
-    .forEach(element => element.remove());
-  container.querySelectorAll('[contenteditable]').forEach(element => element.removeAttribute('contenteditable'));
-  container.querySelectorAll<HTMLElement>('.note-inline-image, [data-note-image="true"]').forEach(figure => {
-    figure.classList.add('note-inline-image');
-    figure.setAttribute('contenteditable', 'false');
-    figure.dataset.noteImage = 'true';
-    figure.insertAdjacentHTML('beforeend', readerRemoveImageButtonHtml(removeImageText));
-  });
-  container.querySelectorAll('[data-note-tail="true"]').forEach(element => {
-    if (!element.textContent?.trim() && !element.querySelector('img')) element.remove();
-  });
-  if (imageAltText) {
-    container.querySelectorAll<HTMLImageElement>('img').forEach(image => {
-      image.alt = imageAltText;
-    });
-  }
-  return dehydrateStorageMediaHtml(container.innerHTML);
-};
-
-const getReadableNoteHtml = (note?: NoteData, imageAltText = 'Note attachment', removeImageText = 'Remove image') => {
-  if (!note) return '';
-  const legacyImages = getLegacyNoteImages(note);
-  const legacyImageHtml = legacyImages.map(src => imageToReaderHtml(src, imageAltText, removeImageText)).join('');
-  const html = note.contentHtml ?? `${textToParagraphHtml(note.content || '')}${legacyImageHtml}`;
-  return hydrateStorageMediaHtml(cleanReaderHtml(html, imageAltText, removeImageText));
-};
-
-const getReadableTitleHtml = (note?: NoteData, fallbackTitle = 'Untitled note') => (
-  cleanReaderHtml(note?.titleHtml || escapeHtml(note?.title || fallbackTitle))
-);
-
 const parseCoordinateSearch = (value: string): [number, number] | null => {
   const match = value.trim().match(/^\(?\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)?$/);
   if (!match) return null;
@@ -1113,22 +725,6 @@ const parseCoordinateSearch = (value: string): [number, number] | null => {
 const getNoteTimestamp = (note: NoteData) => {
   const candidate = note.createdAt || Number(note.id) || note.updatedAt;
   return Number.isFinite(candidate) && candidate > 0 ? candidate : Date.now();
-};
-
-const hasMeaningfulNoteContent = (note: NoteData) => {
-  const title = (htmlToText(note.titleHtml) || note.title || '').trim();
-  const content = (htmlToText(note.contentHtml) || note.content || '').trim();
-  const images = [
-    ...extractImagesFromHtml(note.contentHtml),
-    ...(Array.isArray(note.imageUrls) ? note.imageUrls : []),
-    ...(note.imageUrl ? [note.imageUrl] : []),
-  ];
-
-  return Boolean(
-    content ||
-    images.length > 0 ||
-    (title && title !== 'New Note' && title !== 'Untitled note')
-  );
 };
 
 export default function App() {
