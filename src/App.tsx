@@ -68,7 +68,7 @@ function createLocationIcon(mapStyle: string, iconColor = '#c3c3c3', heading = 0
   });
 }
 
-function PhotoGpsStarIcon({ size = 24, strokeWidth = 2 }: { size?: number; strokeWidth?: number }) {
+function PhotoGpsStarIcon({ size = 24, strokeWidth = 2.2 }: { size?: number; strokeWidth?: number }) {
   return (
     <svg
       width={size}
@@ -127,7 +127,7 @@ type TrackData = {
 };
 
 type MapStyle = 'light' | 'dark' | 'aerial';
-type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader';
+type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchResults';
 type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | null;
 type RecordsFilter = 'all' | 'monthly' | 'annual';
 type SearchField = 'coordinate' | 'text';
@@ -140,7 +140,7 @@ type SystemTheme = {
   dark: string;
 };
 
-const UI_ICON_STROKE = 2.3;
+const UI_ICON_STROKE = 2.2;
 const MAP_TOOL_ICON_STROKE = UI_ICON_STROKE;
 
 function MapStyleThumbnail({ styleName }: { styleName: MapStyle }) {
@@ -1458,6 +1458,24 @@ const getSearchPreviewText = (text: string, query: string, maxLength = 96) => {
   return `${prefix}${normalizedText.slice(start, end).trim()}${suffix}`;
 };
 
+const countSearchMatches = (text: string, query: string) => {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return 0;
+
+  let count = 0;
+  let cursor = 0;
+  const lowerText = text.toLowerCase();
+  let matchIndex = lowerText.indexOf(normalizedQuery, cursor);
+
+  while (matchIndex >= 0) {
+    count += 1;
+    cursor = matchIndex + normalizedQuery.length;
+    matchIndex = lowerText.indexOf(normalizedQuery, cursor);
+  }
+
+  return count;
+};
+
 function SearchHighlightedText({ text, query }: { text: string; query: string }) {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) return <>{text}</>;
@@ -1868,7 +1886,7 @@ function StarNavigationOverlay({ activeTag, stars, onPrev, onNext }: { activeTag
         onClick={(e) => { e.stopPropagation(); onPrev(); }} 
         className="w-10 h-10 rounded-full bg-[var(--app-active-surface)] border-2 border-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 shadow-md transition-transform active:scale-95"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="11 17 6 12 11 7"></polyline>
           <polyline points="18 17 13 12 18 7"></polyline>
         </svg>
@@ -1877,7 +1895,7 @@ function StarNavigationOverlay({ activeTag, stars, onPrev, onNext }: { activeTag
         onClick={(e) => { e.stopPropagation(); onNext(); }} 
         className="w-10 h-10 rounded-full bg-[var(--app-active-surface)] border-2 border-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 shadow-md transition-transform active:scale-95"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="13 17 18 12 13 7"></polyline>
           <polyline points="6 17 11 12 6 7"></polyline>
         </svg>
@@ -2083,6 +2101,7 @@ export default function App() {
   const [coordinateSearch, setCoordinateSearch] = useState('');
   const [textSearch, setTextSearch] = useState('');
   const [submittedTextSearch, setSubmittedTextSearch] = useState('');
+  const [searchReturnView, setSearchReturnView] = useState<'map' | 'records'>('records');
   const [systemTheme, setSystemTheme] = useState<SystemTheme>(() => ({
     ...DEFAULT_SYSTEM_THEME,
     ...(persistedAppState?.systemTheme || {}),
@@ -2531,7 +2550,7 @@ export default function App() {
       setIsRecordsMenuOpen(false);
       setIsRecordsCalendarOpen(false);
     }
-    if (activeView === 'home' || activeView === 'stats') {
+    if (activeView === 'home' || activeView === 'stats' || activeView === 'searchResults') {
       setIsSearchOpen(false);
     }
     if (activeView !== 'reader') {
@@ -3445,7 +3464,8 @@ export default function App() {
           const timestamp = getNoteTimestamp(note);
           const title = htmlToText(note.titleHtml) || note.title || `${homeCopy.noteLabel} ${noteIndex + 1}`;
           const text = htmlToText(note.contentHtml) || note.content || title || homeCopy.untitledNote;
-          const searchableText = `${title} ${text} ${star.lat.toFixed(4)} ${star.lng.toFixed(4)}`.toLowerCase();
+          const searchableText = text === title ? title : `${title} ${text}`;
+          const matchCount = countSearchMatches(searchableText, query);
           return {
             id: `${star.id}-${note.id}`,
             starId: star.id,
@@ -3456,9 +3476,9 @@ export default function App() {
             text,
             timestamp,
             color: star.color || '#EDC727',
-            matchCount: searchableText.split(query).length - 1,
+            matchCount,
             hasContent: hasMeaningfulNoteContent(note),
-            isMatch: searchableText.includes(query),
+            isMatch: matchCount > 0,
           };
         })
       ))
@@ -3619,7 +3639,16 @@ export default function App() {
     }
 
     setActiveSearchField('text');
+    setSearchReturnView(activeView === 'map' ? 'map' : 'records');
     setSubmittedTextSearch(query);
+    setIsSearchOpen(false);
+    setActiveHomePanel(null);
+    setIsMenuOpen(false);
+    setIsMapStyleMenuOpen(false);
+    setTagMenuOpen(false);
+    setIsRecordsMenuOpen(false);
+    setIsRecordsCalendarOpen(false);
+    setActiveView('searchResults');
   };
 
   const openSearchModal = (field: SearchField = 'text') => {
@@ -3631,6 +3660,11 @@ export default function App() {
   const closeSearchModal = () => {
     setIsSearchOpen(false);
     setSubmittedTextSearch('');
+  };
+
+  const closeSearchResults = () => {
+    setSubmittedTextSearch('');
+    setActiveView(searchReturnView);
   };
 
   const handleAvatarInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -6159,6 +6193,81 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {isSignedIn && activeView === 'searchResults' && (
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 18 }}
+            className="absolute inset-0 z-[950] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
+          >
+            <div className={`flex-1 overflow-y-auto px-8 pb-20 ${screenTopPaddingClass}`}>
+              <div className="mx-auto w-full max-w-[430px]">
+                <button
+                  onClick={closeSearchResults}
+                  className="mb-12 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm transition-transform active:scale-95"
+                  aria-label={homeCopy.back}
+                >
+                  <ChevronsLeft size={30} strokeWidth={UI_ICON_STROKE} />
+                </button>
+
+                <div className="mb-8">
+                  <h1 className="text-[36px] font-extrabold leading-[1.08] tracking-tight text-black">
+                    {homeCopy.searchResultsTitle}
+                  </h1>
+                  <div className="mt-1 text-[28px] font-extrabold leading-[1.08] tracking-tight text-black">
+                    {homeCopy.searchResultsFor} <span className="text-black/48">&quot;{submittedTextSearch.trim()}&quot;</span>
+                  </div>
+                </div>
+
+                {searchResultRecords.length > 0 ? (
+                  <div className="flex flex-col gap-5">
+                    {searchResultRecords.map(record => {
+                      const normalizedQuery = submittedTextSearch.trim().toLowerCase();
+                      const sourceText = record.text.toLowerCase().includes(normalizedQuery) ? record.text : record.title;
+                      const previewText = getSearchPreviewText(sourceText || record.title, submittedTextSearch, 112);
+
+                      return (
+                        <button
+                          key={record.id}
+                          type="button"
+                          onClick={() => openReaderFromRecord(record.starId, record.noteId)}
+                          className="relative flex min-h-[92px] w-full items-center gap-3 rounded-[18px] bg-[var(--app-card)] px-5 py-4 pr-12 text-left shadow-sm transition-transform active:scale-[0.99]"
+                        >
+                          <span className="absolute right-[-7px] top-[-10px] flex h-9 min-w-9 items-center justify-center rounded-full bg-[var(--app-icon)] px-2 text-[14px] font-extrabold text-black shadow-sm">
+                            {record.matchCount}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className="block overflow-hidden text-[14px] font-medium leading-snug text-black/82"
+                              style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 3,
+                                WebkitBoxOrient: 'vertical',
+                              }}
+                            >
+                              <SearchHighlightedText text={previewText} query={submittedTextSearch} />
+                            </span>
+                            <span className="mt-2 block text-[11px] font-medium text-black/35">
+                              {formatRecordMonth(record.timestamp)} {formatRecordTime(record.timestamp, languageLocale)}
+                            </span>
+                          </span>
+                          <ChevronRight className="shrink-0 text-black/28" size={24} strokeWidth={UI_ICON_STROKE} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-[18px] bg-[var(--app-card)] px-5 py-7 text-center text-[15px] font-medium text-black/42 shadow-sm">
+                    {homeCopy.noSearchResults}
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {isSearchOpen && activeView !== 'home' && activeView !== 'stats' && activeView !== 'reader' && !isTracking && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -6219,61 +6328,13 @@ export default function App() {
                   <Search size={28} strokeWidth={UI_ICON_STROKE} />
                 </button>
               </div>
-              {activeSearchField === 'text' && submittedTextSearch.trim() && (
-                <div className="mt-3 max-h-[min(62dvh,28rem)] overflow-y-auto rounded-[20px] bg-[var(--app-page)] p-3 shadow-lg">
-                  <div className="mb-3 px-1">
-                    <div className="text-[22px] font-bold leading-tight text-black">
-                      {homeCopy.searchResultsTitle}
-                    </div>
-                    <div className="mt-0.5 text-[17px] font-semibold leading-tight text-black/60">
-                      {homeCopy.searchResultsFor} &quot;{submittedTextSearch.trim()}&quot;
-                    </div>
-                  </div>
-
-                  {searchResultRecords.length > 0 ? (
-                    <div className="flex flex-col gap-2.5">
-                      {searchResultRecords.map(record => {
-                        const previewText = getSearchPreviewText(record.text || record.title, submittedTextSearch);
-                        return (
-                          <button
-                            key={record.id}
-                            type="button"
-                            onClick={() => openReaderFromRecord(record.starId, record.noteId)}
-                            className="relative flex min-h-[76px] w-full items-center gap-2 rounded-[16px] bg-[var(--app-card)] px-4 py-3 pr-9 text-left shadow-sm transition-transform active:scale-[0.99]"
-                          >
-                            <span
-                              className="absolute right-[-6px] top-[-7px] flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-[12px] font-bold text-black"
-                              style={{ backgroundColor: record.color }}
-                            >
-                              {Math.max(1, record.matchCount)}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="line-clamp-3 block text-[13px] font-medium leading-snug text-black/82">
-                                <SearchHighlightedText text={previewText} query={submittedTextSearch} />
-                              </span>
-                              <span className="mt-1 block text-[11px] font-medium text-black/35">
-                                {formatRecordMonth(record.timestamp)} {formatRecordTime(record.timestamp, languageLocale)}
-                              </span>
-                            </span>
-                            <ChevronRight className="shrink-0 text-black/28" size={24} strokeWidth={UI_ICON_STROKE} />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="rounded-[16px] bg-[var(--app-card)] px-4 py-5 text-center text-[14px] font-medium text-black/42">
-                      {homeCopy.noSearchResults}
-                    </div>
-                  )}
-                </div>
-              )}
             </motion.form>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Bottom Navigation Bar */}
-      {isSignedIn && activeView !== 'reader' && (
+      {isSignedIn && activeView !== 'reader' && activeView !== 'searchResults' && (
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000]">
         <div className="bg-[var(--app-nav-surface)] backdrop-blur-lg rounded-[2rem] px-2.5 py-2 flex items-center gap-2.5 shadow-sm border border-[var(--app-icon)] transition-all duration-300 ease-out">
           <motion.button

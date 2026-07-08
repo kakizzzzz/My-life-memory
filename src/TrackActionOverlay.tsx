@@ -159,10 +159,10 @@ export function TrackActionOverlay({
         onPointerUp={handlePointerUp}
       >
         <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setActiveTab(activeTab === 'eye' ? null : 'eye')} className={`p-1 px-[8px] rounded-full transition-colors ${activeTab === 'eye' ? 'bg-[var(--app-card)] text-black' : 'text-black/70 hover:text-black'}`} aria-label={copy.showDetails}>
-          <Eye size={18} strokeWidth={2.3} />
+          <Eye size={18} strokeWidth={2.2} />
         </button>
         <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setActiveTab(activeTab === 'color' ? null : 'color')} className={`p-1 px-[8px] rounded-full transition-colors ${activeTab === 'color' ? 'bg-[var(--app-card)] text-black' : 'text-black/70 hover:text-black'}`} aria-label={copy.chooseColor}>
-          <Palette size={18} strokeWidth={2.3} />
+          <Palette size={18} strokeWidth={2.2} />
         </button>
         <button 
           onPointerDown={(e) => e.stopPropagation()}
@@ -170,7 +170,7 @@ export function TrackActionOverlay({
           className="p-1 px-[8px] rounded-full text-black/70 hover:text-black transition-colors"
           aria-label={copy.deleteTrack}
         >
-          <Trash2 size={18} strokeWidth={2.3} />
+          <Trash2 size={18} strokeWidth={2.2} />
         </button>
       </div>
 

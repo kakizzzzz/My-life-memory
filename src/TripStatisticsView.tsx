@@ -800,7 +800,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
               className={`absolute left-2 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.previousRanking}
             >
-              <ChevronLeft size={28} />
+              <ChevronLeft size={28} strokeWidth={2.2} />
             </button>
 
             <div
@@ -831,7 +831,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
               className={`absolute right-2 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.nextRanking}
             >
-              <ChevronRight size={28} />
+              <ChevronRight size={28} strokeWidth={2.2} />
             </button>
           </div>
         </div>
@@ -857,7 +857,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
           className="absolute left-6 top-12 z-10 flex h-12 w-12 items-center justify-center rounded-full border border-white/30 bg-white/20 text-white backdrop-blur-md transition-transform active:scale-95"
           aria-label={copy.closeExpandedMap}
         >
-          <X size={28} />
+          <X size={28} strokeWidth={2.2} />
         </button>
       </div>
     </div>

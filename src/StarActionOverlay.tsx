@@ -360,16 +360,16 @@ export function StarActionOverlay({
         onPointerUp={handlePointerUp}
       >
         <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setActiveTab(activeTab === 'eye' ? null : 'eye')} className={`p-1 px-[8px] rounded-full transition-colors ${activeTab === 'eye' ? 'bg-[var(--app-card)] text-black' : 'text-black/70 hover:text-black'}`} aria-label={copy.showDetails}>
-          <Eye size={18} strokeWidth={2.3} />
+          <Eye size={18} strokeWidth={2.2} />
         </button>
         <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setActiveTab(activeTab === 'color' ? null : 'color')} className={`p-1 px-[8px] rounded-full transition-colors ${activeTab === 'color' ? 'bg-[var(--app-card)] text-black' : 'text-black/70 hover:text-black'}`} aria-label={copy.chooseColor}>
-          <Palette size={18} strokeWidth={2.3} />
+          <Palette size={18} strokeWidth={2.2} />
         </button>
         <button onPointerDown={(e) => e.stopPropagation()} onClick={() => onEditNote(star.id)} className={`p-1 px-[8px] rounded-full transition-colors text-black/70 hover:text-black`} aria-label={copy.editNote}>
-          <Edit2 size={18} strokeWidth={2.3} />
+          <Edit2 size={18} strokeWidth={2.2} />
         </button>
         <button onPointerDown={(e) => e.stopPropagation()} onClick={() => onDeleteStar(star.id)} className={`p-1 px-[8px] rounded-full transition-colors text-black/70 hover:text-black`} aria-label={copy.deleteStar}>
-          <Trash2 size={18} strokeWidth={2.3} />
+          <Trash2 size={18} strokeWidth={2.2} />
         </button>
       </div>
 
@@ -379,14 +379,14 @@ export function StarActionOverlay({
           <span className="font-sans font-medium text-[13px] text-black/90 whitespace-nowrap">{coordsText}</span>
           <div className="w-[1px] h-3 bg-gray-300"></div>
           <button onClick={copyCoords} className="text-black hover:text-gray-500 transition-colors" aria-label={copy.copyCoordinates}>
-            <Copy size={14} strokeWidth={2.3} />
+            <Copy size={14} strokeWidth={2.2} />
           </button>
           <button
             onClick={() => setIsMapChooserOpen(open => !open)}
             className="text-black transition-colors hover:text-gray-500"
             aria-label={copy.openInMaps}
           >
-            <ExternalLink size={14} strokeWidth={2.3} />
+            <ExternalLink size={14} strokeWidth={2.2} />
           </button>
         </div>
       )}
