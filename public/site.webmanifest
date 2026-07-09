@@ -2,13 +2,14 @@
   "name": "My Life Memory",
   "short_name": "My Life Memory",
   "description": "A private map-based memory archive.",
-  "start_url": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f4f4f4",
   "theme_color": "#f4f4f4",
   "icons": [
     {
-      "src": "/app-icon.png",
+      "src": "./app-icon.png",
       "sizes": "1254x1254",
       "type": "image/png",
       "purpose": "any maskable"
