@@ -17,6 +17,11 @@ import { TRACK_STALE_POSITION_GRACE_MS } from '../constants/appDefaults';
 import { useTrackSummary } from './useTrackSummary';
 import type { AppView, HomePanel, TrackData } from '../types/app';
 
+type TrackingState = {
+  isTracking: boolean;
+  isPaused: boolean;
+};
+
 export const useTrackRecording = ({
   initialSavedTracks,
   isSignedIn,
@@ -28,6 +33,7 @@ export const useTrackRecording = ({
   setActiveView,
   setActiveHomePanel,
   onStart,
+  onTrackingStateChange,
 }: {
   initialSavedTracks?: TrackData[];
   isSignedIn: boolean;
@@ -39,6 +45,7 @@ export const useTrackRecording = ({
   setActiveView: React.Dispatch<React.SetStateAction<AppView>>;
   setActiveHomePanel: React.Dispatch<React.SetStateAction<HomePanel>>;
   onStart: () => void;
+  onTrackingStateChange?: (state: TrackingState) => void;
 }) => {
   const [isTracking, setIsTracking] = React.useState(false);
   const [isPaused, setIsPaused] = React.useState(false);
@@ -55,8 +62,10 @@ export const useTrackRecording = ({
   const { trackDistanceKm, activeTrackDistanceDisplay, formatTime } = useTrackSummary(trackPaths);
 
   React.useEffect(() => {
-    trackingStateRef.current = { isTracking, isPaused };
-  }, [isTracking, isPaused]);
+    const nextTrackingState = { isTracking, isPaused };
+    trackingStateRef.current = nextTrackingState;
+    onTrackingStateChange?.(nextTrackingState);
+  }, [isTracking, isPaused, onTrackingStateChange]);
 
   React.useEffect(() => {
     trackDraftStateRef.current = { paths: trackPaths, time: trackTime };
@@ -133,7 +142,9 @@ export const useTrackRecording = ({
     const startedAt = Date.now();
     trackingStartedAtRef.current = startedAt;
     lastTrackPointRef.current = null;
-    trackingStateRef.current = { isTracking: true, isPaused: false };
+    const nextTrackingState = { isTracking: true, isPaused: false };
+    trackingStateRef.current = nextTrackingState;
+    onTrackingStateChange?.(nextTrackingState);
     setIsTracking(true);
     setIsPaused(false);
     const didRequestGps = requestUserLocation(true);
@@ -143,7 +154,7 @@ export const useTrackRecording = ({
     }
     setTrackTime(0);
     onStart();
-  }, [onStart, profileAccount, requestUserLocation, startHeadingWatch, userLocation]);
+  }, [onStart, onTrackingStateChange, profileAccount, requestUserLocation, startHeadingWatch, userLocation]);
 
   const toggleTrackingPause = React.useCallback(() => {
     setIsPaused(!isPaused);
@@ -152,17 +163,21 @@ export const useTrackRecording = ({
       trackingStartedAtRef.current = Date.now();
       setTrackPaths(prev => [...prev, []]);
     }
-  }, [isPaused]);
+    onTrackingStateChange?.({ isTracking, isPaused: !isPaused });
+  }, [isPaused, isTracking, onTrackingStateChange]);
 
   const stopTrackingRoute = React.useCallback(() => {
     lastTrackPointRef.current = null;
     trackingStartedAtRef.current = 0;
     clearTrackDraft(profileAccount);
+    const nextTrackingState = { isTracking: false, isPaused: false };
+    trackingStateRef.current = nextTrackingState;
+    onTrackingStateChange?.(nextTrackingState);
     setIsTracking(false);
     setTrackPaths([]);
     setTrackTime(0);
     setIsPaused(false);
-  }, [profileAccount]);
+  }, [onTrackingStateChange, profileAccount]);
 
   const saveTrackingRoute = React.useCallback(() => {
     if (trackPaths.some(path => path.length > 1)) {
@@ -204,7 +219,9 @@ export const useTrackRecording = ({
       setTrackTime(draft.time);
       setIsTracking(true);
       setIsPaused(true);
-      trackingStateRef.current = { isTracking: true, isPaused: true };
+      const nextTrackingState = { isTracking: true, isPaused: true };
+      trackingStateRef.current = nextTrackingState;
+      onTrackingStateChange?.(nextTrackingState);
       lastTrackPointRef.current = null;
       trackingStartedAtRef.current = Date.now();
       setActiveView('map');
@@ -212,7 +229,7 @@ export const useTrackRecording = ({
     } else {
       clearTrackDraft(account);
     }
-  }, [isSignedIn, isTracking, language, profileAccount, setActiveHomePanel, setActiveView]);
+  }, [isSignedIn, isTracking, language, onTrackingStateChange, profileAccount, setActiveHomePanel, setActiveView]);
 
   React.useEffect(() => {
     if (!isSignedIn || !isTracking) return;
