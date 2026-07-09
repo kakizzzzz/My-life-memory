@@ -1012,7 +1012,7 @@ export default function App() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 18 }}
-            className="absolute inset-0 z-[900]"
+            className="absolute inset-0 z-[900] flex flex-col overflow-hidden bg-[var(--app-page)] pointer-events-auto"
           >
             <TripStatisticsView
               activityPoints={mapActivity.points}
