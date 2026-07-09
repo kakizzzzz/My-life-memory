@@ -16,10 +16,12 @@ export const LOGIN_LANGUAGE_LABELS: Record<string, string> = {
   ko: '한',
 };
 
+export const MULTILINGUAL_FONT_FAMILY = '"Afacad", "Noto Serif SC", "Noto Serif KR", "Songti SC", "Apple SD Gothic Neo", ui-sans-serif, system-ui, sans-serif';
+
 export const LANGUAGE_FONT_FAMILIES: Record<string, string> = {
-  en: '"Afacad", ui-sans-serif, system-ui, sans-serif',
-  zh: '"Noto Serif SC", "Songti SC", serif',
-  ko: '"Noto Serif KR", serif',
+  en: MULTILINGUAL_FONT_FAMILY,
+  zh: MULTILINGUAL_FONT_FAMILY,
+  ko: MULTILINGUAL_FONT_FAMILY,
 };
 
 export const LANGUAGE_FONT_SCALE: Record<string, number> = {
