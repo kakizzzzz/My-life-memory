@@ -39,7 +39,7 @@ const DEFAULT_COLORS = [
 const FONT_SIZES = [12, 14, 16, 18, 22, 26];
 const OLD_DEFAULT_NOTE_TITLE = 'The "Campus" Entry';
 const OLD_DEFAULT_NOTE_START = 'Finally standing in front of the White Horse statue';
-const EDITABLE_TAIL_HTML = '<p data-note-tail="true"></p>';
+const EDITABLE_TAIL_HTML = '<p data-note-tail="true"><br></p>';
 
 const NOTE_EDITOR_COPY = {
   en: {
@@ -1339,7 +1339,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     if (!editor) return;
 
     const template = document.createElement('template');
-    template.innerHTML = `${imageToHtml(imageUrl, copy, metadata)}<p><br></p>`;
+    template.innerHTML = `${imageToHtml(imageUrl, copy, metadata)}${EDITABLE_TAIL_HTML}`;
     const nodes = Array.from(template.content.childNodes);
     const savedRange = savedRangeRef.current;
 
@@ -1783,7 +1783,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          <div className="note-editor-scroll min-h-0 flex-1 overflow-y-auto p-4 flex flex-col gap-3">
             <div className="flex h-[2.75rem] items-end gap-3 border-b border-[var(--app-card)] pb-1.5">
               <div
                 ref={titleEditorRef}

@@ -14,7 +14,7 @@ import {
   type TrackPoint,
   type TrackPointMetadata,
 } from '../lib/trackUtils';
-import { TRACK_STALE_POSITION_GRACE_MS } from '../constants/appDefaults';
+import { TRACK_ROUTE_GOOD_ACCURACY_METERS, TRACK_STALE_POSITION_GRACE_MS } from '../constants/appDefaults';
 import { useTrackSummary } from './useTrackSummary';
 import type { AppView, HomePanel, TrackData } from '../types/app';
 
@@ -55,6 +55,7 @@ export const useTrackRecording = ({
   const [savedTracks, setSavedTracks] = React.useState<TrackData[]>(() => (
     Array.isArray(initialSavedTracks) ? initialSavedTracks : []
   ));
+  const [isTrackGpsWeak, setIsTrackGpsWeak] = React.useState(false);
   const checkedTrackDraftAccountRef = React.useRef<string | null>(null);
   const lastTrackPointRef = React.useRef<TrackPoint | null>(null);
   const trackingStartedAtRef = React.useRef(0);
@@ -77,6 +78,12 @@ export const useTrackRecording = ({
     const timestamp = Number.isFinite(metadata.timestamp) ? metadata.timestamp as number : Date.now();
     const previousAcceptedPoint = lastTrackPointRef.current;
     const nextPoint: TrackPoint = { location: newLoc, timestamp, accuracy };
+
+    if (accuracy !== undefined && accuracy > TRACK_ROUTE_GOOD_ACCURACY_METERS) {
+      setIsTrackGpsWeak(true);
+      return;
+    }
+    setIsTrackGpsWeak(false);
 
     if (
       trackingStartedAtRef.current > 0 &&
@@ -140,6 +147,7 @@ export const useTrackRecording = ({
     const startedAt = Date.now();
     trackingStartedAtRef.current = startedAt;
     lastTrackPointRef.current = null;
+    setIsTrackGpsWeak(false);
     const nextTrackingState = { isTracking: true, isPaused: false };
     onTrackingStateChange?.(nextTrackingState);
     setIsTracking(true);
@@ -154,6 +162,7 @@ export const useTrackRecording = ({
   }, [onStart, onTrackingStateChange, profileAccount, requestUserLocation, startHeadingWatch, userLocation]);
 
   const toggleTrackingPause = React.useCallback(() => {
+    setIsTrackGpsWeak(false);
     setIsPaused(!isPaused);
     if (isPaused) {
       lastTrackPointRef.current = null;
@@ -166,6 +175,7 @@ export const useTrackRecording = ({
   const stopTrackingRoute = React.useCallback(() => {
     lastTrackPointRef.current = null;
     trackingStartedAtRef.current = 0;
+    setIsTrackGpsWeak(false);
     clearTrackDraft(profileAccount);
     const nextTrackingState = { isTracking: false, isPaused: false };
     onTrackingStateChange?.(nextTrackingState);
@@ -257,6 +267,7 @@ export const useTrackRecording = ({
     trackTime,
     savedTracks,
     setSavedTracks,
+    isTrackGpsWeak,
     appendTrackPoint,
     activeTrackDistanceDisplay,
     formatTime,

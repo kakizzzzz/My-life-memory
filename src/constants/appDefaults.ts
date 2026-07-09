@@ -19,6 +19,7 @@ export const GEOLOCATION_OPTIONS: PositionOptions = {
 };
 
 export const TRACK_MAX_ACCURACY_METERS = 150;
+export const TRACK_ROUTE_GOOD_ACCURACY_METERS = 50;
 export const TRACK_MIN_DISTANCE_METERS = 2;
 export const TRACK_MAX_DYNAMIC_MIN_DISTANCE_METERS = 20;
 export const TRACK_MAX_PLAUSIBLE_SPEED_MPS = 90;

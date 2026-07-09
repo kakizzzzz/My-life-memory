@@ -56,6 +56,7 @@ type TrackingControlsOverlayProps = {
   isPaused: boolean;
   trackTime: number;
   activeTrackDistanceDisplay: DistanceDisplay;
+  gpsStatusText?: string;
   iconStrokeWidth: number;
   onTogglePause: () => void;
   onCancel: () => void;
@@ -262,6 +263,7 @@ export function TrackingControlsOverlay({
   isPaused,
   trackTime,
   activeTrackDistanceDisplay,
+  gpsStatusText,
   iconStrokeWidth,
   onTogglePause,
   onCancel,
@@ -284,6 +286,11 @@ export function TrackingControlsOverlay({
         <div className="text-[24px] leading-none font-semibold text-black text-left mb-1">
           {formatTime(trackTime)}
         </div>
+        {gpsStatusText && (
+          <div className="mt-2 max-w-[160px] text-left text-[12px] leading-tight font-semibold text-black/55">
+            {gpsStatusText}
+          </div>
+        )}
         <div className="w-full h-[3px] bg-gray-200 mt-3 mb-2 rounded-full"></div>
       </div>
 

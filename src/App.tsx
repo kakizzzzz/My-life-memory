@@ -203,6 +203,7 @@ export default function App() {
     trackTime,
     savedTracks,
     setSavedTracks,
+    isTrackGpsWeak,
     appendTrackPoint,
     activeTrackDistanceDisplay,
     formatTime,
@@ -665,7 +666,7 @@ export default function App() {
   const showRouteDetailDots = mapZoom >= ROUTE_DETAIL_DOT_MIN_ZOOM;
 
   return (
-    <div className="relative w-[100dvw] h-[100dvh] overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
+    <div className="relative w-[100dvw] h-[100dvh] min-h-[100svh] overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
       <input
         ref={photoLocationInputRef}
         type="file"
@@ -766,6 +767,7 @@ export default function App() {
           isPaused={isPaused}
           trackTime={trackTime}
           activeTrackDistanceDisplay={activeTrackDistanceDisplay}
+          gpsStatusText={isTrackGpsWeak ? homeCopy.routeGpsWeak : undefined}
           iconStrokeWidth={UI_ICON_STROKE}
           onTogglePause={toggleTrackingPause}
           onCancel={stopTrackingRoute}
