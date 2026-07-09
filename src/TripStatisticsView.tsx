@@ -739,7 +739,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
   }, []);
 
   return (
-    <div className="absolute inset-0 z-[900] flex flex-col overflow-x-hidden overflow-y-auto bg-[var(--app-page)] pb-32 font-sans pointer-events-auto">
+    <div className="absolute inset-0 z-[900] flex min-h-0 flex-col overflow-x-hidden overflow-y-auto overscroll-contain bg-[var(--app-page)] pb-32 font-sans pointer-events-auto [touch-action:pan-y]" style={{ WebkitOverflowScrolling: 'touch' }}>
       <div className="flex flex-col items-center pb-6 pt-14">
         <div className="mb-6 w-[320px]">
           <h1 className="text-[36px] font-extrabold tracking-tight text-black">

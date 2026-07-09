@@ -243,7 +243,7 @@ export function HomeScreen({
             onChange={onAvatarInput}
           />
 
-          <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto px-10 pb-28 ${screenTopPaddingClass}`}>
+          <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto overscroll-contain px-10 pb-28 [touch-action:pan-y] ${screenTopPaddingClass}`} style={{ WebkitOverflowScrolling: 'touch' }}>
             {!isSignedIn ? (
               <>
                 <LoginWorldMapBackground />

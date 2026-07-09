@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { BookOpen, Download, Home, Lock, Map as MapIcon, MapPin, PieChart, Search, X } from 'lucide-react';
+import { BookOpen, Camera, Copy, Download, Home, Lock, Map as MapIcon, MapPin, PieChart, Route, Save, Search, Share, Star, X } from 'lucide-react';
+import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
 import type { AppView, SearchField, UploadedImage } from './types/app';
 
 type InitialPermissionCopy = {
@@ -14,6 +15,30 @@ type AutoUserManualCopy = {
   userManual: string;
   manualIntro: string;
   manualSections: { title: string; body: string }[];
+  manualIconsTitle: string;
+  bottomMap: string;
+  bottomStats: string;
+  bottomNotes: string;
+  bottomHome: string;
+  starLabel: string;
+  openPermissions: string;
+  uploadPhotoLocation: string;
+  readerAddPhoto: string;
+  readerEdit: string;
+  search: string;
+  manualIconMap: string;
+  manualIconStats: string;
+  manualIconRecords: string;
+  manualIconHome: string;
+  manualIconStar: string;
+  manualIconLocation: string;
+  manualIconRoute: string;
+  manualIconCamera: string;
+  manualIconPhotoGps: string;
+  manualIconSave: string;
+  manualIconCopy: string;
+  manualIconShare: string;
+  manualIconSearch: string;
   closeManual: string;
 };
 
@@ -120,6 +145,22 @@ export function AutoUserManualModal({
   iconStrokeWidth: number;
   onClose: () => void;
 }) {
+  const manualIconGuide = [
+    { icon: <MapIcon size={18} strokeWidth={iconStrokeWidth} />, label: copy.bottomMap, body: copy.manualIconMap },
+    { icon: <PieChart size={18} strokeWidth={iconStrokeWidth} />, label: copy.bottomStats, body: copy.manualIconStats },
+    { icon: <BookOpen size={18} strokeWidth={iconStrokeWidth} />, label: copy.bottomNotes, body: copy.manualIconRecords },
+    { icon: <Home size={18} strokeWidth={iconStrokeWidth} />, label: copy.bottomHome, body: copy.manualIconHome },
+    { icon: <Star size={18} strokeWidth={iconStrokeWidth} />, label: copy.starLabel, body: copy.manualIconStar },
+    { icon: <MapPin size={18} strokeWidth={iconStrokeWidth} />, label: copy.openPermissions, body: copy.manualIconLocation },
+    { icon: <Route size={18} strokeWidth={iconStrokeWidth} />, label: copy.manualSections[3]?.title || '', body: copy.manualIconRoute },
+    { icon: <Camera size={18} strokeWidth={iconStrokeWidth} />, label: copy.readerAddPhoto, body: copy.manualIconCamera },
+    { icon: <PhotoGpsStarIcon size={18} strokeWidth={iconStrokeWidth} />, label: copy.uploadPhotoLocation, body: copy.manualIconPhotoGps },
+    { icon: <Save size={18} strokeWidth={iconStrokeWidth} />, label: copy.readerEdit, body: copy.manualIconSave },
+    { icon: <Copy size={18} strokeWidth={iconStrokeWidth} />, label: copy.manualIconCopy, body: copy.manualIconCopy },
+    { icon: <Share size={18} strokeWidth={iconStrokeWidth} />, label: copy.manualIconShare, body: copy.manualIconShare },
+    { icon: <Search size={18} strokeWidth={iconStrokeWidth} />, label: copy.search, body: copy.manualIconSearch },
+  ];
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -163,6 +204,26 @@ export function AutoUserManualModal({
                     <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
                       {section.body}
                     </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 text-[13px] font-semibold leading-tight text-black">
+                {copy.manualIconsTitle}
+              </div>
+              <div className="mt-3 space-y-2.5 pb-1">
+                {manualIconGuide.map(item => (
+                  <div key={`${item.label}-${item.body}`} className="flex min-w-0 items-start gap-2">
+                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black">
+                      {item.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[12px] font-semibold leading-tight text-black">
+                        {item.label}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] font-medium leading-snug text-black/52">
+                        {item.body}
+                      </span>
+                    </span>
                   </div>
                 ))}
               </div>
