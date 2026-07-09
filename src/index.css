@@ -9,7 +9,7 @@
 
 :root {
   --app-chrome-top: max(1.5rem, calc(env(safe-area-inset-top) + 1rem));
-  --app-chrome-bottom: max(1.2rem, calc(env(safe-area-inset-bottom) + 0.6rem));
+  --app-chrome-bottom: max(1.28rem, calc(env(safe-area-inset-bottom) + 0.5rem));
   --app-floating-bottom: calc(var(--app-chrome-bottom) + 5.5rem);
   --app-modal-bottom-balance: calc(env(safe-area-inset-bottom) + 2.5rem);
 }
@@ -62,22 +62,25 @@ select {
 
 /* Make Leaflet attribution text smaller and less prominent */
 .leaflet-bottom.leaflet-right {
-  bottom: 0 !important;
+  bottom: -8px !important;
   right: 0 !important;
-  z-index: 350 !important;
+  z-index: 120 !important;
 }
 
-.leaflet-control-attribution {
+.leaflet-bottom.leaflet-right .leaflet-control-attribution,
+.leaflet-container .leaflet-control-attribution {
   font-size: 8px !important;
   line-height: 1.1 !important;
-  background-color: rgba(255, 255, 255, 0.16) !important;
-  opacity: 0.34;
-  margin-right: 2px !important;
-  margin-bottom: -1px !important;
-  transform: scale(0.9);
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  opacity: 0.26;
+  margin-right: 0 !important;
+  margin-bottom: 0 !important;
+  padding: 0 3px !important;
+  transform: scale(0.86);
   transform-origin: bottom right;
 }
-.leaflet-control-attribution a {
+.leaflet-bottom.leaflet-right .leaflet-control-attribution a,
+.leaflet-container .leaflet-control-attribution a {
   color: rgba(75, 85, 99, 0.58) !important; /* Tailwind gray-600 */
 }
 
