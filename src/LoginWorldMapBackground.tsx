@@ -59,7 +59,12 @@ const LOGIN_WORLD_MAP_DOTS = Array.from({
 
 export function LoginWorldMapBackground() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+    <div
+      className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+      style={{
+        background: 'linear-gradient(180deg, color-mix(in srgb, var(--app-card) 38%, var(--app-page)) 0%, color-mix(in srgb, var(--app-card) 16%, var(--app-page)) 9%, var(--app-page) 24%, var(--app-page) 100%)',
+      }}
+    >
       <svg
         viewBox={`0 0 ${LOGIN_WORLD_MAP_WIDTH} ${LOGIN_WORLD_MAP_HEIGHT}`}
         className="h-full w-full"
