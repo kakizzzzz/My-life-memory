@@ -9,6 +9,7 @@ import {
 } from './supabaseClient';
 import { sanitizeRichHtmlFields } from './htmlSanitizer';
 import { normalizePersistedAppState } from './appStateNormalize';
+import { normalizeAccountId } from './accountUtils';
 
 export type CloudProfile = {
   account: string;
@@ -132,8 +133,6 @@ const activateCloudSession = async (session: CloudSession | null, expectedUserId
     }
   }
 };
-
-export const normalizeAccountId = (accountId: string) => accountId.trim().toLowerCase();
 
 export const accountIdToAuthEmail = (accountId: string) => {
   const normalized = normalizeAccountId(accountId);

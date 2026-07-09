@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import L from 'leaflet';
 import { Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import * as exifr from 'exifr';
 import {
   BottomNavigation,
   GalleryPreviewOverlay,
@@ -32,7 +31,7 @@ import {
   warmStorageImageUrls,
   type StoredImageMetadata,
 } from './lib/mediaStorage';
-import { sanitizeRichHtml, sanitizeRichHtmlFields } from './lib/htmlSanitizer';
+import { sanitizeRichHtml } from './lib/htmlSanitizer';
 import { normalizePersistedAppState } from './lib/appStateNormalize';
 import {
   buildReadableExportHtml,
@@ -59,6 +58,40 @@ import {
   type TrackPointMetadata,
 } from './lib/trackUtils';
 import {
+  compressImageFileToDataUrl,
+  dataUrlToFile,
+  getImageDownloadFileName,
+  readPhotoGpsCoordinates,
+} from './lib/photoUtils';
+import { createLocationIcon } from './lib/mapMarkerUtils';
+import {
+  canUseBrowserGeolocation,
+  getCompassHeading,
+  type DeviceOrientationEventConstructorWithPermission,
+  type DeviceOrientationEventWithCompass,
+} from './lib/sensorUtils';
+import {
+  createDefaultRecordStar,
+  getNearbyDefaultStarLocation,
+  isNearCoordinate,
+  normalizeInitialStars,
+} from './lib/defaultStarUtils';
+import { normalizeAccountId } from './lib/accountUtils';
+import {
+  clearTrackDraft,
+  getPersistableAvatarUrl,
+  getPublicProfileSnapshot,
+  hasLoginAccount,
+  isLanguage,
+  isMapStyle,
+  markAutoUserManualSeen,
+  readAutoUserManualSeen,
+  readPersistedAppState,
+  readTrackDraft,
+  writePersistedAppState,
+  writeTrackDraft,
+} from './lib/localPersistence';
+import {
   cleanReaderHtml,
   ensureReaderEditableTailAfterMedia,
   escapeHtml,
@@ -76,6 +109,9 @@ import {
   readerNodeHasMeaningfulContent,
   uniqueStoredImages,
 } from './lib/noteHtmlUtils';
+import { cssColorToHex, createClientId } from './lib/generalUtils';
+import { countSearchMatches, parseCoordinateSearch } from './lib/searchUtils';
+import { getNoteTimestamp } from './lib/noteDataUtils';
 import type {
   AppView,
   HomePanel,
@@ -89,7 +125,6 @@ import type {
   SystemTheme,
   TagMode,
   TrackData,
-  TrackDraftData,
   UploadedImage,
   UserProfile,
 } from './types/app';
@@ -101,23 +136,14 @@ import {
   DEFAULT_USER_LOCATION,
   GEOLOCATION_OPTIONS,
   LEGACY_RECORD_STAR_LOCATION,
-  SAMPLE_NOTE_IMAGE_URL,
-  SAMPLE_NOTE_TEXT,
   TRACK_STALE_POSITION_GRACE_MS,
-  UPLOAD_IMAGE_MAX_BYTES,
 } from './constants/appDefaults';
 import {
   DEFAULT_NAME_PREFIX,
   LANGUAGE_FONT_FAMILIES,
   LANGUAGE_FONT_SCALE,
   LANGUAGE_LOCALES,
-  LANGUAGE_OPTIONS,
 } from './constants/language';
-import {
-  AUTO_USER_MANUAL_KEY_PREFIX,
-  APP_STORAGE_KEY,
-  TRACK_DRAFT_STORAGE_KEY_PREFIX,
-} from './constants/storageKeys';
 import {
   DEFAULT_SYSTEM_THEME,
   READER_FONT_SIZES,
@@ -131,7 +157,6 @@ import {
   getCloudSession,
   loadCloudAccountData,
   loginCloudAccount,
-  normalizeAccountId,
   onCloudAuthStateChange,
   registerCloudAccount,
   saveCloudAppState,
@@ -148,32 +173,6 @@ import {
   type CloudMcpTokenInfo,
 } from './lib/cloudBackend';
 
-function createLocationIcon(mapStyle: string, iconColor = '#c3c3c3', heading = 0) {
-  const isAerial = mapStyle === 'aerial';
-  const color = isAerial ? '#ffffff' : iconColor;
-  const coneRotation = Number.isFinite(heading) ? heading + 90 : 90;
-  
-  return new L.DivIcon({
-    className: 'app-location-div-icon',
-    html: `
-      <div class="app-location-marker" style="position: relative; width: 80px; height: 80px; pointer-events: none;">
-          <svg width="80" height="80" viewBox="0 0 80 80" style="position: absolute; left: 0; top: 0; z-index: 1; transform: rotate(${coneRotation}deg); transform-origin: 40px 40px; transition: transform 160ms linear;">
-              <defs>
-                  <linearGradient id="coneGrad" gradientUnits="userSpaceOnUse" x1="40" y1="40" x2="8" y2="40">
-                      <stop offset="0%" stop-color="${color}" stop-opacity="0.85" />
-                      <stop offset="100%" stop-color="${color}" stop-opacity="0" />
-                  </linearGradient>
-              </defs>
-              <path d="M 8 27 L 40 40 L 8 53 Z" fill="url(#coneGrad)" />
-          </svg>
-          <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 16px; height: 16px; background: black; border: 5px solid ${color}; border-radius: 50%; z-index: 2; box-sizing: content-box; box-shadow: 0 2px 6px rgba(0,0,0,0.3); pointer-events: none;"></div>
-      </div>
-    `,
-    iconSize: [80, 80],
-    iconAnchor: [40, 40]
-  });
-}
-
 type EditingNoteTarget = {
   starId: string;
   noteId?: string;
@@ -184,529 +183,15 @@ type ReadingNoteTarget = {
   noteId: string;
 };
 
-type DeviceOrientationEventWithCompass = DeviceOrientationEvent & {
-  webkitCompassHeading?: number;
-  webkitCompassAccuracy?: number;
-};
-
-type DeviceOrientationEventConstructorWithPermission = typeof DeviceOrientationEvent & {
-  requestPermission?: (absolute?: boolean) => Promise<PermissionState>;
-};
-
-const cssColorToHex = (color: string, fallback = '#D2936D') => {
-  if (!color) return fallback;
-  if (color.startsWith('#')) return color;
-  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-  if (!match) return fallback;
-  return `#${[match[1], match[2], match[3]]
-    .map(channel => Math.max(0, Math.min(255, Number(channel))).toString(16).padStart(2, '0'))
-    .join('')
-    .toUpperCase()}`;
-};
-
-const createClientId = () => (
-  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2, 11)
-);
-
-const createDefaultRecordStar = (): StarData => {
-  const timestamp = Date.now();
-  return {
-    id: DEFAULT_RECORD_STAR_ID,
-    lat: DEFAULT_RECORD_STAR_LOCATION[0],
-    lng: DEFAULT_RECORD_STAR_LOCATION[1],
-    createdAt: timestamp,
-    color: '#EDC727',
-    notes: [{
-      id: 'default-record-note',
-      title: 'Today Note',
-      titleHtml: 'Today Note',
-      content: SAMPLE_NOTE_TEXT,
-      contentHtml: [
-        `<p>${SAMPLE_NOTE_TEXT}</p>`,
-        '<figure class="note-inline-image" contenteditable="false" data-note-image="true">',
-        `<img src="${SAMPLE_NOTE_IMAGE_URL}" alt="Note attachment" />`,
-        '<button type="button" data-remove-image="true" aria-label="Remove image"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg></button>',
-        '<button type="button" data-preview-image="true" aria-label="View larger image"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg></button>',
-        '</figure>',
-        '<p data-note-tail="true"></p>',
-      ].join(''),
-      imageUrl: undefined,
-      imageUrls: undefined,
-      fontSize: 18,
-      titleFontSize: 18,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      color: '#D2936D',
-    }],
-  };
-};
-
-const isMapStyle = (value: unknown): value is MapStyle => (
-  value === 'light' || value === 'dark' || value === 'aerial'
-);
-
-const isLanguage = (value: unknown): value is 'en' | 'zh' | 'ko' => (
-  typeof value === 'string' && LANGUAGE_OPTIONS.some(option => option.value === value)
-);
-
-const hasLoginAccount = (profile: UserProfile) => (
-  profile.account.trim().length > 0
-);
-
-const getPersistableAvatarUrl = (profile?: Partial<UserProfile>) => (
-  profile?.avatarImage ? storagePlaceholderSrc(profile.avatarImage) : profile?.avatarUrl || ''
-);
-
-const readPersistedAppState = (): PersistedAppState | null => {
-  if (typeof window === 'undefined') return null;
-
-  try {
-    const raw = window.localStorage.getItem(APP_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object'
-      ? normalizePersistedAppState(sanitizeRichHtmlFields(parsed as PersistedAppState))
-      : null;
-  } catch {
-    return null;
-  }
-};
-
-const getAutoUserManualStorageKey = (account: string) => (
-  `${AUTO_USER_MANUAL_KEY_PREFIX}${normalizeAccountId(account) || 'local'}`
-);
-
-const readAutoUserManualSeen = (account: string) => {
-  if (typeof window === 'undefined') return true;
-
-  try {
-    return window.localStorage.getItem(getAutoUserManualStorageKey(account)) === 'seen';
-  } catch {
-    return true;
-  }
-};
-
-const markAutoUserManualSeen = (account: string) => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(getAutoUserManualStorageKey(account), 'seen');
-  } catch {
-    // Manual auto-open is a convenience; storage failures should not block login.
-  }
-};
-
-const getPublicProfileSnapshot = (profile?: Partial<UserProfile>): Partial<UserProfile> => ({
-  name: profile?.name || '',
-  account: profile?.account || '',
-  avatarUrl: getPersistableAvatarUrl(profile),
-  avatarImage: profile?.avatarImage,
-});
-
-const writePersistedAppState = (state: PersistedAppState) => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(normalizePersistedAppState(sanitizeRichHtmlFields(state))));
-  } catch {
-    // Storage can fail when image-heavy notes exceed the browser quota.
-  }
-};
-
-const getTrackDraftStorageKey = (account: string) => (
-  `${TRACK_DRAFT_STORAGE_KEY_PREFIX}${normalizeAccountId(account) || 'local'}`
-);
-
-const isValidTrackDraftPoint = (value: unknown): value is [number, number] => (
-  Array.isArray(value) &&
-  value.length >= 2 &&
-  Number.isFinite(Number(value[0])) &&
-  Number.isFinite(Number(value[1])) &&
-  Number(value[0]) >= -90 &&
-  Number(value[0]) <= 90 &&
-  Number(value[1]) >= -180 &&
-  Number(value[1]) <= 180
-);
-
-const normalizeTrackDraftPaths = (value: unknown): [number, number][][] => (
-  Array.isArray(value)
-    ? value
-        .map(segment => (
-          Array.isArray(segment)
-            ? segment
-                .map(point => isValidTrackDraftPoint(point) ? [Number(point[0]), Number(point[1])] as [number, number] : null)
-                .filter((point): point is [number, number] => Boolean(point))
-            : []
-        ))
-        .filter(segment => segment.length > 0)
-    : []
-);
-
-const readTrackDraft = (account: string): TrackDraftData | null => {
-  if (typeof window === 'undefined') return null;
-
-  try {
-    const raw = window.localStorage.getItem(getTrackDraftStorageKey(account));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<TrackDraftData>;
-    const paths = normalizeTrackDraftPaths(parsed.paths);
-    if (paths.length === 0) return null;
-    return {
-      paths,
-      time: Math.max(0, Number(parsed.time) || 0),
-      savedAt: Math.max(0, Number(parsed.savedAt) || Date.now()),
-    };
-  } catch {
-    return null;
-  }
-};
-
-const writeTrackDraft = (account: string, draft: TrackDraftData) => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(getTrackDraftStorageKey(account), JSON.stringify(draft));
-  } catch {
-    // A route draft is only a recovery aid; storage quota errors should not stop tracking.
-  }
-};
-
-const clearTrackDraft = (account: string) => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.removeItem(getTrackDraftStorageKey(account));
-  } catch {
-    // Ignore local cleanup failures.
-  }
-};
-
-const canUseBrowserGeolocation = () => (
-  typeof navigator !== 'undefined' && Boolean(navigator.geolocation)
-);
-
-const getCompassHeading = (event: DeviceOrientationEventWithCompass) => {
-  if (typeof event.webkitCompassHeading === 'number' && Number.isFinite(event.webkitCompassHeading)) {
-    return (event.webkitCompassHeading + 360) % 360;
-  }
-
-  if (typeof event.alpha === 'number' && Number.isFinite(event.alpha)) {
-    return (360 - event.alpha + 360) % 360;
-  }
-
-  return null;
-};
-
-const getNearbyDefaultStarLocation = (point: [number, number]): [number, number] => {
-  const northMeters = 80;
-  const eastMeters = 80;
-  const latDelta = northMeters / 111320;
-  const lngDelta = eastMeters / (111320 * Math.max(0.01, Math.cos(point[0] * Math.PI / 180)));
-  return [point[0] + latDelta, point[1] + lngDelta];
-};
-
-const isNearCoordinate = (lat: number, lng: number, target: [number, number], tolerance = 0.002) => (
-  Math.abs(lat - target[0]) <= tolerance && Math.abs(lng - target[1]) <= tolerance
-);
-
-const normalizeInitialStars = (stars?: StarData[]) => {
-  if (!Array.isArray(stars) || stars.length === 0) return null;
-
-  return stars.map(star => (
-    star.id === DEFAULT_RECORD_STAR_ID && isNearCoordinate(star.lat, star.lng, LEGACY_RECORD_STAR_LOCATION)
-      ? { ...star, lat: DEFAULT_RECORD_STAR_LOCATION[0], lng: DEFAULT_RECORD_STAR_LOCATION[1] }
-      : star
-  ));
-};
-
-const canvasToImageBlob = (canvas: HTMLCanvasElement, mimeType: string, quality: number) => (
-  new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(blob => {
-      if (blob) resolve(blob);
-      else reject(new Error('Could not compress image.'));
-    }, mimeType, quality);
-  })
-);
-
-const imageBlobToDataUrl = (blob: Blob) => (
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  })
-);
-
 type NavigatorWithFileShare = Navigator & {
   canShare?: (data: { files?: File[]; title?: string }) => boolean;
   share?: (data: { files?: File[]; title?: string }) => Promise<void>;
-};
-
-const getImageExtension = (mimeType: string) => {
-  if (mimeType.includes('png')) return 'png';
-  if (mimeType.includes('webp')) return 'webp';
-  if (mimeType.includes('gif')) return 'gif';
-  return 'jpg';
-};
-
-const getImageDownloadFileName = (title: string, mimeType = 'image/jpeg') => {
-  const baseName = title.replace(/[^\w-]+/g, '-').replace(/^-|-$/g, '') || 'image';
-  return `${baseName}.${getImageExtension(mimeType)}`;
-};
-
-const loadImageFile = (file: File) => (
-  new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Could not load image.'));
-    };
-    image.src = objectUrl;
-  })
-);
-
-const compressImageFileToDataUrl = async (file: File) => {
-  const image = await loadImageFile(file);
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Canvas is not available.');
-
-  const maxDimension = 900;
-  let width = image.naturalWidth;
-  let height = image.naturalHeight;
-  const scale = Math.min(1, maxDimension / Math.max(width, height));
-  width = Math.max(1, Math.round(width * scale));
-  height = Math.max(1, Math.round(height * scale));
-
-  let quality = 0.8;
-  let lastBlob: Blob | null = null;
-
-  for (let attempt = 0; attempt < 16; attempt += 1) {
-    canvas.width = width;
-    canvas.height = height;
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0, width, height);
-
-    const blob = await canvasToImageBlob(canvas, 'image/jpeg', quality);
-    lastBlob = blob;
-    if (blob.size <= UPLOAD_IMAGE_MAX_BYTES) return imageBlobToDataUrl(blob);
-
-    if (quality > 0.42) {
-      quality = Math.max(0.42, quality - 0.12);
-    } else {
-      width = Math.max(220, Math.round(width * 0.84));
-      height = Math.max(220, Math.round(height * 0.84));
-      quality = 0.72;
-    }
-  }
-
-  if (!lastBlob) throw new Error('Could not compress image.');
-  return imageBlobToDataUrl(lastBlob);
-};
-
-const dataUrlToFile = async (dataUrl: string, fileName: string) => {
-  const response = await fetch(dataUrl);
-  const blob = await response.blob();
-  return new File([blob], fileName, { type: blob.type || 'image/jpeg' });
-};
-
-const TIFF_TYPE_SIZES: Record<number, number> = {
-  1: 1,
-  2: 1,
-  3: 2,
-  4: 4,
-  5: 8,
-  7: 1,
-  9: 4,
-  10: 8,
-};
-
-type TiffEntry = {
-  type: number;
-  count: number;
-  valueOffset: number;
-  entryOffset: number;
-};
-
-const readExifGpsFromArrayBuffer = (buffer: ArrayBuffer): [number, number] | null => {
-  const view = new DataView(buffer);
-  if (view.byteLength < 14 || view.getUint16(0) !== 0xffd8) return null;
-
-  let offset = 2;
-  while (offset + 4 < view.byteLength) {
-    if (view.getUint8(offset) !== 0xff) {
-      offset += 1;
-      continue;
-    }
-
-    const marker = view.getUint8(offset + 1);
-    if (marker === 0xda || marker === 0xd9) break;
-    const segmentLength = view.getUint16(offset + 2, false);
-    const segmentStart = offset + 4;
-    const segmentEnd = offset + 2 + segmentLength;
-
-    if (
-      marker === 0xe1 &&
-      segmentStart + 14 < view.byteLength &&
-      view.getUint8(segmentStart) === 0x45 &&
-      view.getUint8(segmentStart + 1) === 0x78 &&
-      view.getUint8(segmentStart + 2) === 0x69 &&
-      view.getUint8(segmentStart + 3) === 0x66
-    ) {
-      const tiffStart = segmentStart + 6;
-      const byteOrder = view.getUint16(tiffStart, false);
-      const littleEndian = byteOrder === 0x4949;
-      if (!littleEndian && byteOrder !== 0x4d4d) return null;
-      if (view.getUint16(tiffStart + 2, littleEndian) !== 42) return null;
-
-      const readIfd = (ifdOffset: number) => {
-        const entries = new Map<number, TiffEntry>();
-        const absoluteOffset = tiffStart + ifdOffset;
-        if (absoluteOffset < tiffStart || absoluteOffset + 2 > view.byteLength) return entries;
-        const count = view.getUint16(absoluteOffset, littleEndian);
-        for (let index = 0; index < count; index += 1) {
-          const entryOffset = absoluteOffset + 2 + index * 12;
-          if (entryOffset + 12 > view.byteLength) break;
-          const tag = view.getUint16(entryOffset, littleEndian);
-          entries.set(tag, {
-            type: view.getUint16(entryOffset + 2, littleEndian),
-            count: view.getUint32(entryOffset + 4, littleEndian),
-            valueOffset: view.getUint32(entryOffset + 8, littleEndian),
-            entryOffset,
-          });
-        }
-        return entries;
-      };
-
-      const entryValueOffset = (entry?: TiffEntry) => {
-        if (!entry) return -1;
-        const byteLength = (TIFF_TYPE_SIZES[entry.type] || 1) * entry.count;
-        return byteLength <= 4 ? entry.entryOffset + 8 : tiffStart + entry.valueOffset;
-      };
-
-      const readAscii = (entry?: TiffEntry) => {
-        const valueOffset = entryValueOffset(entry);
-        if (!entry || valueOffset < 0 || valueOffset + entry.count > view.byteLength) return '';
-        let value = '';
-        for (let index = 0; index < entry.count; index += 1) {
-          const code = view.getUint8(valueOffset + index);
-          if (code === 0) break;
-          value += String.fromCharCode(code);
-        }
-        return value.trim();
-      };
-
-      const readRationalArray = (entry?: TiffEntry) => {
-        const valueOffset = entryValueOffset(entry);
-        if (!entry || valueOffset < 0 || valueOffset + entry.count * 8 > view.byteLength) return [];
-        const values: number[] = [];
-        for (let index = 0; index < entry.count; index += 1) {
-          const numerator = view.getUint32(valueOffset + index * 8, littleEndian);
-          const denominator = view.getUint32(valueOffset + index * 8 + 4, littleEndian);
-          values.push(denominator ? numerator / denominator : 0);
-        }
-        return values;
-      };
-
-      const firstIfdOffset = view.getUint32(tiffStart + 4, littleEndian);
-      const ifd0 = readIfd(firstIfdOffset);
-      const gpsIfdPointer = ifd0.get(0x8825);
-      if (!gpsIfdPointer) return null;
-      const gpsIfd = readIfd(gpsIfdPointer.valueOffset);
-      const latRef = readAscii(gpsIfd.get(0x0001));
-      const latValues = readRationalArray(gpsIfd.get(0x0002));
-      const lngRef = readAscii(gpsIfd.get(0x0003));
-      const lngValues = readRationalArray(gpsIfd.get(0x0004));
-      if (latValues.length < 3 || lngValues.length < 3) return null;
-
-      const toDecimal = (values: number[], ref: string) => {
-        const decimal = values[0] + values[1] / 60 + values[2] / 3600;
-        return ['S', 'W'].includes(ref.toUpperCase()) ? -decimal : decimal;
-      };
-
-      const lat = toDecimal(latValues, latRef);
-      const lng = toDecimal(lngValues, lngRef);
-      return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
-        ? [lat, lng]
-        : null;
-    }
-
-    if (segmentLength < 2 || segmentEnd <= offset) break;
-    offset = segmentEnd;
-  }
-
-  return null;
-};
-
-const readPhotoGpsCoordinates = async (file: File): Promise<[number, number] | null> => {
-  try {
-    const gps = await exifr.gps(file);
-    if (
-      gps &&
-      Number.isFinite(gps.latitude) &&
-      Number.isFinite(gps.longitude) &&
-      Math.abs(gps.latitude) <= 90 &&
-      Math.abs(gps.longitude) <= 180
-    ) {
-      return [gps.latitude, gps.longitude];
-    }
-  } catch {
-    // Fall back to the lightweight JPEG parser below.
-  }
-
-  try {
-    const buffer = await file.arrayBuffer();
-    return readExifGpsFromArrayBuffer(buffer);
-  } catch {
-    return null;
-  }
 };
 
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
     void deleteImageFromStorageReliably(metadata);
   });
-};
-
-const countSearchMatches = (text: string, query: string) => {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return 0;
-
-  let count = 0;
-  let cursor = 0;
-  const lowerText = text.toLowerCase();
-  let matchIndex = lowerText.indexOf(normalizedQuery, cursor);
-
-  while (matchIndex >= 0) {
-    count += 1;
-    cursor = matchIndex + normalizedQuery.length;
-    matchIndex = lowerText.indexOf(normalizedQuery, cursor);
-  }
-
-  return count;
-};
-
-const parseCoordinateSearch = (value: string): [number, number] | null => {
-  const match = value.trim().match(/^\(?\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)?$/);
-  if (!match) return null;
-  const lat = Number(match[1]);
-  const lng = Number(match[2]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
-  return [lat, lng];
-};
-
-const getNoteTimestamp = (note: NoteData) => {
-  const candidate = note.createdAt || Number(note.id) || note.updatedAt;
-  return Number.isFinite(candidate) && candidate > 0 ? candidate : Date.now();
 };
 
 export default function App() {
