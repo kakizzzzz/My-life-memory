@@ -9,7 +9,7 @@
 
 :root {
   --app-chrome-top: max(1.5rem, calc(env(safe-area-inset-top) + 1rem));
-  --app-chrome-bottom: max(2rem, calc(env(safe-area-inset-bottom) + 1.25rem));
+  --app-chrome-bottom: max(1.5rem, calc(env(safe-area-inset-bottom) + 0.75rem));
   --app-floating-bottom: calc(var(--app-chrome-bottom) + 5.5rem);
   --app-modal-bottom-balance: calc(env(safe-area-inset-bottom) + 2.5rem);
 }
@@ -62,13 +62,17 @@ select {
 
 /* Make Leaflet attribution text smaller and less prominent */
 .leaflet-control-attribution {
-  font-size: 9px !important;
-  background-color: rgba(255, 255, 255, 0.4) !important;
-  opacity: 0.7;
-  margin-bottom: calc(env(safe-area-inset-bottom) + 0.35rem) !important;
+  font-size: 8px !important;
+  line-height: 1.1 !important;
+  background-color: rgba(255, 255, 255, 0.16) !important;
+  opacity: 0.38;
+  margin-right: 2px !important;
+  margin-bottom: 0 !important;
+  transform: scale(0.92);
+  transform-origin: bottom right;
 }
 .leaflet-control-attribution a {
-  color: #6b7280 !important; /* Tailwind gray-500 */
+  color: rgba(75, 85, 99, 0.58) !important; /* Tailwind gray-600 */
 }
 
 /* Custom night map filter to turn black/gray map into readable dark blue/gray map */
