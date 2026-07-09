@@ -91,6 +91,96 @@ export function ReaderScreen({
   onLocateReaderRecord,
   formatRecordMonth,
 }: ReaderScreenProps) {
+  const [isSaveFeedbackVisible, setIsSaveFeedbackVisible] = React.useState(false);
+  const [isExitConfirmOpen, setIsExitConfirmOpen] = React.useState(false);
+  const saveFeedbackTimerRef = React.useRef<number | null>(null);
+
+  const readerUiCopy = React.useMemo(() => {
+    if (homeCopy.backToRecords === '返回记录') {
+      return {
+        saved: '已保存',
+        exitTitle: '不保存并退出？',
+        exitBody: '当前修改不会保存，你可以继续回来修改。',
+        keepEditing: '继续修改',
+        discardExit: '不保存退出',
+      };
+    }
+    if (homeCopy.backToRecords === '기록으로 돌아가기') {
+      return {
+        saved: '저장됨',
+        exitTitle: '저장하지 않고 나갈까요?',
+        exitBody: '현재 수정 내용은 저장되지 않습니다. 계속 편집할 수 있습니다.',
+        keepEditing: '계속 수정',
+        discardExit: '저장하지 않고 나가기',
+      };
+    }
+    return {
+      saved: 'Saved',
+      exitTitle: 'Leave without saving?',
+      exitBody: 'Your current edits will not be saved. You can keep editing instead.',
+      keepEditing: 'Keep editing',
+      discardExit: 'Leave without saving',
+    };
+  }, [homeCopy.backToRecords]);
+
+  React.useEffect(() => () => {
+    if (saveFeedbackTimerRef.current !== null) {
+      window.clearTimeout(saveFeedbackTimerRef.current);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isOpen) return;
+    setIsSaveFeedbackVisible(false);
+    setIsExitConfirmOpen(false);
+    if (saveFeedbackTimerRef.current !== null) {
+      window.clearTimeout(saveFeedbackTimerRef.current);
+      saveFeedbackTimerRef.current = null;
+    }
+  }, [isOpen]);
+
+  const showSaveFeedback = React.useCallback(() => {
+    if (saveFeedbackTimerRef.current !== null) {
+      window.clearTimeout(saveFeedbackTimerRef.current);
+    }
+    setIsSaveFeedbackVisible(true);
+    saveFeedbackTimerRef.current = window.setTimeout(() => {
+      setIsSaveFeedbackVisible(false);
+      saveFeedbackTimerRef.current = null;
+    }, 500);
+  }, []);
+
+  const handleSaveReaderDraft = React.useCallback(() => {
+    onSaveReaderDraft();
+    setIsExitConfirmOpen(false);
+    showSaveFeedback();
+  }, [onSaveReaderDraft, showSaveFeedback]);
+
+  const handleBackRequest = React.useCallback(() => {
+    if (!readerRecord) {
+      onBackToRecords();
+      return;
+    }
+    onCollapseTools();
+    setIsExitConfirmOpen(true);
+  }, [onBackToRecords, onCollapseTools, readerRecord]);
+
+  const resetReaderDomToSavedRecord = React.useCallback(() => {
+    if (!readerRecord) return;
+    if (readerTitleRef.current) {
+      readerTitleRef.current.innerHTML = readerRecord.titleHtml;
+    }
+    if (readerContentRef.current) {
+      readerContentRef.current.innerHTML = readerRecord.contentHtml;
+    }
+  }, [readerContentRef, readerRecord, readerTitleRef]);
+
+  const handleDiscardAndExit = React.useCallback(() => {
+    resetReaderDomToSavedRecord();
+    setIsExitConfirmOpen(false);
+    onBackToRecords();
+  }, [onBackToRecords, resetReaderDomToSavedRecord]);
+
   return (
     <AnimatePresence>
       {isSignedIn && isOpen && (
@@ -120,7 +210,7 @@ export function ReaderScreen({
             <div className="mx-auto w-full max-w-[430px]">
               <div className="mb-12 flex items-start justify-between">
                 <button
-                  onClick={onBackToRecords}
+                  onClick={handleBackRequest}
                   className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm transition-transform active:scale-95"
                   aria-label={homeCopy.backToRecords}
                 >
@@ -191,9 +281,24 @@ export function ReaderScreen({
                     exit={{ opacity: 0, y: 12, scale: 0.96 }}
                     className="flex flex-col items-center gap-3"
                   >
-                    <button className={readerToolButtonClass} onClick={onSaveReaderDraft} aria-label={homeCopy.readerEdit}>
-                      <Save size={24} strokeWidth={iconStrokeWidth} />
-                    </button>
+                    <div className="relative">
+                      <button className={readerToolButtonClass} onClick={handleSaveReaderDraft} aria-label={homeCopy.readerEdit}>
+                        <Save size={24} strokeWidth={iconStrokeWidth} />
+                      </button>
+                      <AnimatePresence>
+                        {isSaveFeedbackVisible && (
+                          <motion.div
+                            initial={{ opacity: 0, x: 6, scale: 0.96 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: 6, scale: 0.96 }}
+                            transition={{ duration: 0.12 }}
+                            className="pointer-events-none absolute right-[calc(100%+10px)] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-[var(--app-dark)] px-3 py-1.5 text-[12px] font-semibold text-white shadow-lg"
+                          >
+                            {readerUiCopy.saved}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                     <div className="relative">
                       <button
                         className={readerToolButtonClass}
@@ -314,6 +419,45 @@ export function ReaderScreen({
               </button>
             </div>
           )}
+
+          <AnimatePresence>
+            {isExitConfirmOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-[1300] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[2px]"
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 12, scale: 0.96 }}
+                  className="w-full max-w-[300px] rounded-[24px] bg-[var(--app-card)] p-5 text-black shadow-xl"
+                >
+                  <h2 className="text-[20px] font-bold leading-tight">
+                    {readerUiCopy.exitTitle}
+                  </h2>
+                  <p className="mt-2 text-[14px] font-medium leading-relaxed text-black/50">
+                    {readerUiCopy.exitBody}
+                  </p>
+                  <div className="mt-5 grid grid-cols-2 gap-2">
+                    <button
+                      className="h-11 rounded-full bg-[var(--app-dark)] px-3 text-[14px] font-semibold text-white transition-transform active:scale-[0.98]"
+                      onClick={() => setIsExitConfirmOpen(false)}
+                    >
+                      {readerUiCopy.keepEditing}
+                    </button>
+                    <button
+                      className="h-11 rounded-full bg-[var(--app-soft-surface)] px-3 text-[14px] font-semibold text-black transition-transform active:scale-[0.98]"
+                      onClick={handleDiscardAndExit}
+                    >
+                      {readerUiCopy.discardExit}
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>
