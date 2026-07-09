@@ -176,6 +176,9 @@ html, body {
 .note-rich-editor {
   position: relative;
   cursor: text;
+  box-sizing: border-box;
+  padding-bottom: 2.75rem;
+  scroll-padding-bottom: calc(env(safe-area-inset-bottom) + 5rem);
 }
 
 .note-rich-editor p {
