@@ -58,14 +58,11 @@ export const useTrackRecording = ({
   const checkedTrackDraftAccountRef = React.useRef<string | null>(null);
   const lastTrackPointRef = React.useRef<TrackPoint | null>(null);
   const trackingStartedAtRef = React.useRef(0);
-  const trackingStateRef = React.useRef({ isTracking, isPaused });
   const trackDraftStateRef = React.useRef({ paths: trackPaths, time: trackTime });
   const { trackDistanceKm, activeTrackDistanceDisplay, formatTime } = useTrackSummary(trackPaths);
 
   React.useEffect(() => {
-    const nextTrackingState = { isTracking, isPaused };
-    trackingStateRef.current = nextTrackingState;
-    onTrackingStateChange?.(nextTrackingState);
+    onTrackingStateChange?.({ isTracking, isPaused });
   }, [isTracking, isPaused, onTrackingStateChange]);
 
   React.useEffect(() => {
@@ -144,7 +141,6 @@ export const useTrackRecording = ({
     trackingStartedAtRef.current = startedAt;
     lastTrackPointRef.current = null;
     const nextTrackingState = { isTracking: true, isPaused: false };
-    trackingStateRef.current = nextTrackingState;
     onTrackingStateChange?.(nextTrackingState);
     setIsTracking(true);
     setIsPaused(false);
@@ -172,7 +168,6 @@ export const useTrackRecording = ({
     trackingStartedAtRef.current = 0;
     clearTrackDraft(profileAccount);
     const nextTrackingState = { isTracking: false, isPaused: false };
-    trackingStateRef.current = nextTrackingState;
     onTrackingStateChange?.(nextTrackingState);
     setIsTracking(false);
     setTrackPaths([]);
@@ -221,7 +216,6 @@ export const useTrackRecording = ({
       setIsTracking(true);
       setIsPaused(true);
       const nextTrackingState = { isTracking: true, isPaused: true };
-      trackingStateRef.current = nextTrackingState;
       onTrackingStateChange?.(nextTrackingState);
       lastTrackPointRef.current = null;
       trackingStartedAtRef.current = Date.now();
