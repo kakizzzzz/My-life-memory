@@ -69,6 +69,7 @@ export const useAppViewLifecycle = ({
   setReaderActivePanel: React.Dispatch<React.SetStateAction<'font' | 'color' | null>>;
   setReaderShowCustomPicker: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
+  const [isAutoUserManualOpen, setIsAutoUserManualOpen] = React.useState(false);
   const autoOpenedManualAccountRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -80,9 +81,8 @@ export const useAppViewLifecycle = ({
     if (readAutoUserManualSeen(account)) return;
 
     markAutoUserManualSeen(account);
-    setActiveView('home');
-    setActiveHomePanel('manual');
-  }, [isSignedIn, profileAccount, setActiveHomePanel, setActiveView]);
+    setIsAutoUserManualOpen(true);
+  }, [isSignedIn, profileAccount]);
 
   React.useEffect(() => {
     if (activeHomePanel !== 'theme') {
@@ -133,6 +133,7 @@ export const useAppViewLifecycle = ({
   React.useEffect(() => {
     if (isSignedIn) return;
     autoOpenedManualAccountRef.current = null;
+    setIsAutoUserManualOpen(false);
     resetLocationSession();
     resetTrackDraftCheck();
     setActiveView('home');
@@ -178,7 +179,13 @@ export const useAppViewLifecycle = ({
     ));
   }, [homeScrollRef, setActiveHomePanel]);
 
+  const closeAutoUserManual = React.useCallback(() => {
+    setIsAutoUserManualOpen(false);
+  }, []);
+
   return {
     closeHomePanel,
+    closeAutoUserManual,
+    isAutoUserManualOpen,
   };
 };

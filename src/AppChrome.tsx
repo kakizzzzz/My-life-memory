@@ -10,6 +10,13 @@ type InitialPermissionCopy = {
   openPermissions: string;
 };
 
+type AutoUserManualCopy = {
+  userManual: string;
+  manualIntro: string;
+  manualSections: { title: string; body: string }[];
+  closeManual: string;
+};
+
 type PasswordChangeCopy = {
   changePassword: string;
   closeManual: string;
@@ -95,6 +102,78 @@ export function InitialPermissionPrompt({
                 {permissionRequestState === 'requesting' ? copy.permissionRequesting : copy.openPermissions}
               </button>
             </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function AutoUserManualModal({
+  isOpen,
+  copy,
+  iconStrokeWidth,
+  onClose,
+}: {
+  isOpen: boolean;
+  copy: AutoUserManualCopy;
+  iconStrokeWidth: number;
+  onClose: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[2320] flex items-center justify-center bg-black/30 px-5 py-[calc(env(safe-area-inset-top)+1rem)] pointer-events-auto"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
+            transition={{ duration: 0.18 }}
+            className="flex max-h-[78dvh] w-full max-w-[370px] flex-col rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2 text-[18px] font-medium leading-tight">
+                <BookOpen size={23} strokeWidth={iconStrokeWidth} />
+                <span className="truncate">{copy.userManual}</span>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black transition-transform active:scale-95"
+                aria-label={copy.closeManual}
+              >
+                <X size={20} strokeWidth={iconStrokeWidth} />
+              </button>
+            </div>
+            <div className="min-h-0 overflow-y-auto overscroll-contain pr-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <div className="text-[13px] font-medium leading-snug text-black/55">
+                {copy.manualIntro}
+              </div>
+              <div className="mt-4 space-y-3 pb-1">
+                {copy.manualSections.map(section => (
+                  <div key={section.title}>
+                    <div className="text-[13px] font-semibold leading-tight text-black">
+                      {section.title}
+                    </div>
+                    <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
+                      {section.body}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-4 h-11 w-full rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98]"
+            >
+              {copy.closeManual}
+            </button>
           </motion.div>
         </motion.div>
       )}

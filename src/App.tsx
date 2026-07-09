@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
+  AutoUserManualModal,
   BottomNavigation,
   GalleryPreviewOverlay,
   InitialPermissionPrompt,
@@ -561,7 +562,11 @@ export default function App() {
     mediaRefreshKey,
   });
 
-  const { closeHomePanel } = useAppViewLifecycle({
+  const {
+    closeAutoUserManual,
+    closeHomePanel,
+    isAutoUserManualOpen,
+  } = useAppViewLifecycle({
     isSignedIn,
     activeView,
     setActiveView,
@@ -905,8 +910,15 @@ export default function App() {
         onRevokeMcpToken={handleRevokeMcpToken}
       />
 
+      <AutoUserManualModal
+        isOpen={isAutoUserManualOpen && isSignedIn}
+        copy={homeCopy}
+        iconStrokeWidth={UI_ICON_STROKE}
+        onClose={closeAutoUserManual}
+      />
+
       <InitialPermissionPrompt
-        isOpen={isInitialPermissionPromptOpen && isSignedIn}
+        isOpen={isInitialPermissionPromptOpen && isSignedIn && !isAutoUserManualOpen}
         copy={homeCopy}
         permissionRequestState={permissionRequestState}
         iconStrokeWidth={UI_ICON_STROKE}
