@@ -477,7 +477,7 @@ export function BottomNavigation({
   );
 
   return (
-    <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+1.5rem)] left-1/2 -translate-x-1/2 z-[1000]">
+    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000]">
       <div className="bg-[var(--app-nav-surface)] backdrop-blur-lg rounded-[2rem] px-2.5 py-2 flex items-center gap-2.5 shadow-sm border border-[var(--app-icon)] transition-all duration-300 ease-out">
         <motion.button
           layout

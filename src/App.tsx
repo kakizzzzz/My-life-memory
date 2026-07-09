@@ -651,7 +651,7 @@ export default function App() {
     }
   };
 
-  const screenTopPaddingClass = 'screen-safe-top';
+  const screenTopPaddingClass = 'pt-16';
   const btnClass = "w-12 h-12 rounded-full bg-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 transition-all shadow-sm";
   const starPlacementButtonClass = `${btnClass} touch-none`;
 
@@ -666,7 +666,7 @@ export default function App() {
   const showRouteDetailDots = mapZoom >= ROUTE_DETAIL_DOT_MIN_ZOOM;
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
+    <div className="relative w-[100dvw] h-[100dvh] min-h-[100svh] overflow-hidden bg-[var(--app-page)] font-sans" style={appThemeVars}>
       <input
         ref={photoLocationInputRef}
         type="file"
