@@ -7,6 +7,13 @@
   --font-mono: "Afacad", "Noto Serif SC", "Noto Serif KR", "Songti SC", "Apple SD Gothic Neo", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+:root {
+  --app-chrome-top: max(1.5rem, calc(env(safe-area-inset-top) + 1rem));
+  --app-chrome-bottom: max(2rem, calc(env(safe-area-inset-bottom) + 1.25rem));
+  --app-floating-bottom: calc(var(--app-chrome-bottom) + 5.5rem);
+  --app-modal-bottom-balance: calc(env(safe-area-inset-bottom) + 2.5rem);
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -58,7 +65,7 @@ select {
   font-size: 9px !important;
   background-color: rgba(255, 255, 255, 0.4) !important;
   opacity: 0.7;
-  margin-bottom: calc(env(safe-area-inset-bottom) + 4px) !important;
+  margin-bottom: calc(env(safe-area-inset-bottom) + 0.35rem) !important;
 }
 .leaflet-control-attribution a {
   color: #6b7280 !important; /* Tailwind gray-500 */
