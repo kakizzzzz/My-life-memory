@@ -70,6 +70,16 @@ export type UploadedImage = {
   title: string;
 };
 
+export type EditingNoteTarget = {
+  starId: string;
+  noteId?: string;
+};
+
+export type ReadingNoteTarget = {
+  starId: string;
+  noteId: string;
+};
+
 export type NoteRecord = {
   id: string;
   starId: string;

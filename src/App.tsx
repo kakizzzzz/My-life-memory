@@ -16,13 +16,18 @@ import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingContro
 import { SearchResultsScreen } from './SearchResultsScreen';
 import { RecordsScreen } from './RecordsScreen';
 import { ReaderScreen } from './ReaderScreen';
-import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
+import { TripStatisticsView } from './TripStatisticsView';
+import { useMemoryDerivedData } from './hooks/useMemoryDerivedData';
+import { useMcpTokens } from './hooks/useMcpTokens';
+import { usePasswordChange } from './hooks/usePasswordChange';
+import { useGalleryActions } from './hooks/useGalleryActions';
+import { usePhotoLocationImport } from './hooks/usePhotoLocationImport';
+import { useTrackSummary } from './hooks/useTrackSummary';
 import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
   dehydrateStorageMediaHtml,
   deleteImageFromStorageReliably,
-  hydrateStorageMediaHtml,
   imageMetadataFromElement,
   isSupabaseMediaEnabled,
   retryPendingImageDeletions,
@@ -38,12 +43,9 @@ import {
   dateFromCalendarDateKey,
   formatRecordMonth,
   formatRecordTime,
-  getCalendarDateKey,
 } from './lib/dateUtils';
 import {
-  formatDistanceDisplay,
   getBearingBetweenPoints,
-  getPointsEveryXMeters,
   getTrackAccuracy,
   ROUTE_DETAIL_DOT_MIN_ZOOM,
   shouldAcceptTrackPoint,
@@ -53,8 +55,6 @@ import {
 import {
   compressImageFileToDataUrl,
   dataUrlToFile,
-  getImageDownloadFileName,
-  readPhotoGpsCoordinates,
 } from './lib/photoUtils';
 import { createLocationIcon } from './lib/mapMarkerUtils';
 import {
@@ -87,8 +87,6 @@ import {
 import {
   cleanReaderHtml,
   ensureReaderEditableTailAfterMedia,
-  escapeHtml,
-  extractImagesFromHtml,
   extractStoredImagesFromHtml,
   getReadableNoteHtml,
   getReadableTitleHtml,
@@ -101,7 +99,7 @@ import {
   uniqueStoredImages,
 } from './lib/noteHtmlUtils';
 import { createClientId } from './lib/generalUtils';
-import { countSearchMatches, parseCoordinateSearch } from './lib/searchUtils';
+import { parseCoordinateSearch } from './lib/searchUtils';
 import { getNoteTimestamp } from './lib/noteDataUtils';
 import {
   applyReaderStyleToSelection as applyReaderDomStyleToSelection,
@@ -117,10 +115,12 @@ import {
 } from './lib/readerDomUtils';
 import type {
   AppView,
+  EditingNoteTarget,
   HomePanel,
   MapStyle,
   NoteData,
   PersistedAppState,
+  ReadingNoteTarget,
   RecordsCalendarMode,
   RecordsFilter,
   SearchField,
@@ -150,6 +150,7 @@ import {
 import {
   DEFAULT_SYSTEM_THEME,
 } from './constants/theme';
+import { MAP_TILES } from './constants/mapTiles';
 import {
   MAP_TOOL_ICON_STROKE,
   UI_ICON_STROKE,
@@ -164,31 +165,11 @@ import {
   saveCloudAppState,
   saveCloudProfile,
   signOutCloudAccount,
-  updateCloudPassword,
   type CloudAuthAction,
   CloudAuthError,
-  createCloudMcpToken,
-  listCloudMcpTokens,
-  revokeCloudMcpToken,
   type CloudAppState,
   type CloudProfile,
-  type CloudMcpTokenInfo,
 } from './lib/cloudBackend';
-
-type EditingNoteTarget = {
-  starId: string;
-  noteId?: string;
-};
-
-type ReadingNoteTarget = {
-  starId: string;
-  noteId: string;
-};
-
-type NavigatorWithFileShare = Navigator & {
-  canShare?: (data: { files?: File[]; title?: string }) => boolean;
-  share?: (data: { files?: File[]; title?: string }) => Promise<void>;
-};
 
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
@@ -254,18 +235,7 @@ export default function App() {
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [isExportingData, setIsExportingData] = useState(false);
   const [exportDataStatus, setExportDataStatus] = useState('');
-  const [mcpTokens, setMcpTokens] = useState<CloudMcpTokenInfo[]>([]);
-  const [mcpPlainToken, setMcpPlainToken] = useState('');
-  const [mcpTokenStatus, setMcpTokenStatus] = useState('');
-  const [isMcpTokenBusy, setIsMcpTokenBusy] = useState(false);
   const [isPasswordChangeOpen, setIsPasswordChangeOpen] = useState(false);
-  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [passwordChangeStatus, setPasswordChangeStatus] = useState('');
-  const [isReadingPhotoLocation, setIsReadingPhotoLocation] = useState(false);
-  const [photoLocationStatus, setPhotoLocationStatus] = useState('');
   const [permissionRequestState, setPermissionRequestState] = useState<'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported'>('idle');
   const [language, setLanguage] = useState(() => (
     initialLanguage
@@ -343,7 +313,6 @@ export default function App() {
   const cloudReadyToSaveRef = React.useRef(!isCloudBackendEnabled);
   const cloudRegistrationInProgressRef = React.useRef(false);
   const cloudSaveTimerRef = React.useRef<number | null>(null);
-  const photoLocationStatusTimerRef = React.useRef<number | null>(null);
   const hasRequestedEntryLocationRef = React.useRef(false);
   const autoOpenedManualAccountRef = React.useRef<string | null>(null);
   const checkedTrackDraftAccountRef = React.useRef<string | null>(null);
@@ -840,28 +809,9 @@ export default function App() {
   useEffect(() => () => {
     stopGpsWatch();
     stopHeadingWatch();
-    if (photoLocationStatusTimerRef.current !== null) {
-      window.clearTimeout(photoLocationStatusTimerRef.current);
-    }
   }, [stopGpsWatch, stopHeadingWatch]);
 
-  // Remove the useEffect that depends on userLocation, we will update trackPaths directly in drag handlers
-  const trackDistanceKm = React.useMemo(() => {
-    let dist = 0;
-    trackPaths.forEach(path => {
-      for (let i = 1; i < path.length; i++) {
-        dist += L.latLng(path[i-1]).distanceTo(L.latLng(path[i]));
-      }
-    });
-    return dist / 1000;
-  }, [trackPaths]);
-  const activeTrackDistanceDisplay = formatDistanceDisplay(trackDistanceKm);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  const { trackDistanceKm, activeTrackDistanceDisplay, formatTime } = useTrackSummary(trackPaths);
 
   const onMapClick = React.useCallback(() => {
     setSelectedStarId(null);
@@ -1518,22 +1468,6 @@ export default function App() {
     return result;
   }, [stars, mapStyle, systemTheme.icon]);
 
-  const mapTiles = {
-    light: {
-      url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-    },
-    dark: {
-      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-    },
-    aerial: {
-      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      attribution: 'Tiles &copy; Esri'
-    }
-  };
-
-
   const onUpdateTrack = (id: string, updates: Partial<TrackData>) => {
     setSavedTracks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
   };
@@ -1550,6 +1484,49 @@ export default function App() {
   const languageLocale = LANGUAGE_LOCALES[language] || LANGUAGE_LOCALES.en;
   const selectedFontFamily = LANGUAGE_FONT_FAMILIES[language] || LANGUAGE_FONT_FAMILIES.en;
   const selectedFontScale = LANGUAGE_FONT_SCALE[language] || LANGUAGE_FONT_SCALE.en;
+  const {
+    currentPasswordInput,
+    newPasswordInput,
+    confirmPasswordInput,
+    isChangingPassword,
+    passwordChangeStatus,
+    setCurrentPasswordInput,
+    setNewPasswordInput,
+    setConfirmPasswordInput,
+    setPasswordChangeStatus,
+    handleChangePassword,
+  } = usePasswordChange({
+    account: profile.account,
+    minPasswordLength: CLOUD_PASSWORD_MIN_LENGTH,
+    copy: {
+      loginMissing: homeCopy.loginMissing,
+      passwordTooShort: homeCopy.passwordTooShort,
+      passwordMismatch: homeCopy.passwordMismatch,
+      passwordChanged: homeCopy.passwordChanged,
+      currentPasswordWrong: homeCopy.currentPasswordWrong,
+    },
+    getFallbackErrorMessage: error => getCloudAuthErrorMessage(error, 'login'),
+    onChanged: () => setIsPasswordChangeOpen(false),
+  });
+  const {
+    mcpTokens,
+    mcpPlainToken,
+    mcpTokenStatus,
+    isMcpTokenBusy,
+    handleCreateMcpToken,
+    handleCopyMcpText,
+    handleRevokeMcpToken,
+  } = useMcpTokens({
+    isSignedIn,
+    activeHomePanel,
+    account: profile.account,
+    copy: {
+      mcpFailed: homeCopy.mcpFailed,
+      mcpTokenReady: homeCopy.mcpTokenReady,
+      mcpCopied: homeCopy.mcpCopied,
+      mcpRevoked: homeCopy.mcpRevoked,
+    },
+  });
   const permissionStatusText = (
     permissionRequestState === 'requesting' ? homeCopy.permissionRequesting :
     permissionRequestState === 'ready' ? '' :
@@ -1581,234 +1558,64 @@ export default function App() {
       : profile.avatarUrl
   ), [mediaRefreshKey, profile.avatarImage, profile.avatarUrl]);
 
-  const uploadedImages = React.useMemo<UploadedImage[]>(() => {
-    const images: UploadedImage[] = [];
-    stars.forEach((star, starIndex) => {
-      (star.notes || []).forEach((note, noteIndex) => {
-        const hydratedContentHtml = hydrateStorageMediaHtml(sanitizeRichHtml(note.contentHtml || ''));
-        const metadataSources = (note.images || [])
-          .map(metadata => buildStorageImageSrc(metadata))
-          .filter((src): src is string => Boolean(src));
-        const sources = [
-          ...extractImagesFromHtml(hydratedContentHtml),
-          ...metadataSources,
-          ...(Array.isArray(note.imageUrls) ? note.imageUrls : []),
-          ...(note.imageUrl ? [note.imageUrl] : []),
-        ];
-        Array.from(new Set(sources)).forEach((src, imageIndex) => {
-          images.push({
-            id: `${star.id}-${note.id}-${imageIndex}`,
-            src,
-            title: note.title || `${homeCopy.noteLabel} ${noteIndex + 1} / ${homeCopy.starLabel} ${starIndex + 1}`,
-          });
-        });
-      });
-    });
-    return images;
-  }, [homeCopy.noteLabel, homeCopy.starLabel, mediaRefreshKey, stars]);
-
-  const noteRecords = React.useMemo(() => {
-    const now = new Date();
-    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const currentYear = now.getFullYear();
-
-    return stars
-      .flatMap((star, starIndex) => (
-        (star.notes || []).map((note, noteIndex) => {
-          const timestamp = getNoteTimestamp(note);
-          const date = new Date(timestamp);
-          const text = htmlToText(note.contentHtml) || note.content || note.title || homeCopy.untitledNote;
-          const title = htmlToText(note.titleHtml) || note.title || `${homeCopy.noteLabel} ${noteIndex + 1}`;
-          return {
-            id: `${star.id}-${note.id}`,
-            starId: star.id,
-            noteId: note.id,
-            starIndex,
-            noteIndex,
-            lat: star.lat,
-            lng: star.lng,
-            color: star.color || '#EDC727',
-            title,
-            text,
-            timestamp,
-            day: date.getDate(),
-            year: date.getFullYear(),
-            monthKey: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-            dateKey: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-            hasContent: hasMeaningfulNoteContent(note),
-          };
-        })
-      ))
-      .filter(record => {
-        if (!record.hasContent) return false;
-        if (selectedRecordsDateKey && record.dateKey !== selectedRecordsDateKey) return false;
-        if (recordsFilter === 'monthly' && record.monthKey !== currentMonthKey) return false;
-        if (recordsFilter === 'annual' && record.year !== currentYear) return false;
-        return true;
-      })
-      .sort((a, b) => b.timestamp - a.timestamp);
-  }, [homeCopy.noteLabel, homeCopy.untitledNote, recordsFilter, selectedRecordsDateKey, stars]);
-
-  const searchResultRecords = React.useMemo(() => {
-    const query = submittedTextSearch.trim().toLowerCase();
-    if (!query) return [];
-
-    return stars
-      .flatMap((star, starIndex) => (
-        (star.notes || []).map((note, noteIndex) => {
-          const timestamp = getNoteTimestamp(note);
-          const title = htmlToText(note.titleHtml) || note.title || `${homeCopy.noteLabel} ${noteIndex + 1}`;
-          const text = htmlToText(note.contentHtml) || note.content || title || homeCopy.untitledNote;
-          const searchableText = text === title ? title : `${title} ${text}`;
-          const matchCount = countSearchMatches(searchableText, query);
-          return {
-            id: `${star.id}-${note.id}`,
-            starId: star.id,
-            noteId: note.id,
-            starIndex,
-            noteIndex,
-            title,
-            text,
-            timestamp,
-            color: star.color || '#EDC727',
-            matchCount,
-            hasContent: hasMeaningfulNoteContent(note),
-            isMatch: matchCount > 0,
-          };
-        })
-      ))
-      .filter(record => record.hasContent && record.isMatch)
-      .sort((a, b) => b.timestamp - a.timestamp);
-  }, [homeCopy.noteLabel, homeCopy.untitledNote, stars, submittedTextSearch]);
-
-  const recordsByDate = React.useMemo(() => {
-    const groups = new Map<string, typeof noteRecords>();
-    noteRecords.forEach(record => {
-      if (!groups.has(record.dateKey)) groups.set(record.dateKey, []);
-      groups.get(record.dateKey)!.push(record);
-    });
-    return Array.from(groups.entries())
-      .map(([dateKey, records]) => ({
-        dateKey,
-        records: [...records].sort((a, b) => b.timestamp - a.timestamp),
-      }))
-      .sort((a, b) => (b.records[0]?.timestamp || 0) - (a.records[0]?.timestamp || 0));
-  }, [noteRecords]);
-
-  const recordDateSummaries = React.useMemo(() => {
-    const counts = new Map<string, { dateKey: string; day: number; month: string; timestamp: number; count: number }>();
-    stars.forEach(star => {
-      (star.notes || []).forEach(note => {
-        if (!hasMeaningfulNoteContent(note)) return;
-        const timestamp = getNoteTimestamp(note);
-        const date = new Date(timestamp);
-        const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-        const existing = counts.get(dateKey);
-        if (existing) {
-          existing.count += 1;
-        } else {
-          counts.set(dateKey, {
-            dateKey,
-            day: date.getDate(),
-            month: formatRecordMonth(timestamp),
-            timestamp,
-            count: 1,
-          });
-        }
-      });
-    });
-    return Array.from(counts.values()).sort((a, b) => b.timestamp - a.timestamp);
-  }, [stars]);
-
-  const recordDateKeys = React.useMemo(() => (
-    new Set(recordDateSummaries.map(date => date.dateKey))
-  ), [recordDateSummaries]);
-
-  const calendarActivityDateKeys = React.useMemo(() => {
-    const keys = new Set(recordDateSummaries.map(date => date.dateKey));
-    stars.forEach(star => {
-      if (!star.createdAt) return;
-      keys.add(getCalendarDateKey(new Date(star.createdAt)));
-    });
-    return keys;
-  }, [recordDateSummaries, stars]);
-
-  const mapActivity = React.useMemo(() => {
-    const points: MapActivityPoint[] = [];
-
-    const addPoint = (lat: number, lng: number, weight: number) => {
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || weight <= 0) return;
-      points.push({ lat, lng, weight });
-    };
-
-    stars.forEach(star => {
-      addPoint(star.lat, star.lng, 1);
-      const meaningfulNoteCount = (star.notes || []).filter(hasMeaningfulNoteContent).length;
-      if (meaningfulNoteCount > 0) addPoint(star.lat, star.lng, meaningfulNoteCount);
-    });
-
-    const taggedGroups = new Map<number, StarData[]>();
-    stars
-      .filter(star => star.tagOrder !== undefined && star.tagGroupId !== undefined)
-      .forEach(star => {
-        if (!taggedGroups.has(star.tagGroupId!)) taggedGroups.set(star.tagGroupId!, []);
-        taggedGroups.get(star.tagGroupId!)!.push(star);
-      });
-
-    taggedGroups.forEach(groupStars => {
-      const orderedStars = [...groupStars].sort((a, b) => (a.tagOrder || 0) - (b.tagOrder || 0));
-      for (let index = 1; index < orderedStars.length; index += 1) {
-        const prev = orderedStars[index - 1];
-        const next = orderedStars[index];
-        addPoint((prev.lat + next.lat) / 2, (prev.lng + next.lng) / 2, 0.75);
-      }
-    });
-
-    const addTrackPath = (path: [number, number][], weight: number) => {
-      if (path.length < 2) return;
-      const sampledPoints = getPointsEveryXMeters(path, 500);
-      sampledPoints.forEach(([lat, lng]) => addPoint(lat, lng, weight));
-    };
-
-    savedTracks.forEach(track => {
-      track.paths.forEach(path => addTrackPath(path, 0.35));
-    });
-
-    if (isTracking) {
-      trackPaths.forEach(path => addTrackPath(path, 0.25));
-    }
-
-    return { points };
-  }, [stars, savedTracks, isTracking, trackPaths]);
-
-  const markedLocationCount = React.useMemo(() => stars.length, [stars]);
-
-  const starRecordRankings = React.useMemo<TextRankingItem[]>(() => (
-    stars
-      .map((star, index) => ({
-        name: String(index + 1),
-        value: (star.notes || []).filter(hasMeaningfulNoteContent).length,
-        fill: star.color || '#EDC727',
-      }))
-      .filter(item => item.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .map((item, index) => ({ ...item, name: String(index + 1) }))
-  ), [stars]);
-
-  const recordsCalendarDays = React.useMemo(() => {
-    const year = recordsCalendarDate.getFullYear();
-    const month = recordsCalendarDate.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    return Array.from({ length: daysInMonth }, (_, index) => new Date(year, month, index + 1));
-  }, [recordsCalendarDate]);
-
-  const recordsCalendarEmptyDays = React.useMemo(() => (
-    Array.from({ length: new Date(recordsCalendarDate.getFullYear(), recordsCalendarDate.getMonth(), 1).getDay() })
-  ), [recordsCalendarDate]);
-
-  const recordsCalendarMonths = React.useMemo(() => (
-    Array.from({ length: 12 }, (_, month) => new Date(recordsCalendarDate.getFullYear(), month, 1))
-  ), [recordsCalendarDate]);
+  const {
+    uploadedImages,
+    recordsByDate,
+    searchResultRecords,
+    recordDateKeys,
+    calendarActivityDateKeys,
+    mapActivity,
+    markedLocationCount,
+    starRecordRankings,
+    recordsCalendarDays,
+    recordsCalendarEmptyDays,
+    recordsCalendarMonths,
+  } = useMemoryDerivedData({
+    stars,
+    savedTracks,
+    isTracking,
+    trackPaths,
+    recordsFilter,
+    selectedRecordsDateKey,
+    submittedTextSearch,
+    recordsCalendarDate,
+    mediaRefreshKey,
+    copy: {
+      noteLabel: homeCopy.noteLabel,
+      starLabel: homeCopy.starLabel,
+      untitledNote: homeCopy.untitledNote,
+    },
+  });
+  const {
+    handleAvatarInput,
+    downloadGalleryImage,
+  } = useGalleryActions({
+    profile,
+    setProfile,
+  });
+  const handlePhotoLocationCreated = React.useCallback((starId: string, coordinates: [number, number]) => {
+    setSelectedStarId(starId);
+    setActiveTag(null);
+    setFlyTarget(coordinates);
+    setIsMenuOpen(false);
+  }, []);
+  const {
+    isReadingPhotoLocation,
+    photoLocationStatus,
+    handlePhotoLocationInput,
+  } = usePhotoLocationImport({
+    copy: {
+      photoLocationLoading: homeCopy.photoLocationLoading,
+      photoLocationNoGps: homeCopy.photoLocationNoGps,
+      photoGpsNoteTitle: homeCopy.photoGpsNoteTitle,
+      noteImageAlt: homeCopy.noteImageAlt,
+      removeImage: homeCopy.removeImage,
+      photoLocationCreated: homeCopy.photoLocationCreated,
+      photoLocationFailed: homeCopy.photoLocationFailed,
+    },
+    addStarAtLatLng,
+    onCreated: handlePhotoLocationCreated,
+  });
 
   const handleCoordinateSearch = () => {
     const coordinates = parseCoordinateSearch(coordinateSearch);
@@ -1862,305 +1669,9 @@ export default function App() {
     setActiveView(searchReturnView);
   };
 
-  const handleAvatarInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
-    const imageUrl = await compressImageFileToDataUrl(file);
-    const previousAvatarImage = profile.avatarImage;
-    let avatarUrl = imageUrl;
-    let avatarImage: StoredImageMetadata | undefined;
-
-    if (isSupabaseMediaEnabled) {
-      try {
-        const compressedFile = await dataUrlToFile(imageUrl, `avatar-${Date.now()}.jpg`);
-        const uploaded = await uploadImageToStorage(compressedFile, {
-          folder: 'avatars',
-          noteId: 'profile',
-          fileName: compressedFile.name,
-        });
-        if (uploaded.metadata) {
-          avatarUrl = storagePlaceholderSrc(uploaded.metadata);
-          avatarImage = uploaded.metadata;
-        }
-      } catch (error) {
-        console.warn('Supabase Storage avatar upload failed, using data URL fallback:', error);
-      }
-    }
-
-    setProfile(prev => ({ ...prev, avatarUrl, avatarImage }));
-    if (previousAvatarImage && previousAvatarImage.key !== avatarImage?.key) {
-      void deleteImageFromStorageReliably(previousAvatarImage);
-    }
-    event.target.value = '';
-  };
-
   const updateThemeColor = (key: keyof SystemTheme, value: string) => {
     setSystemTheme(prev => ({ ...prev, [key]: value }));
   };
-
-  const downloadGalleryImageFallback = (href: string, fileName: string) => {
-    const link = document.createElement('a');
-    link.href = href;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  };
-
-  const downloadGalleryImage = async (image: UploadedImage) => {
-    let objectUrl: string | null = null;
-    const fallbackFileName = getImageDownloadFileName(image.title);
-
-    try {
-      const response = await fetch(image.src);
-      if (!response.ok) throw new Error('Could not fetch image.');
-
-      const blob = await response.blob();
-      const mimeType = blob.type || 'image/jpeg';
-      const fileName = getImageDownloadFileName(image.title, mimeType);
-      const file = new File([blob], fileName, { type: mimeType });
-      const shareNavigator = navigator as NavigatorWithFileShare;
-
-      if (shareNavigator.share && (!shareNavigator.canShare || shareNavigator.canShare({ files: [file], title: image.title }))) {
-        await shareNavigator.share({ files: [file], title: image.title });
-        return;
-      }
-
-      objectUrl = URL.createObjectURL(blob);
-      downloadGalleryImageFallback(objectUrl, fileName);
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        console.warn('Could not open native image save flow, falling back to download:', error);
-        downloadGalleryImageFallback(image.src, fallbackFileName);
-      }
-    } finally {
-      if (objectUrl) {
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      }
-    }
-  };
-
-  const showPhotoLocationStatus = React.useCallback((message: string, durationMs = 500) => {
-    if (photoLocationStatusTimerRef.current !== null) {
-      window.clearTimeout(photoLocationStatusTimerRef.current);
-      photoLocationStatusTimerRef.current = null;
-    }
-    setPhotoLocationStatus(message);
-    if (durationMs > 0) {
-      photoLocationStatusTimerRef.current = window.setTimeout(() => {
-        setPhotoLocationStatus('');
-        photoLocationStatusTimerRef.current = null;
-      }, durationMs);
-    }
-  }, []);
-
-  const handlePhotoLocationInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    const looksLikeImage = file.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|webp)$/i.test(file.name);
-    if (!looksLikeImage) return;
-    if (isReadingPhotoLocation) return;
-
-    setIsReadingPhotoLocation(true);
-    showPhotoLocationStatus(homeCopy.photoLocationLoading, 0);
-
-    try {
-      const coordinates = await readPhotoGpsCoordinates(file);
-      if (!coordinates) {
-        showPhotoLocationStatus(homeCopy.photoLocationNoGps, 500);
-        return;
-      }
-
-      const [lat, lng] = coordinates;
-      const timestamp = Date.now();
-      const starId = createClientId();
-      const noteId = createClientId();
-      const imageUrl = await compressImageFileToDataUrl(file);
-      let imageHtml = imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage);
-      let imageMetadata: StoredImageMetadata | undefined;
-
-      if (isSupabaseMediaEnabled) {
-        try {
-          const compressedFile = await dataUrlToFile(imageUrl, file.name || `${timestamp}.jpg`);
-          const uploaded = await uploadImageToStorage(compressedFile, {
-            noteId,
-            folder: 'notes',
-            fileName: compressedFile.name,
-          });
-          if (uploaded.metadata) {
-            imageMetadata = uploaded.metadata;
-            imageHtml = imageToReaderHtml(uploaded.src, homeCopy.noteImageAlt, homeCopy.removeImage, uploaded.metadata);
-          }
-        } catch (error) {
-          console.warn('Supabase Storage photo GPS upload failed, using data URL fallback:', error);
-        }
-      }
-
-      const contentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(`${imageHtml}${readerEditableTailHtml}`));
-      const title = homeCopy.photoGpsNoteTitle;
-      const note: NoteData = {
-        id: noteId,
-        title,
-        titleHtml: sanitizeRichHtml(escapeHtml(title)),
-        content: '',
-        contentHtml,
-        images: imageMetadata ? [imageMetadata] : undefined,
-        fontSize: 18,
-        titleFontSize: 18,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        color: '#D2936D',
-      };
-
-      addStarAtLatLng(lat, lng, {
-        id: starId,
-        createdAt: timestamp,
-        color: '#EDC727',
-        notes: [note],
-      });
-      setSelectedStarId(starId);
-      setActiveTag(null);
-      setFlyTarget([lat, lng]);
-      setIsMenuOpen(false);
-      showPhotoLocationStatus(homeCopy.photoLocationCreated, 500);
-    } catch (error) {
-      console.error('Could not create star from photo GPS:', error);
-      showPhotoLocationStatus(homeCopy.photoLocationFailed, 500);
-    } finally {
-      setIsReadingPhotoLocation(false);
-    }
-  };
-
-  const handleChangePassword = async () => {
-    if (isChangingPassword) return;
-
-    const currentPassword = currentPasswordInput;
-    const newPassword = newPasswordInput;
-    const confirmPassword = confirmPasswordInput;
-
-    if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
-      setPasswordChangeStatus(homeCopy.loginMissing);
-      return;
-    }
-    if (newPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
-      setPasswordChangeStatus(homeCopy.passwordTooShort);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordChangeStatus(homeCopy.passwordMismatch);
-      return;
-    }
-
-    setIsChangingPassword(true);
-    setPasswordChangeStatus('');
-
-    try {
-      await updateCloudPassword({
-        account: profile.account,
-        currentPassword,
-        newPassword,
-      });
-      setCurrentPasswordInput('');
-      setNewPasswordInput('');
-      setConfirmPasswordInput('');
-      setIsPasswordChangeOpen(false);
-      setPasswordChangeStatus(homeCopy.passwordChanged);
-    } catch (error) {
-      console.error('Could not change password:', error);
-      if (error instanceof CloudAuthError && error.code === 'invalid_credentials') {
-        setPasswordChangeStatus(homeCopy.currentPasswordWrong);
-      } else if (error instanceof CloudAuthError && error.code === 'weak_password') {
-        setPasswordChangeStatus(homeCopy.passwordTooShort);
-      } else {
-        setPasswordChangeStatus(getCloudAuthErrorMessage(error, 'login'));
-      }
-    } finally {
-      setIsChangingPassword(false);
-    }
-  };
-
-  const copyToClipboard = async (text: string) => {
-    if (!text) return;
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return;
-    }
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', 'true');
-    textarea.style.position = 'fixed';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand('copy');
-    textarea.remove();
-  };
-
-  const loadMcpTokens = async () => {
-    if (!isCloudBackendEnabled || !isSignedIn) return;
-    try {
-      const tokens = await listCloudMcpTokens();
-      setMcpTokens(tokens);
-    } catch (error) {
-      console.error('Could not load MCP tokens:', error);
-      setMcpTokenStatus(homeCopy.mcpFailed);
-    }
-  };
-
-  const handleCreateMcpToken = async () => {
-    if (isMcpTokenBusy) return;
-    setIsMcpTokenBusy(true);
-    setMcpTokenStatus('');
-    setMcpPlainToken('');
-    try {
-      const result = await createCloudMcpToken(`${profile.account || 'My'} MCP`);
-      setMcpPlainToken(result.token);
-      setMcpTokens([result.tokenInfo]);
-      setMcpTokenStatus(homeCopy.mcpTokenReady);
-    } catch (error) {
-      console.error('Could not create MCP token:', error);
-      setMcpTokenStatus(homeCopy.mcpFailed);
-    } finally {
-      setIsMcpTokenBusy(false);
-    }
-  };
-
-  const handleCopyMcpText = async (text: string) => {
-    try {
-      await copyToClipboard(text);
-      setMcpTokenStatus(homeCopy.mcpCopied);
-      window.setTimeout(() => setMcpTokenStatus(''), 800);
-    } catch (error) {
-      console.error('Could not copy MCP text:', error);
-      setMcpTokenStatus(homeCopy.mcpFailed);
-    }
-  };
-
-  const handleRevokeMcpToken = async (tokenId: string) => {
-    if (isMcpTokenBusy) return;
-    setIsMcpTokenBusy(true);
-    setMcpTokenStatus('');
-    try {
-      await revokeCloudMcpToken(tokenId);
-      setMcpTokens(current => current.filter(token => token.id !== tokenId));
-      setMcpTokenStatus(homeCopy.mcpRevoked);
-    } catch (error) {
-      console.error('Could not revoke MCP token:', error);
-      setMcpTokenStatus(homeCopy.mcpFailed);
-    } finally {
-      setIsMcpTokenBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isSignedIn && activeHomePanel === 'mcp' && isCloudBackendEnabled) {
-      void loadMcpTokens();
-      return;
-    }
-    setMcpPlainToken('');
-    setMcpTokenStatus('');
-  }, [activeHomePanel, isSignedIn]);
 
   const handleExportUserData = async () => {
     if (isExportingData) return;
@@ -2549,7 +2060,7 @@ export default function App() {
       
       <MapCanvas
         mapStyle={mapStyle}
-        mapTiles={mapTiles}
+        mapTiles={MAP_TILES}
         position={position}
         userLocation={userLocation}
         locationIcon={locationIcon}

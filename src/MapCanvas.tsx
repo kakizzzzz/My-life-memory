@@ -10,9 +10,8 @@ import {
   StarNavigationOverlay,
 } from './MapRuntimeComponents';
 import { MapDataLayers, type TagPolyline } from './MapDataLayers';
+import type { MapTileConfig } from './constants/mapTiles';
 import type { MapStyle, StarData, TrackData } from './types/app';
-
-type MapTileConfig = Record<MapStyle, { url: string; attribution: string }>;
 
 type MapCanvasProps = {
   mapStyle: MapStyle;
