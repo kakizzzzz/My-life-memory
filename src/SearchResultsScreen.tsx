@@ -102,12 +102,7 @@ export function SearchResultsScreen({
       transition={{ duration: 0 }}
       className="absolute inset-0 z-[950] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
     >
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.18, ease: 'easeOut' }}
-        className={`flex-1 overflow-y-auto px-8 pb-20 ${screenTopPaddingClass}`}
-      >
+      <div className={`flex-1 overflow-y-auto px-8 pb-20 ${screenTopPaddingClass}`}>
         <div className="mx-auto w-full max-w-[430px]">
           <button
             onClick={onBack}
@@ -168,7 +163,7 @@ export function SearchResultsScreen({
             </div>
           )}
         </div>
-      </motion.div>
+      </div>
     </motion.div>
   );
 }

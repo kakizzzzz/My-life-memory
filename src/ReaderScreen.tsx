@@ -116,12 +116,7 @@ export function ReaderScreen({
             className="hidden"
             onChange={onReaderImageInput}
           />
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className={`flex-1 overflow-y-auto px-8 pb-32 ${screenTopPaddingClass}`}
-          >
+          <div className={`flex-1 overflow-y-auto px-8 pb-32 ${screenTopPaddingClass}`}>
             <div className="mx-auto w-full max-w-[430px]">
               <div className="mb-12 flex items-start justify-between">
                 <button
@@ -184,7 +179,7 @@ export function ReaderScreen({
                 </div>
               )}
             </div>
-          </motion.div>
+          </div>
 
           {readerRecord && (
             <div className="absolute bottom-20 right-5 z-[1020] flex flex-col items-center gap-3">
