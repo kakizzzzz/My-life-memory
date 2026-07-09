@@ -651,7 +651,7 @@ export default function App() {
     }
   };
 
-  const screenTopPaddingClass = 'pt-16';
+  const screenTopPaddingClass = 'screen-safe-top';
   const btnClass = "w-12 h-12 rounded-full bg-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 transition-all shadow-sm";
   const starPlacementButtonClass = `${btnClass} touch-none`;
 
@@ -666,7 +666,7 @@ export default function App() {
   const showRouteDetailDots = mapZoom >= ROUTE_DETAIL_DOT_MIN_ZOOM;
 
   return (
-    <div className="relative w-[100dvw] h-[100dvh] min-h-[100svh] overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
+    <div className="absolute inset-0 overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
       <input
         ref={photoLocationInputRef}
         type="file"
@@ -1018,12 +1018,19 @@ export default function App() {
             className="absolute inset-0 z-[900] overflow-y-auto overscroll-contain bg-[var(--app-page)] pointer-events-auto [touch-action:pan-y]"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
-            <TripStatisticsView
-              activityPoints={mapActivity.points}
-              activityCount={markedLocationCount}
-              textRankings={starRecordRankings}
-              language={language}
-            />
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="min-h-[100svh]"
+            >
+              <TripStatisticsView
+                activityPoints={mapActivity.points}
+                activityCount={markedLocationCount}
+                textRankings={starRecordRankings}
+                language={language}
+              />
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -73,7 +73,12 @@ export function RecordsScreen({
       transition={{ duration: 0 }}
       className="absolute inset-0 z-[900] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
     >
-      <div className={`flex-1 overflow-y-auto px-6 pb-32 ${screenTopPaddingClass}`}>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className={`flex-1 overflow-y-auto px-6 pb-32 ${screenTopPaddingClass}`}
+      >
         <div className="mb-4 flex items-start justify-between">
           <h1 className="mt-1 text-4xl font-bold tracking-tight text-black">{homeCopy.recordsTitle}</h1>
           <div className="relative flex flex-col gap-2">
@@ -183,7 +188,7 @@ export function RecordsScreen({
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
 
       <AnimatePresence>
         {isRecordsCalendarOpen && (

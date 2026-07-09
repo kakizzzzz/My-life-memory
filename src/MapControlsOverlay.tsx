@@ -115,7 +115,7 @@ export function MapControlsOverlay({
   onPhotoGpsClick,
 }: MapControlsOverlayProps) {
   return (
-    <div className="absolute top-6 right-4 z-[1000] flex flex-col items-end gap-3">
+    <div className="absolute right-4 top-[calc(env(safe-area-inset-top)+1.5rem)] z-[1000] flex flex-col items-end gap-3">
       <button
         onClick={onToggleMenu}
         className={btnClass}
@@ -272,7 +272,7 @@ export function TrackingControlsOverlay({
 }: TrackingControlsOverlayProps) {
   return (
     <>
-      <div className="absolute top-6 left-4 z-[1000] bg-[var(--app-active-surface)] rounded-[24px] shadow-md px-6 py-4 border border-[var(--app-card)] min-w-[160px]">
+      <div className="absolute left-4 top-[calc(env(safe-area-inset-top)+1.5rem)] z-[1000] bg-[var(--app-active-surface)] rounded-[24px] shadow-md px-6 py-4 border border-[var(--app-card)] min-w-[160px]">
         <div className="absolute top-3 left-3 w-2 h-2 bg-black rounded-full"></div>
         <div className="absolute top-3 right-3 w-2 h-2 bg-black rounded-full"></div>
         <div className="absolute bottom-3 left-3 w-2 h-2 bg-black rounded-full"></div>
@@ -294,7 +294,7 @@ export function TrackingControlsOverlay({
         <div className="w-full h-[3px] bg-gray-200 mt-3 mb-2 rounded-full"></div>
       </div>
 
-      <div className="absolute top-6 right-4 z-[1000]">
+      <div className="absolute right-4 top-[calc(env(safe-area-inset-top)+1.5rem)] z-[1000]">
         <button
           className={btnClass}
           onClick={onTogglePause}
@@ -303,7 +303,7 @@ export function TrackingControlsOverlay({
         </button>
       </div>
 
-      <div className="absolute bottom-28 right-4 z-[1000] flex flex-col gap-3">
+      <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+7rem)] right-4 z-[1000] flex flex-col gap-3">
         <button
           className={btnClass}
           onClick={onCancel}
@@ -323,7 +323,7 @@ export function TrackingControlsOverlay({
 
 export function MapSearchButton({ btnClass, searchLabel, iconStrokeWidth, onClick }: MapSearchButtonProps) {
   return (
-    <div className="absolute bottom-28 right-4 z-[1000]">
+    <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+7rem)] right-4 z-[1000]">
       <button
         className={btnClass}
         onClick={onClick}

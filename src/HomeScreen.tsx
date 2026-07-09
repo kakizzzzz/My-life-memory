@@ -243,7 +243,14 @@ export function HomeScreen({
             onChange={onAvatarInput}
           />
 
-          <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto overscroll-contain px-10 pb-28 [touch-action:pan-y] ${screenTopPaddingClass}`} style={{ WebkitOverflowScrolling: 'touch' }}>
+          <motion.div
+            ref={homeScrollRef}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className={`relative h-full w-full max-w-[430px] overflow-y-auto overscroll-contain px-10 pb-28 [touch-action:pan-y] ${screenTopPaddingClass}`}
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             {!isSignedIn ? (
               <>
                 <LoginWorldMapBackground />
@@ -509,7 +516,7 @@ export function HomeScreen({
                 />
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
