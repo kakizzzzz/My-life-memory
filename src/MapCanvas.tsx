@@ -82,6 +82,8 @@ export function MapCanvas({
   onSelectStar,
   onMoveStar,
 }: MapCanvasProps) {
+  const mapAttribution = mapTiles[mapStyle].attribution;
+
   return (
     <div className={`absolute inset-0 z-0 bg-[#e5e5e5] ${mapStyle === 'dark' ? 'theme-dark' : ''} ${mapStyle === 'light' ? 'theme-light' : ''}`}>
       <MapContainer
@@ -90,9 +92,9 @@ export function MapCanvas({
         scrollWheelZoom={true}
         className="w-full h-full absolute inset-0 z-0"
         zoomControl={false}
+        attributionControl={false}
       >
         <TileLayer
-          attribution={mapTiles[mapStyle].attribution}
           url={mapTiles[mapStyle].url}
         />
         <Marker
@@ -140,6 +142,22 @@ export function MapCanvas({
           onMoveStar={onMoveStar}
         />
       </MapContainer>
+
+      <div
+        className="pointer-events-auto absolute bottom-0 right-0 z-[850]"
+        style={{
+          backgroundColor: 'rgba(255, 255, 255, 0.08)',
+          color: 'rgba(75, 85, 99, 0.58)',
+          fontSize: '8px',
+          lineHeight: 1.1,
+          opacity: 0.26,
+          padding: '0 3px',
+          transform: 'scale(0.86)',
+          transformOrigin: 'bottom right',
+        }}
+        aria-label="Map attribution"
+        dangerouslySetInnerHTML={{ __html: mapAttribution }}
+      />
     </div>
   );
 }
