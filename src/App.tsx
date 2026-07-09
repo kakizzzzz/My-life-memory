@@ -1011,9 +1011,10 @@ export default function App() {
       <AnimatePresence>
         {isSignedIn && activeView === 'stats' && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={false}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 1 }}
+            transition={{ duration: 0 }}
             className="absolute inset-0 z-[900] overflow-y-auto overscroll-contain bg-[var(--app-page)] pointer-events-auto [touch-action:pan-y]"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >

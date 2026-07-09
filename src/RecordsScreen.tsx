@@ -67,9 +67,10 @@ export function RecordsScreen({
 }: RecordsScreenProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 18 }}
+      initial={false}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 1 }}
+      transition={{ duration: 0 }}
       className="absolute inset-0 z-[900] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
     >
       <div className={`flex-1 overflow-y-auto px-6 pb-32 ${screenTopPaddingClass}`}>
