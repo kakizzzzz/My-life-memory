@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import L from 'leaflet';
-import { Menu, Search, Map as MapIcon, PieChart, BookOpen, Home, ChevronDown, ChevronRight, ChevronLeft, ChevronUp, ChevronsLeft, MapPin, Route, Star, Save, Copy, Share, Edit2, Trash2, Database, Palette, Image as ImageIcon, Settings, UserRound, Lock, AtSign, Asterisk, Languages, Download, Camera, Underline, KeyRound, ShieldCheck } from 'lucide-react';
+import { Menu, ChevronUp, ChevronsLeft, MapPin, Star, Save, Palette, Image as ImageIcon, Camera, Underline } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import * as exifr from 'exifr';
@@ -12,16 +12,13 @@ import {
   SearchModal,
 } from './AppChrome';
 import { NoteEditorModal } from './NoteEditorModal';
-import { LoginWorldMapBackground } from './LoginWorldMapBackground';
+import { HomeScreen } from './HomeScreen';
 import { MapCanvas } from './MapCanvas';
-import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
 import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingControlsOverlay } from './MapControlsOverlay';
 import { SearchResultsScreen } from './SearchResultsScreen';
 import { RecordsScreen } from './RecordsScreen';
-import { HomeGalleryPanel, HomeProfilePanel, HomeThemePanel, type ThemeColorControl } from './HomePrimaryPanels';
-import { HomeSettingsPanels, isHomeSettingsPanel, type SettingsMenuItem } from './HomeSettingsPanels';
 import { TripStatisticsView, type MapActivityPoint, type TextRankingItem } from './TripStatisticsView';
-import { isCloudBackendEnabled, supabaseConfigMessage, supabaseFunctionUrl } from './lib/supabaseClient';
+import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
   dehydrateStorageMediaHtml,
@@ -115,7 +112,6 @@ import {
   LANGUAGE_FONT_SCALE,
   LANGUAGE_LOCALES,
   LANGUAGE_OPTIONS,
-  LOGIN_LANGUAGE_LABELS,
 } from './constants/language';
 import {
   AUTO_USER_MANUAL_KEY_PREFIX,
@@ -128,8 +124,6 @@ import {
   READER_TEXT_COLORS,
 } from './constants/theme';
 import {
-  HOME_SETTINGS_ICON_SIZE,
-  HOME_SETTINGS_ICON_STROKE,
   MAP_TOOL_ICON_STROKE,
   UI_ICON_STROKE,
 } from './constants/ui';
@@ -148,7 +142,6 @@ import {
   type CloudAuthAction,
   CloudAuthError,
   createCloudMcpToken,
-  getCloudMcpEndpoint,
   listCloudMcpTokens,
   revokeCloudMcpToken,
   type CloudAppState,
@@ -2078,21 +2071,6 @@ export default function App() {
     permissionRequestState === 'unsupported' ? homeCopy.permissionUnsupported :
     ''
   );
-  const manualIconGuide = [
-    { icon: <MapIcon size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.bottomMap, body: homeCopy.manualIconMap },
-    { icon: <PieChart size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.bottomStats, body: homeCopy.manualIconStats },
-    { icon: <BookOpen size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.bottomNotes, body: homeCopy.manualIconRecords },
-    { icon: <Home size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.bottomHome, body: homeCopy.manualIconHome },
-    { icon: <Star size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.starLabel, body: homeCopy.manualIconStar },
-    { icon: <MapPin size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.openPermissions, body: homeCopy.manualIconLocation },
-    { icon: <Route size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.manualSections[3].title, body: homeCopy.manualIconRoute },
-    { icon: <Camera size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.readerAddPhoto, body: homeCopy.manualIconCamera },
-    { icon: <PhotoGpsStarIcon size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.uploadPhotoLocation, body: homeCopy.manualIconPhotoGps },
-    { icon: <Save size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.readerEdit, body: homeCopy.manualIconSave },
-    { icon: <Copy size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.manualIconCopy, body: homeCopy.manualIconCopy },
-    { icon: <Share size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.manualIconShare, body: homeCopy.manualIconShare },
-    { icon: <Search size={18} strokeWidth={UI_ICON_STROKE} />, label: homeCopy.search, body: homeCopy.manualIconSearch },
-  ];
   const isOriginalSystemTheme = (Object.keys(DEFAULT_SYSTEM_THEME) as (keyof SystemTheme)[]).every(
     key => systemTheme[key].toLowerCase() === DEFAULT_SYSTEM_THEME[key].toLowerCase()
   );
@@ -2770,49 +2748,6 @@ export default function App() {
       setIsExportingData(false);
     }
   };
-
-  const homeMenuItems: { panel: Extract<HomePanel, 'profile' | 'theme' | 'gallery' | 'settings'>; label: string; icon: React.ReactNode }[] = [
-    { panel: 'profile', label: homeCopy.modify, icon: <Database size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-    { panel: 'theme', label: homeCopy.theme, icon: <Palette size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-    { panel: 'gallery', label: homeCopy.gallery, icon: <ImageIcon size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-    { panel: 'settings', label: homeCopy.settings, icon: <Settings size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-  ];
-  const settingsSubpageTitles: Partial<Record<Exclude<HomePanel, null>, string>> = {
-    language: homeCopy.language,
-    permissions: homeCopy.openPermissionsHint,
-    manual: homeCopy.userManual,
-    apiSecurity: homeCopy.apiSecurity,
-    mcp: homeCopy.mcpAccess,
-    export: homeCopy.exportData,
-  };
-  const activeHomeTitle = settingsSubpageTitles[activeHomePanel] ||
-    homeMenuItems.find(item => item.panel === activeHomePanel)?.label ||
-    homeCopy.settings;
-  const cloudMcpEndpoint = getCloudMcpEndpoint();
-  const cloudMemoryApiEndpoint = supabaseFunctionUrl('memory-api');
-  const mcpHeaderValue = mcpPlainToken ? `Bearer ${mcpPlainToken}` : homeCopy.mcpHeaderValueHint;
-  const apiSecurityCards = [
-    { title: homeCopy.apiMemoryApiTitle, body: homeCopy.apiMemoryApiBody },
-    { title: homeCopy.apiMcpSecurityTitle, body: homeCopy.apiMcpSecurityBody },
-    { title: homeCopy.apiTokenSecurityTitle, body: homeCopy.apiTokenSecurityBody },
-    { title: homeCopy.apiStorageSecurityTitle, body: homeCopy.apiStorageSecurityBody },
-    { title: homeCopy.apiDirectApiTitle, body: homeCopy.apiDirectApiBody },
-    { title: homeCopy.apiNeverExposeTitle, body: homeCopy.apiNeverExposeBody },
-  ];
-  const themeColorControls: ThemeColorControl[] = [
-    { key: 'page', label: homeCopy.base },
-    { key: 'card', label: homeCopy.card },
-    { key: 'icon', label: homeCopy.icon },
-    { key: 'dark', label: homeCopy.dark },
-  ];
-  const settingsMenuItems: SettingsMenuItem[] = [
-    { panel: 'language', label: homeCopy.language, icon: <Languages size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-    { panel: 'permissions', label: homeCopy.openPermissionsHint, icon: <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-    { panel: 'manual', label: homeCopy.userManual, icon: <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-    { panel: 'apiSecurity', label: homeCopy.apiSecurity, icon: <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
-    { panel: 'mcp', label: homeCopy.mcpAccess, icon: <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
-    { panel: 'export', label: homeCopy.exportData, icon: <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-  ];
 
   const screenTopPaddingClass = 'pt-16';
   const btnClass = "w-12 h-12 rounded-full bg-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 transition-all shadow-sm";
@@ -3584,290 +3519,78 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {activeView === 'home' && (
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 18 }}
-            transition={{ duration: 0.18 }}
-            className="home-screen absolute inset-0 z-[900] flex justify-center overflow-hidden bg-[var(--app-page)] pointer-events-auto"
-          >
-            <input
-              ref={avatarInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarInput}
-            />
-
-            <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto px-10 pb-28 ${screenTopPaddingClass}`}>
-              {!isSignedIn ? (
-                <>
-                <LoginWorldMapBackground />
-                <div className="absolute right-3 top-4 z-20 flex rounded-full bg-[var(--app-card)] p-1 shadow-sm">
-                  {LANGUAGE_OPTIONS.map(option => (
-                    <button
-                      type="button"
-                      key={option.value}
-                      onClick={() => setLanguage(option.value)}
-                      className={`h-8 min-w-8 rounded-full px-2 text-[12px] font-semibold transition-colors ${language === option.value ? 'bg-[var(--app-dark)] text-white' : 'text-black/55'}`}
-                      aria-label={option.label}
-                    >
-                      {LOGIN_LANGUAGE_LABELS[option.value] || option.label}
-                    </button>
-                  ))}
-                </div>
-                <form
-                  onSubmit={authMode === 'register' ? handleRegister : handleLogin}
-                  className="relative z-10 flex min-h-full flex-col items-center justify-center"
-                >
-                  <div className="relative flex w-full flex-col items-center">
-                    <div className="relative z-10 mb-8 w-full text-center">
-                      <h1 className="app-display-title text-[36px] font-bold leading-none text-black">
-                        My life memory
-                      </h1>
-                    </div>
-                    <div className="relative z-10 w-full rounded-[18px] bg-[var(--app-card)] p-4">
-                    <div className="mb-4 flex items-center gap-2 text-[18px] font-medium text-black">
-                      <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-                      {authMode === 'register' ? homeCopy.registerTitle : homeCopy.loginTitle}
-                    </div>
-                    <div className="mb-4 text-[15px] font-medium leading-tight text-black/45">
-                      {authMode === 'register' ? homeCopy.registerHint : homeCopy.loginHint}
-                    </div>
-                    {cloudConfigError && (
-                      <div className="mb-4 rounded-[12px] bg-black/8 px-3 py-2 text-[12px] leading-5 text-black/65">
-                        {homeCopy.cloudConfigInvalid}
-                      </div>
-                    )}
-                    <div className="space-y-3">
-                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                        <AtSign size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                        <input
-                          value={loginAccount}
-                          onChange={event => {
-                            setLoginAccount(event.target.value);
-                            setLoginError('');
-                            setIsPasswordRevealed(false);
-                          }}
-                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
-                          placeholder={homeCopy.account}
-                        />
-                      </label>
-                      <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                        <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                        <input
-                          value={loginPassword}
-                          onChange={event => {
-                            setLoginPassword(event.target.value);
-                            setLoginError('');
-                            setIsPasswordRevealed(false);
-                          }}
-                          type="password"
-                          className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
-                          placeholder={authMode === 'register' ? homeCopy.registerPassword : homeCopy.loginPassword}
-                        />
-                      </label>
-                      {authMode === 'register' && (
-                        <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-                          <Asterisk size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-                          <input
-                            value={registerInviteCode}
-                            onChange={event => {
-                              setRegisterInviteCode(event.target.value);
-                              setLoginError('');
-                            }}
-                            type="password"
-                            autoComplete="off"
-                            className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
-                            placeholder={homeCopy.inviteCode}
-                          />
-                        </label>
-                      )}
-                    </div>
-                    {loginError && (
-                      <div className="mt-3 text-[13px] font-medium text-black/45">
-                        {loginError}
-                      </div>
-                    )}
-                    <div className="mt-5 grid grid-cols-2 gap-2">
-                      <button
-                        type="submit"
-                        disabled={isAuthBusy}
-                        onClick={event => {
-                          if (authMode !== 'login') {
-                            event.preventDefault();
-                          }
-                          setAuthMode('login');
-                          setRegisterInviteCode('');
-                        }}
-                        className="h-[48px] rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
-                      >
-                        {isAuthBusy && authMode === 'login' ? homeCopy.loggingIn : homeCopy.login}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isAuthBusy}
-                        onClick={event => {
-                          if (authMode !== 'register') {
-                            setAuthMode('register');
-                            setLoginError('');
-                            setIsPasswordRevealed(false);
-                            return;
-                          }
-                          void handleRegister(event);
-                        }}
-                        className="h-[48px] rounded-full bg-[var(--app-soft-surface)] text-[16px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
-                      >
-                        {isAuthBusy && authMode === 'register' ? homeCopy.registering : homeCopy.register}
-                      </button>
-                    </div>
-                    </div>
-                  </div>
-                </form>
-                </>
-              ) : !activeHomePanel && (
-                <>
-              <div className="flex items-center gap-8">
-                <button
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[18px] bg-[var(--app-card)] text-black"
-                  aria-label={homeCopy.uploadAvatar}
-                >
-                  {profileAvatarSrc ? (
-                    <img src={profileAvatarSrc} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-[var(--app-card)]">
-                      <UserRound size={42} strokeWidth={UI_ICON_STROKE} />
-                    </div>
-                  )}
-                </button>
-
-                <div className="min-w-0">
-                  <div className="truncate text-[26px] font-semibold leading-tight text-black">{profile.name || homeCopy.userFallback}</div>
-                  <div className="mt-1.5 text-[14px] font-medium leading-tight text-black">ID:{profile.account || '----'}</div>
-                </div>
-              </div>
-
-              <div className="mt-14 space-y-2.5">
-                {homeMenuItems.map(item => (
-                  <button
-                    key={item.panel}
-                    onClick={() => setActiveHomePanel(item.panel)}
-                    className="flex h-[58px] w-full items-center rounded-[14px] bg-[var(--app-card)] px-4 text-left text-black transition-transform active:scale-[0.99]"
-                  >
-                    <span className="mr-4 flex shrink-0 items-center justify-center text-black">{item.icon}</span>
-                    <span className="min-w-0 flex-1 truncate text-[18px] font-medium leading-tight">{item.label}</span>
-                    <ChevronRight
-                      size={28}
-                      strokeWidth={UI_ICON_STROKE}
-                      className="ml-3 text-black/15"
-                    />
-                  </button>
-                ))}
-              </div>
-                </>
-              )}
-
-              {isSignedIn && activeHomePanel && (
-                <button
-                  type="button"
-                  onClick={closeHomePanel}
-                  className="mb-5 isolate flex h-11 items-center gap-2 overflow-hidden rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black no-underline outline-none"
-                  aria-label={homeCopy.back}
-                >
-                  <ChevronLeft size={24} strokeWidth={UI_ICON_STROKE} />
-                  <span className="block translate-y-[-1px] leading-none no-underline [text-decoration:none]">{activeHomeTitle}</span>
-                </button>
-              )}
-
-              <AnimatePresence mode="wait">
-                {isSignedIn && activeHomePanel === 'profile' && (
-                  <HomeProfilePanel
-                    homeCopy={homeCopy}
-                    profile={profile}
-                    profileAvatarSrc={profileAvatarSrc}
-                    isCloudBackendEnabled={isCloudBackendEnabled}
-                    isPasswordRevealed={isPasswordRevealed}
-                    passwordChangeStatus={passwordChangeStatus}
-                    onAvatarClick={() => avatarInputRef.current?.click()}
-                    onProfileNameChange={name => setProfile(prev => ({ ...prev, name }))}
-                    onProfilePasswordChange={password => setProfile(prev => ({ ...prev, password }))}
-                    onOpenPasswordChange={() => {
-                      setIsPasswordChangeOpen(true);
-                      setPasswordChangeStatus('');
-                    }}
-                    onTogglePasswordReveal={() => setIsPasswordRevealed(prev => !prev)}
-                  />
-                )}
-
-                {isSignedIn && activeHomePanel === 'theme' && (
-                  <HomeThemePanel
-                    homeCopy={homeCopy}
-                    language={language}
-                    systemTheme={systemTheme}
-                    themeColorControls={themeColorControls}
-                    activeThemeColorKey={activeThemeColorKey}
-                    showThemeCustomPicker={showThemeCustomPicker}
-                    onPresetSelect={theme => {
-                      setSystemTheme(theme);
-                      setActiveThemeColorKey(null);
-                      setShowThemeCustomPicker(false);
-                    }}
-                    onThemeColorMenuToggle={key => {
-                      const isOpen = activeThemeColorKey === key;
-                      setActiveThemeColorKey(isOpen ? null : key);
-                      setShowThemeCustomPicker(false);
-                    }}
-                    onThemeColorChange={updateThemeColor}
-                    onToggleThemeCustomPicker={() => setShowThemeCustomPicker(prev => !prev)}
-                  />
-                )}
-
-                {isSignedIn && activeHomePanel === 'gallery' && (
-                  <HomeGalleryPanel
-                    homeCopy={homeCopy}
-                    uploadedImages={uploadedImages}
-                    onPreviewImage={setGalleryPreviewImage}
-                  />
-                )}
-
-                {isSignedIn && isHomeSettingsPanel(activeHomePanel) && (
-                  <HomeSettingsPanels
-                    activeHomePanel={activeHomePanel}
-                    homeCopy={homeCopy}
-                    language={language}
-                    permissionRequestState={permissionRequestState}
-                    permissionStatusText={permissionStatusText}
-                    settingsMenuItems={settingsMenuItems}
-                    manualIconGuide={manualIconGuide}
-                    apiSecurityCards={apiSecurityCards}
-                    cloudMemoryApiEndpoint={cloudMemoryApiEndpoint}
-                    cloudMcpEndpoint={cloudMcpEndpoint}
-                    mcpHeaderValue={mcpHeaderValue}
-                    mcpPlainToken={mcpPlainToken}
-                    mcpTokenStatus={mcpTokenStatus}
-                    mcpTokens={mcpTokens}
-                    isMcpTokenBusy={isMcpTokenBusy}
-                    isExportingData={isExportingData}
-                    exportDataStatus={exportDataStatus}
-                    onOpenPanel={panel => setActiveHomePanel(panel)}
-                    onLanguageChange={nextLanguage => setLanguage(nextLanguage)}
-                    onOpenPermissions={handleOpenPermissions}
-                    onSignOut={handleSignOut}
-                    onExportUserData={handleExportUserData}
-                    onCopyMcpText={handleCopyMcpText}
-                    onCreateMcpToken={handleCreateMcpToken}
-                    onRevokeMcpToken={handleRevokeMcpToken}
-                  />
-                )}
-              </AnimatePresence>
-
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <HomeScreen
+        isOpen={activeView === 'home'}
+        isSignedIn={isSignedIn}
+        homeCopy={homeCopy}
+        language={language}
+        screenTopPaddingClass={screenTopPaddingClass}
+        iconStrokeWidth={UI_ICON_STROKE}
+        avatarInputRef={avatarInputRef}
+        homeScrollRef={homeScrollRef}
+        onAvatarInput={handleAvatarInput}
+        authMode={authMode}
+        isAuthBusy={isAuthBusy}
+        cloudConfigError={cloudConfigError}
+        loginAccount={loginAccount}
+        loginPassword={loginPassword}
+        registerInviteCode={registerInviteCode}
+        loginError={loginError}
+        onLoginAccountChange={setLoginAccount}
+        onLoginPasswordChange={setLoginPassword}
+        onRegisterInviteCodeChange={setRegisterInviteCode}
+        onLanguageChange={setLanguage}
+        onAuthModeChange={setAuthMode}
+        onLoginErrorChange={setLoginError}
+        onPasswordRevealChange={setIsPasswordRevealed}
+        onLoginSubmit={handleLogin}
+        onRegisterSubmit={handleRegister}
+        profile={profile}
+        profileAvatarSrc={profileAvatarSrc}
+        activeHomePanel={activeHomePanel}
+        onActiveHomePanelChange={setActiveHomePanel}
+        onCloseHomePanel={closeHomePanel}
+        isCloudBackendEnabled={isCloudBackendEnabled}
+        isPasswordRevealed={isPasswordRevealed}
+        passwordChangeStatus={passwordChangeStatus}
+        onProfileNameChange={name => setProfile(prev => ({ ...prev, name }))}
+        onProfilePasswordChange={password => setProfile(prev => ({ ...prev, password }))}
+        onOpenPasswordChange={() => {
+          setIsPasswordChangeOpen(true);
+          setPasswordChangeStatus('');
+        }}
+        systemTheme={systemTheme}
+        activeThemeColorKey={activeThemeColorKey}
+        showThemeCustomPicker={showThemeCustomPicker}
+        onThemePresetSelect={theme => {
+          setSystemTheme(theme);
+          setActiveThemeColorKey(null);
+          setShowThemeCustomPicker(false);
+        }}
+        onThemeColorMenuToggle={key => {
+          const isOpen = activeThemeColorKey === key;
+          setActiveThemeColorKey(isOpen ? null : key);
+          setShowThemeCustomPicker(false);
+        }}
+        onThemeColorChange={updateThemeColor}
+        onToggleThemeCustomPicker={() => setShowThemeCustomPicker(prev => !prev)}
+        uploadedImages={uploadedImages}
+        onPreviewImage={setGalleryPreviewImage}
+        permissionRequestState={permissionRequestState}
+        permissionStatusText={permissionStatusText}
+        mcpPlainToken={mcpPlainToken}
+        mcpTokenStatus={mcpTokenStatus}
+        mcpTokens={mcpTokens}
+        isMcpTokenBusy={isMcpTokenBusy}
+        isExportingData={isExportingData}
+        exportDataStatus={exportDataStatus}
+        onOpenPermissions={handleOpenPermissions}
+        onSignOut={handleSignOut}
+        onExportUserData={handleExportUserData}
+        onCopyMcpText={handleCopyMcpText}
+        onCreateMcpToken={handleCreateMcpToken}
+        onRevokeMcpToken={handleRevokeMcpToken}
+      />
 
       <InitialPermissionPrompt
         isOpen={isInitialPermissionPromptOpen && isSignedIn}
