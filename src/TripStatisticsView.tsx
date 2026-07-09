@@ -637,7 +637,6 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
   const [expandedMapKey, setExpandedMapKey] = React.useState(0);
   const [isExpandedMapOpen, setIsExpandedMapOpen] = React.useState(false);
   const scrollRootRef = React.useRef<HTMLDivElement | null>(null);
-  const touchScrollRef = React.useRef<{ x: number; y: number; scrollTop: number } | null>(null);
   const rankingScrollRef = React.useRef<HTMLDivElement>(null);
   const rankingHoldRef = React.useRef<{ delayId: number | null; intervalId: number | null; didRepeat: boolean }>({
     delayId: null,
@@ -749,44 +748,11 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     setIsExpandedMapOpen(false);
   }, []);
 
-  const handleScrollTouchStart = React.useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0];
-    const root = scrollRootRef.current;
-    if (!touch || !root) return;
-    touchScrollRef.current = {
-      x: touch.clientX,
-      y: touch.clientY,
-      scrollTop: root.scrollTop,
-    };
-  }, []);
-
-  const handleScrollTouchMove = React.useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0];
-    const state = touchScrollRef.current;
-    const root = scrollRootRef.current;
-    if (!touch || !state || !root) return;
-
-    const dx = touch.clientX - state.x;
-    const dy = touch.clientY - state.y;
-    if (Math.abs(dy) <= Math.abs(dx) * 1.15) return;
-
-    root.scrollTop = state.scrollTop - dy;
-    event.preventDefault();
-  }, []);
-
-  const handleScrollTouchEnd = React.useCallback(() => {
-    touchScrollRef.current = null;
-  }, []);
-
   return (
     <div
       ref={scrollRootRef}
-      className="relative z-[900] flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-scroll overscroll-contain bg-[var(--app-page)] pb-32 font-sans pointer-events-auto"
-      style={{ WebkitOverflowScrolling: 'touch', touchAction: 'auto' }}
-      onTouchStart={handleScrollTouchStart}
-      onTouchMove={handleScrollTouchMove}
-      onTouchEnd={handleScrollTouchEnd}
-      onTouchCancel={handleScrollTouchEnd}
+      className="relative z-[900] flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain bg-[var(--app-page)] pb-32 font-sans pointer-events-auto [touch-action:pan-y]"
+      style={{ WebkitOverflowScrolling: 'touch' }}
     >
       <div className="flex flex-col items-center pb-6 pt-14">
         <div className="mb-6 w-[320px]">
