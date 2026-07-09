@@ -281,24 +281,9 @@ export function ReaderScreen({
                     exit={{ opacity: 0, y: 12, scale: 0.96 }}
                     className="flex flex-col items-center gap-3"
                   >
-                    <div className="relative">
-                      <button className={readerToolButtonClass} onClick={handleSaveReaderDraft} aria-label={homeCopy.readerEdit}>
-                        <Save size={24} strokeWidth={iconStrokeWidth} />
-                      </button>
-                      <AnimatePresence>
-                        {isSaveFeedbackVisible && (
-                          <motion.div
-                            initial={{ opacity: 0, x: 6, scale: 0.96 }}
-                            animate={{ opacity: 1, x: 0, scale: 1 }}
-                            exit={{ opacity: 0, x: 6, scale: 0.96 }}
-                            transition={{ duration: 0.12 }}
-                            className="pointer-events-none absolute right-[calc(100%+10px)] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-[var(--app-dark)] px-3 py-1.5 text-[12px] font-semibold text-white shadow-lg"
-                          >
-                            {readerUiCopy.saved}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
+                    <button className={readerToolButtonClass} onClick={handleSaveReaderDraft} aria-label={homeCopy.readerEdit}>
+                      <Save size={24} strokeWidth={iconStrokeWidth} />
+                    </button>
                     <div className="relative">
                       <button
                         className={readerToolButtonClass}
@@ -419,6 +404,20 @@ export function ReaderScreen({
               </button>
             </div>
           )}
+
+          <AnimatePresence>
+            {isSaveFeedbackVisible && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                transition={{ duration: 0.12 }}
+                className="pointer-events-none fixed left-1/2 bottom-[calc(env(safe-area-inset-bottom)+7.5rem)] z-[2500] -translate-x-1/2 rounded-full bg-black/75 px-4 py-2 text-center text-[13px] font-medium text-white shadow-lg"
+              >
+                {readerUiCopy.saved}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <AnimatePresence>
             {isExitConfirmOpen && (
