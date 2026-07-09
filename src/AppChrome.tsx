@@ -228,13 +228,6 @@ export function AutoUserManualModal({
                 ))}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="mt-4 h-11 w-full rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98]"
-            >
-              {copy.closeManual}
-            </button>
           </motion.div>
         </motion.div>
       )}
