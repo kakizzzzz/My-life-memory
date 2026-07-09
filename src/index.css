@@ -62,8 +62,8 @@ select {
 
 /* Make Leaflet attribution text smaller and less prominent */
 .leaflet-bottom.leaflet-right {
-  bottom: -8px !important;
-  right: 0 !important;
+  bottom: calc(env(safe-area-inset-bottom) + 0.5rem) !important;
+  right: 0.4rem !important;
   z-index: 120 !important;
 }
 
