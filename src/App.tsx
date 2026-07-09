@@ -23,20 +23,18 @@ import { usePasswordChange } from './hooks/usePasswordChange';
 import { useGalleryActions } from './hooks/useGalleryActions';
 import { usePhotoLocationImport } from './hooks/usePhotoLocationImport';
 import { useTrackSummary } from './hooks/useTrackSummary';
+import { useReaderController } from './hooks/useReaderController';
+import { useMapStarActions } from './hooks/useMapStarActions';
+import { useSearchActions } from './hooks/useSearchActions';
 import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
-  dehydrateStorageMediaHtml,
-  deleteImageFromStorageReliably,
-  imageMetadataFromElement,
   isSupabaseMediaEnabled,
   retryPendingImageDeletions,
   storagePlaceholderSrc,
-  uploadImageToStorage,
   warmStorageImageUrls,
   type StoredImageMetadata,
 } from './lib/mediaStorage';
-import { sanitizeRichHtml } from './lib/htmlSanitizer';
 import { normalizePersistedAppState } from './lib/appStateNormalize';
 import { exportReadableUserData } from './lib/userDataExport';
 import {
@@ -52,10 +50,6 @@ import {
   type TrackPoint,
   type TrackPointMetadata,
 } from './lib/trackUtils';
-import {
-  compressImageFileToDataUrl,
-  dataUrlToFile,
-} from './lib/photoUtils';
 import { createLocationIcon } from './lib/mapMarkerUtils';
 import {
   canUseBrowserGeolocation,
@@ -85,42 +79,15 @@ import {
   writeTrackDraft,
 } from './lib/localPersistence';
 import {
-  cleanReaderHtml,
-  ensureReaderEditableTailAfterMedia,
-  extractStoredImagesFromHtml,
-  getReadableNoteHtml,
-  getReadableTitleHtml,
-  getRemovedStoredImages,
   getStoredImagesFromNote,
-  hasMeaningfulNoteContent,
-  htmlToText,
-  imageToReaderHtml,
-  readerEditableTailHtml,
   uniqueStoredImages,
 } from './lib/noteHtmlUtils';
-import { createClientId } from './lib/generalUtils';
-import { parseCoordinateSearch } from './lib/searchUtils';
-import { getNoteTimestamp } from './lib/noteDataUtils';
-import {
-  applyReaderStyleToSelection as applyReaderDomStyleToSelection,
-  getReaderElementForTarget as getReaderDomElementForTarget,
-  getReaderSelectionRange as getReaderDomSelectionRange,
-  insertStyledReaderText as insertStyledReaderDomText,
-  moveReaderCaretToContentEnd as moveReaderDomCaretToContentEnd,
-  moveReaderCaretToPoint as moveReaderDomCaretToPoint,
-  readerRangeIsInsideElement,
-  readerRangeStartsInsideNonEditable,
-  saveReaderSelectionRange,
-  type ReaderTextTarget,
-} from './lib/readerDomUtils';
 import type {
   AppView,
   EditingNoteTarget,
   HomePanel,
   MapStyle,
-  NoteData,
   PersistedAppState,
-  ReadingNoteTarget,
   RecordsCalendarMode,
   RecordsFilter,
   SearchField,
@@ -170,12 +137,6 @@ import {
   type CloudAppState,
   type CloudProfile,
 } from './lib/cloudBackend';
-
-const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
-  uniqueStoredImages(metadataList).forEach(metadata => {
-    void deleteImageFromStorageReliably(metadata);
-  });
-};
 
 export default function App() {
   const [persistedAppState] = useState<PersistedAppState | null>(() => readPersistedAppState());
@@ -261,21 +222,6 @@ export default function App() {
   ));
   const [selectedStarId, setSelectedStarId] = useState<string | null>(null);
   const [editingNoteTarget, setEditingNoteTarget] = useState<EditingNoteTarget | null>(null);
-  const [readingNoteTarget, setReadingNoteTarget] = useState<ReadingNoteTarget | null>(null);
-  const [isReaderToolsOpen, setIsReaderToolsOpen] = useState(false);
-  const [readerActivePanel, setReaderActivePanel] = useState<'font' | 'color' | null>(null);
-  const [readerActiveTextTarget, setReaderActiveTextTarget] = useState<ReaderTextTarget>('content');
-  const [readerSelectedFontSize, setReaderSelectedFontSize] = useState(18);
-  const [readerSelectedColor, setReaderSelectedColor] = useState('#D2936D');
-  const [readerSelectedUnderline, setReaderSelectedUnderline] = useState(false);
-  const [readerShowCustomPicker, setReaderShowCustomPicker] = useState(false);
-  const readerTitleRef = React.useRef<HTMLHeadingElement>(null);
-  const readerContentRef = React.useRef<HTMLDivElement>(null);
-  const readerCameraInputRef = React.useRef<HTMLInputElement>(null);
-  const readerImageInputRef = React.useRef<HTMLInputElement>(null);
-  const readerSavedRangeRef = React.useRef<Range | null>(null);
-  const readerPendingTitleStylesRef = React.useRef<Record<string, string>>({});
-  const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
 
   const cloudConfigError = !isCloudBackendEnabled && !canUseLocalAuthFallback ? supabaseConfigMessage : '';
   
@@ -296,11 +242,8 @@ export default function App() {
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [selectedTrackLatLng, setSelectedTrackLatLng] = useState<[number, number] | null>(null);
   const [mapZoom, setMapZoom] = useState(16);
-  const [starDragPreview, setStarDragPreview] = useState<{ x: number; y: number } | null>(null);
 
   const isLocating = React.useRef(false);
-  const mapInstanceRef = React.useRef<L.Map | null>(null);
-  const starPlacementDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
   const gpsWatchIdRef = React.useRef<number | null>(null);
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
@@ -812,220 +755,44 @@ export default function App() {
   }, [stopGpsWatch, stopHeadingWatch]);
 
   const { trackDistanceKm, activeTrackDistanceDisplay, formatTime } = useTrackSummary(trackPaths);
-
-  const onMapClick = React.useCallback(() => {
-    setSelectedStarId(null);
-    setActiveTag(null);
-    setSelectedTrackId(null);
-    setSelectedTrackLatLng(null);
-  }, []);
-
-  const handleLocateMe = React.useCallback(() => {
-    setFlyTarget([userLocation[0], userLocation[1]]);
-  }, [userLocation]);
-
-  const handleMapReady = React.useCallback((map: L.Map | null) => {
-    mapInstanceRef.current = map;
-    if (map) setMapZoom(map.getZoom());
-  }, []);
-
-  const addStarAtLatLng = React.useCallback((lat: number, lng: number, starData: Partial<StarData> = {}) => {
-    const id = starData.id || createClientId();
-    const createdAt = starData.createdAt || Date.now();
-    setStars(prev => [...prev, { ...starData, id, lat, lng, createdAt }]);
-    return id;
-  }, []);
-
-  const addStarAtUserLocation = React.useCallback(() => {
-    addStarAtLatLng(userLocation[0], userLocation[1]);
-  }, [addStarAtLatLng, userLocation]);
-
-  const placeStarAtClientPoint = React.useCallback((clientX: number, clientY: number) => {
-    const map = mapInstanceRef.current;
-    if (!map) {
-      addStarAtUserLocation();
-      return;
-    }
-
-    const rect = map.getContainer().getBoundingClientRect();
-    const isInsideMap =
-      clientX >= rect.left &&
-      clientX <= rect.right &&
-      clientY >= rect.top &&
-      clientY <= rect.bottom;
-
-    if (!isInsideMap) return;
-
-    const latlng = map.containerPointToLatLng(L.point(clientX - rect.left, clientY - rect.top));
-    addStarAtLatLng(latlng.lat, latlng.lng);
-  }, [addStarAtLatLng, addStarAtUserLocation]);
-
-  const handleStarPlacementPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    starPlacementDragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      dragging: false,
-    };
-  };
-
-  const handleStarPlacementPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const dragState = starPlacementDragRef.current;
-    if (!dragState || dragState.pointerId !== event.pointerId) return;
-    const distance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
-    if (distance > 6) {
-      dragState.dragging = true;
-      setStarDragPreview({ x: event.clientX, y: event.clientY });
-      event.preventDefault();
-    }
-  };
-
-  const finishStarPlacementPointer = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const dragState = starPlacementDragRef.current;
-    if (!dragState || dragState.pointerId !== event.pointerId) return;
-
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture may already be released.
-    }
-
-    if (dragState.dragging) {
-      placeStarAtClientPoint(event.clientX, event.clientY);
-      event.preventDefault();
-      event.stopPropagation();
-    } else {
-      addStarAtUserLocation();
-    }
-
-    starPlacementDragRef.current = null;
-    setStarDragPreview(null);
-  };
-
-  const cancelStarPlacementPointer = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const dragState = starPlacementDragRef.current;
-    if (dragState?.pointerId === event.pointerId) {
-      starPlacementDragRef.current = null;
-      setStarDragPreview(null);
-    }
-  };
-
-  const handleMapDrop = (e: DragEvent, map: L.Map) => {
-    const type = e.dataTransfer?.getData('text/plain');
-    if (type === 'star') {
-      const latlng = map.mouseEventToLatLng(e as unknown as MouseEvent);
-      addStarAtLatLng(latlng.lat, latlng.lng);
-    }
-  };
-
-  const onStarClick = (id: string, e: any) => {
-    const clickedStar = stars.find(s => s.id === id);
-    if (clickedStar) {
-      setFlyTarget([clickedStar.lat, clickedStar.lng]);
-    }
-
-    if (tagMode === 'add') {
-      setStars(prev => {
-        const star = prev.find(s => s.id === id);
-        if (star?.tagOrder) return prev; // already tagged
-        const groupStars = prev.filter(s => s.tagGroupId === currentTagGroupId);
-        const maxTag = groupStars.reduce((max, s) => Math.max(max, s.tagOrder || 0), 0);
-        return prev.map(s => s.id === id ? { ...s, tagOrder: maxTag + 1, tagGroupId: currentTagGroupId } : s);
-      });
-      setSelectedStarId(id);
-    } else if (tagMode === 'remove') {
-      setStars(prev => {
-        const star = prev.find(s => s.id === id);
-        if (!star?.tagOrder) return prev;
-        const removedTag = star.tagOrder;
-        const groupId = star.tagGroupId;
-        return prev.map(s => {
-          if (s.id === id) return { ...s, tagOrder: undefined, tagGroupId: undefined };
-          if (s.tagGroupId === groupId && s.tagOrder && s.tagOrder > removedTag) return { ...s, tagOrder: s.tagOrder - 1 };
-          return s;
-        });
-      });
-    } else {
-      const star = clickedStar;
-      if (star) {
-        setSelectedStarId(id);
-        if (star.tagOrder && star.tagGroupId !== undefined) {
-          setActiveTag({ order: star.tagOrder, groupId: star.tagGroupId });
-        } else {
-          setActiveTag(null);
-        }
-      }
-    }
-  };
-
-  const onUpdateStar = (id: string, updates: Partial<StarData>) => {
-    setStars(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
-  };
-
-  const onMoveStar = React.useCallback((id: string, lat: number, lng: number) => {
-    setStars(prev => prev.map(star => star.id === id ? { ...star, lat, lng } : star));
-  }, []);
-
-  const onDeleteStar = (id: string) => {
-    const deletedStar = stars.find(star => star.id === id);
-    if (deletedStar) {
-      deleteStoredImages((deletedStar.notes || []).flatMap(note => getStoredImagesFromNote(note)));
-    }
-
-    setStars(prev => {
-      const star = prev.find(s => s.id === id);
-      if (star && star.tagOrder) {
-        const groupId = star.tagGroupId;
-        // reorder remaining tags
-        return prev.filter(s => s.id !== id).map(s => {
-          if (s.tagGroupId === groupId && s.tagOrder && s.tagOrder > star.tagOrder!) return { ...s, tagOrder: s.tagOrder - 1 };
-          return s;
-        });
-      }
-      return prev.filter(s => s.id !== id);
-    });
-    if (selectedStarId === id) setSelectedStarId(null);
-  };
-
-  const toggleTagMenu = () => {
-    if (tagMenuOpen) {
-      setTagMenuOpen(false);
-      setTagMode('none');
-    } else {
-      setTagMenuOpen(true);
-      setTagMode('add');
-      setCurrentTagGroupId(Date.now());
-    }
-  };
-
-  const handlePrevTag = () => {
-    if (!activeTag) return;
-    const groupStars = stars.filter(s => s.tagGroupId === activeTag.groupId);
-    const maxTag = groupStars.reduce((max, s) => Math.max(max, s.tagOrder || 0), 0);
-    const nextOrder = activeTag.order > 1 ? activeTag.order - 1 : maxTag;
-    setActiveTag({ order: nextOrder, groupId: activeTag.groupId });
-    const s = groupStars.find(s => s.tagOrder === nextOrder);
-    if (s) {
-      setFlyTarget([s.lat, s.lng]);
-      setSelectedStarId(s.id);
-    }
-  };
-
-  const handleNextTag = () => {
-    if (!activeTag) return;
-    const groupStars = stars.filter(s => s.tagGroupId === activeTag.groupId);
-    const maxTag = groupStars.reduce((max, s) => Math.max(max, s.tagOrder || 0), 0);
-    const nextOrder = activeTag.order < maxTag ? activeTag.order + 1 : 1;
-    setActiveTag({ order: nextOrder, groupId: activeTag.groupId });
-    const s = groupStars.find(s => s.tagOrder === nextOrder);
-    if (s) {
-      setFlyTarget([s.lat, s.lng]);
-      setSelectedStarId(s.id);
-    }
-  };
+  const {
+    starDragPreview,
+    onMapClick,
+    handleLocateMe,
+    handleMapReady,
+    addStarAtLatLng,
+    addStarAtUserLocation,
+    handleStarPlacementPointerDown,
+    handleStarPlacementPointerMove,
+    finishStarPlacementPointer,
+    cancelStarPlacementPointer,
+    handleMapDrop,
+    onStarClick,
+    onUpdateStar,
+    onMoveStar,
+    onDeleteStar,
+    toggleTagMenu,
+    handlePrevTag,
+    handleNextTag,
+  } = useMapStarActions({
+    userLocation,
+    stars,
+    setStars,
+    selectedStarId,
+    setSelectedStarId,
+    setSelectedTrackId,
+    setSelectedTrackLatLng,
+    setFlyTarget,
+    tagMode,
+    setTagMode,
+    tagMenuOpen,
+    setTagMenuOpen,
+    activeTag,
+    setActiveTag,
+    currentTagGroupId,
+    setCurrentTagGroupId,
+    setMapZoom,
+  });
 
   const createAppStateSnapshot = React.useCallback((profileOverride?: Partial<UserProfile>): PersistedAppState => {
     const snapshotProfile = {
@@ -1616,58 +1383,78 @@ export default function App() {
     addStarAtLatLng,
     onCreated: handlePhotoLocationCreated,
   });
+  const {
+    setReadingNoteTarget,
+    readerCameraInputRef,
+    readerImageInputRef,
+    readerTitleRef,
+    readerContentRef,
+    isReaderToolsOpen,
+    setIsReaderToolsOpen,
+    readerActivePanel,
+    setReaderActivePanel,
+    readerSelectedFontSize,
+    readerSelectedColor,
+    readerSelectedUnderline,
+    readerShowCustomPicker,
+    setReaderShowCustomPicker,
+    readerRecord,
+    saveReaderDraft,
+    saveReaderSelection,
+    openReaderFromRecord,
+    locateReaderRecord,
+    keepReaderSelectionPointerDown,
+    handleReaderFontSize,
+    handleReaderTextColor,
+    handleReaderUnderline,
+    handleReaderBeforeInput,
+    handleReaderInput,
+    handleReaderContentClick,
+    handleReaderPaste,
+    handleReaderImageInput,
+    handleReaderPanelToggle,
+  } = useReaderController({
+    activeView,
+    stars,
+    setStars,
+    setActiveView,
+    setActiveHomePanel,
+    setIsRecordsMenuOpen,
+    setIsRecordsCalendarOpen,
+    setIsSearchOpen,
+    setSubmittedTextSearch,
+    setFlyTarget,
+    setSelectedStarId,
+    setActiveTag,
+    homeCopy,
+    mediaRefreshKey,
+  });
 
-  const handleCoordinateSearch = () => {
-    const coordinates = parseCoordinateSearch(coordinateSearch);
-    if (!coordinates) return;
-    setFlyTarget(coordinates);
-    setActiveView('map');
-    setActiveHomePanel(null);
-    setIsSearchOpen(false);
-    setIsRecordsMenuOpen(false);
-    setIsRecordsCalendarOpen(false);
-  };
-
-  const handleTextSearch = () => {
-    const query = textSearch.trim();
-    if (!query) {
-      setSubmittedTextSearch('');
-      closeSearchModal();
-      return;
-    }
-
-    if (activeView === 'records') {
-      setSelectedRecordsDateKey(null);
-    }
-
-    setActiveSearchField('text');
-    setSearchReturnView(activeView === 'map' ? 'map' : 'records');
-    setSubmittedTextSearch(query);
-    setIsSearchOpen(false);
-    setActiveHomePanel(null);
-    setIsMenuOpen(false);
-    setIsMapStyleMenuOpen(false);
-    setTagMenuOpen(false);
-    setIsRecordsMenuOpen(false);
-    setIsRecordsCalendarOpen(false);
-    setActiveView('searchResults');
-  };
-
-  const openSearchModal = (field: SearchField = 'text') => {
-    setActiveSearchField(field);
-    setSubmittedTextSearch('');
-    setIsSearchOpen(true);
-  };
-
-  const closeSearchModal = () => {
-    setIsSearchOpen(false);
-    setSubmittedTextSearch('');
-  };
-
-  const closeSearchResults = () => {
-    setSubmittedTextSearch('');
-    setActiveView(searchReturnView);
-  };
+  const {
+    handleCoordinateSearch,
+    handleTextSearch,
+    openSearchModal,
+    closeSearchModal,
+    closeSearchResults,
+  } = useSearchActions({
+    coordinateSearch,
+    textSearch,
+    activeView,
+    searchReturnView,
+    setFlyTarget,
+    setActiveView,
+    setActiveHomePanel,
+    setIsSearchOpen,
+    setIsRecordsMenuOpen,
+    setIsRecordsCalendarOpen,
+    setSelectedRecordsDateKey,
+    setActiveSearchField,
+    setSearchReturnView,
+    setSubmittedTextSearch,
+    setIsMenuOpen,
+    setIsMapStyleMenuOpen,
+    setTagMenuOpen,
+  });
 
   const updateThemeColor = (key: keyof SystemTheme, value: string) => {
     setSystemTheme(prev => ({ ...prev, [key]: value }));
@@ -1758,293 +1545,6 @@ export default function App() {
   const editingStar = editingNoteTarget
     ? stars.find(star => star.id === editingNoteTarget.starId)
     : null;
-  const readerRecord = React.useMemo(() => {
-    if (!readingNoteTarget) return null;
-    const star = stars.find(item => item.id === readingNoteTarget.starId);
-    const note = star?.notes?.find(item => item.id === readingNoteTarget.noteId);
-    if (!star || !note) return null;
-    return {
-      star,
-      note,
-      timestamp: getNoteTimestamp(note),
-      titleHtml: getReadableTitleHtml(note, homeCopy.untitledNote),
-      contentHtml: getReadableNoteHtml(note, homeCopy.noteImageAlt, homeCopy.removeImage),
-    };
-  }, [homeCopy.noteImageAlt, homeCopy.removeImage, homeCopy.untitledNote, mediaRefreshKey, readingNoteTarget, stars]);
-  const readerRecordKey = readerRecord ? `${readerRecord.star.id}-${readerRecord.note.id}` : null;
-
-  React.useLayoutEffect(() => {
-    if (activeView !== 'reader' || !readerRecord) return;
-    const titleEditor = readerTitleRef.current;
-    const contentEditor = readerContentRef.current;
-
-    if (titleEditor && titleEditor.innerHTML !== readerRecord.titleHtml) {
-      titleEditor.innerHTML = sanitizeRichHtml(readerRecord.titleHtml);
-    }
-
-    if (contentEditor && contentEditor.innerHTML !== readerRecord.contentHtml) {
-      contentEditor.innerHTML = sanitizeRichHtml(readerRecord.contentHtml);
-    }
-
-    if (contentEditor) ensureReaderEditableTailAfterMedia(contentEditor);
-    readerSavedRangeRef.current = null;
-    readerPendingTitleStylesRef.current = {};
-    readerPendingContentStylesRef.current = {};
-    setReaderSelectedUnderline(false);
-  }, [activeView, readerRecordKey, readerRecord?.titleHtml, readerRecord?.contentHtml]);
-
-  const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
-    if (!readerRecord) return;
-    if (readerContentRef.current) ensureReaderEditableTailAfterMedia(readerContentRef.current);
-    const titleHtml = sanitizeRichHtml(readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml);
-    const rawContentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
-    const contentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(rawContentHtml));
-    const title = htmlToText(titleHtml);
-    const content = htmlToText(contentHtml);
-    const timestamp = Date.now();
-    const images = extractStoredImagesFromHtml(contentHtml);
-    deleteStoredImages(getRemovedStoredImages(getStoredImagesFromNote(readerRecord.note), images));
-
-    setStars(prev => prev.map(star => {
-      if (star.id !== readerRecord.star.id) return star;
-      return {
-        ...star,
-        notes: (star.notes || []).map(note => (
-          note.id === readerRecord.note.id
-            ? {
-                ...note,
-                title,
-                titleHtml,
-                content,
-                contentHtml,
-                images,
-                imageUrl: undefined,
-                imageUrls: undefined,
-                updatedAt: timestamp,
-                ...updates,
-              }
-            : note
-        )),
-      };
-    }));
-  }, [readerRecord]);
-
-  const moveReaderCaretToContentEnd = React.useCallback(() => {
-    return moveReaderDomCaretToContentEnd(readerContentRef.current, readerSavedRangeRef);
-  }, []);
-
-  const moveReaderCaretToPoint = React.useCallback((clientX: number, clientY: number) => {
-    return moveReaderDomCaretToPoint(readerContentRef.current, clientX, clientY, readerSavedRangeRef);
-  }, []);
-
-  const getReaderElementForTarget = React.useCallback((target: ReaderTextTarget) => (
-    getReaderDomElementForTarget(target, readerTitleRef.current, readerContentRef.current)
-  ), []);
-
-  const saveReaderSelection = React.useCallback(() => {
-    const toolbarState = saveReaderSelectionRange(
-      readerSavedRangeRef,
-      readerTitleRef.current,
-      readerContentRef.current,
-      readerRecord?.note.color || '#D2936D'
-    );
-    if (!toolbarState) return;
-    setReaderActiveTextTarget(toolbarState.target);
-    setReaderSelectedFontSize(toolbarState.fontSize);
-    setReaderSelectedColor(toolbarState.color);
-    setReaderSelectedUnderline(toolbarState.underline);
-  }, [readerRecord?.note.color]);
-
-  const getReaderSelectionRange = React.useCallback((target = readerActiveTextTarget) => {
-    return getReaderDomSelectionRange(target, readerTitleRef.current, readerContentRef.current, readerSavedRangeRef);
-  }, [readerActiveTextTarget]);
-
-  const applyReaderStyleToSelection = React.useCallback((styles: Record<string, string>) => {
-    return applyReaderDomStyleToSelection({
-      target: readerActiveTextTarget,
-      titleEditor: readerTitleRef.current,
-      contentEditor: readerContentRef.current,
-      savedRangeRef: readerSavedRangeRef,
-      pendingTitleStylesRef: readerPendingTitleStylesRef,
-      pendingContentStylesRef: readerPendingContentStylesRef,
-      styles,
-    });
-  }, [readerActiveTextTarget]);
-
-  const openReaderFromRecord = React.useCallback((starId: string, noteId: string) => {
-    setReadingNoteTarget({ starId, noteId });
-    setActiveView('reader');
-    setActiveHomePanel(null);
-    setIsRecordsMenuOpen(false);
-    setIsRecordsCalendarOpen(false);
-    setIsSearchOpen(false);
-    setSubmittedTextSearch('');
-    setIsReaderToolsOpen(false);
-    setReaderActivePanel(null);
-    setReaderShowCustomPicker(false);
-  }, []);
-
-  const locateReaderRecord = React.useCallback(() => {
-    if (!readerRecord) return;
-    setFlyTarget([readerRecord.star.lat, readerRecord.star.lng]);
-    setSelectedStarId(readerRecord.star.id);
-    setActiveTag(null);
-    setActiveView('map');
-    setActiveHomePanel(null);
-    setIsReaderToolsOpen(false);
-  }, [readerRecord]);
-
-  const keepReaderSelectionPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
-    event.preventDefault();
-    saveReaderSelection();
-  }, [saveReaderSelection]);
-
-  const handleReaderFontSize = React.useCallback((size: number) => {
-    setReaderSelectedFontSize(size);
-    applyReaderStyleToSelection({ 'font-size': `${size}px` });
-    setReaderActivePanel(null);
-  }, [applyReaderStyleToSelection]);
-
-  const handleReaderTextColor = React.useCallback((color: string) => {
-    setReaderSelectedColor(color);
-    applyReaderStyleToSelection({ color });
-  }, [applyReaderStyleToSelection]);
-
-  const handleReaderUnderline = React.useCallback(() => {
-    const nextUnderline = !readerSelectedUnderline;
-    setReaderSelectedUnderline(nextUnderline);
-    setReaderActivePanel(null);
-    applyReaderStyleToSelection({ 'text-decoration-line': nextUnderline ? 'underline' : 'none' });
-  }, [applyReaderStyleToSelection, readerSelectedUnderline]);
-
-  const insertStyledReaderText = React.useCallback((
-    element: HTMLElement | null,
-    range: Range | null,
-    text: string,
-    styles: Record<string, string>
-  ) => {
-    return insertStyledReaderDomText(element, range, text, styles, readerSavedRangeRef);
-  }, []);
-
-  const handleReaderBeforeInput = React.useCallback((target: ReaderTextTarget, event: React.FormEvent<HTMLElement>) => {
-    const inputEvent = event.nativeEvent as InputEvent;
-    if (inputEvent.inputType !== 'insertText' || !inputEvent.data) return;
-    const pendingRef = target === 'title' ? readerPendingTitleStylesRef : readerPendingContentStylesRef;
-    const pendingStyles = pendingRef.current;
-    if (Object.keys(pendingStyles).length === 0) return;
-    const element = getReaderElementForTarget(target);
-    if (element && insertStyledReaderText(element, getReaderSelectionRange(target), inputEvent.data, pendingStyles)) {
-      event.preventDefault();
-    }
-  }, [getReaderElementForTarget, getReaderSelectionRange, insertStyledReaderText]);
-
-  const handleReaderInput = React.useCallback(() => {
-    const editor = readerContentRef.current;
-    if (editor) ensureReaderEditableTailAfterMedia(editor);
-    requestAnimationFrame(saveReaderSelection);
-  }, [saveReaderSelection]);
-
-  const handleReaderContentClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement;
-    const editor = readerContentRef.current;
-    if (editor) ensureReaderEditableTailAfterMedia(editor);
-
-    const removeButton = target.closest('[data-remove-image="true"]');
-    if (removeButton) {
-      event.preventDefault();
-      const figure = removeButton.closest('[data-note-image="true"]');
-      const metadata = imageMetadataFromElement(figure);
-      if (metadata) void deleteImageFromStorageReliably(metadata);
-      figure?.remove();
-      if (editor) ensureReaderEditableTailAfterMedia(editor);
-      return;
-    }
-
-    const selection = window.getSelection();
-    const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-    if (
-      target === editor ||
-      target.closest('[data-note-image="true"]') ||
-      !range ||
-      !editor ||
-      !readerRangeIsInsideElement(range, editor) ||
-      readerRangeStartsInsideNonEditable(range, editor) ||
-      range.startContainer === editor
-    ) {
-      if (!moveReaderCaretToPoint(event.clientX, event.clientY)) {
-        moveReaderCaretToContentEnd();
-      }
-      return;
-    }
-
-    saveReaderSelection();
-  }, [moveReaderCaretToContentEnd, moveReaderCaretToPoint, readerRangeIsInsideElement, readerRangeStartsInsideNonEditable, saveReaderSelection]);
-
-  const insertReaderImage = React.useCallback(async (file?: File) => {
-    if (!file || !file.type.startsWith('image/')) return;
-    const imageUrl = await compressImageFileToDataUrl(file);
-    const editor = readerContentRef.current;
-    if (!editor) return;
-    let imageHtml = imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage);
-
-    if (isSupabaseMediaEnabled) {
-      try {
-        const compressedFile = await dataUrlToFile(imageUrl, `${Date.now()}.jpg`);
-        const uploaded = await uploadImageToStorage(compressedFile, {
-          noteId: readerRecord?.note.id,
-          folder: 'notes',
-          fileName: compressedFile.name,
-        });
-        imageHtml = imageToReaderHtml(uploaded.src, homeCopy.noteImageAlt, homeCopy.removeImage, uploaded.metadata);
-      } catch (error) {
-        console.warn('Supabase Storage upload failed, using data URL fallback:', error);
-      }
-    }
-
-    editor.insertAdjacentHTML('beforeend', `${imageHtml}${readerEditableTailHtml}`);
-    ensureReaderEditableTailAfterMedia(editor);
-    moveReaderCaretToContentEnd();
-  }, [homeCopy.noteImageAlt, homeCopy.removeImage, moveReaderCaretToContentEnd, readerRecord?.note.id]);
-
-  const handleReaderPaste = React.useCallback(async (
-    target: 'title' | 'content',
-    event: React.ClipboardEvent<HTMLElement>
-  ) => {
-    event.preventDefault();
-
-    if (target === 'content') {
-      const imageFiles = Array.from(event.clipboardData.files).filter((file): file is File => (
-        file instanceof File && file.type.startsWith('image/')
-      ));
-      if (imageFiles.length > 0) {
-        for (const file of imageFiles) {
-          await insertReaderImage(file);
-        }
-        return;
-      }
-    }
-
-    const rawText = event.clipboardData.getData('text/plain');
-    const text = target === 'title' ? rawText.replace(/\s+/g, ' ').trim() : rawText;
-    if (!text) return;
-
-    const element = getReaderElementForTarget(target);
-    if (!element) return;
-    insertStyledReaderText(element, getReaderSelectionRange(target), text, {});
-    handleReaderInput();
-  }, [getReaderElementForTarget, getReaderSelectionRange, handleReaderInput, insertReaderImage, insertStyledReaderText]);
-
-  const handleReaderImageInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    await insertReaderImage(file);
-    event.target.value = '';
-  }, [insertReaderImage]);
-
-  const handleReaderPanelToggle = React.useCallback((panel: 'font' | 'color') => {
-    saveReaderSelection();
-    setReaderShowCustomPicker(false);
-    setReaderActivePanel(currentPanel => currentPanel === panel ? null : panel);
-  }, [saveReaderSelection]);
 
   const showRouteDetailDots = mapZoom >= ROUTE_DETAIL_DOT_MIN_ZOOM;
 
