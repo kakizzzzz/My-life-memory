@@ -7,6 +7,11 @@
   --font-mono: "Afacad", "Noto Serif SC", "Noto Serif KR", "Songti SC", "Apple SD Gothic Neo", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+:root {
+  --app-shell-top: #e5e5e5;
+  --app-shell-page: #F3F3F3;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -14,7 +19,8 @@ html, body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  background-color: #F3F3F3;
+  background-color: var(--app-shell-page);
+  background-image: linear-gradient(180deg, var(--app-shell-top) 0, var(--app-shell-top) 7.5rem, var(--app-shell-page) 11rem, var(--app-shell-page) 100%);
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
@@ -25,7 +31,8 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: #F3F3F3;
+  background-color: var(--app-shell-page);
+  background-image: linear-gradient(180deg, var(--app-shell-top) 0, var(--app-shell-top) 7.5rem, var(--app-shell-page) 11rem, var(--app-shell-page) 100%);
   touch-action: manipulation;
 }
 
