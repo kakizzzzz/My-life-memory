@@ -71,8 +71,8 @@ select {
 .leaflet-container .leaflet-control-attribution {
   font-size: 8px !important;
   line-height: 1.1 !important;
-  background-color: rgba(255, 255, 255, 0.16) !important;
-  opacity: 0.46;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  opacity: 0.26;
   margin-right: 0 !important;
   margin-bottom: 0 !important;
   padding: 0 3px !important;
@@ -81,7 +81,7 @@ select {
 }
 .leaflet-bottom.leaflet-right .leaflet-control-attribution a,
 .leaflet-container .leaflet-control-attribution a {
-  color: rgba(75, 85, 99, 0.78) !important; /* Tailwind gray-600 */
+  color: rgba(75, 85, 99, 0.58) !important; /* Tailwind gray-600 */
 }
 
 /* Custom night map filter to turn black/gray map into readable dark blue/gray map */
