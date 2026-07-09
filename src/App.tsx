@@ -202,7 +202,6 @@ export default function App() {
     trackTime,
     savedTracks,
     setSavedTracks,
-    trackingStateRef,
     appendTrackPoint,
     activeTrackDistanceDisplay,
     formatTime,

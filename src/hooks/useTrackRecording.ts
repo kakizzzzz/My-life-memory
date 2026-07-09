@@ -7,6 +7,7 @@ import {
   writeTrackDraft,
 } from '../lib/localPersistence';
 import { normalizeAccountId } from '../lib/accountUtils';
+import { createClientId } from '../lib/generalUtils';
 import {
   getTrackAccuracy,
   shouldAcceptTrackPoint,
@@ -182,7 +183,7 @@ export const useTrackRecording = ({
   const saveTrackingRoute = React.useCallback(() => {
     if (trackPaths.some(path => path.length > 1)) {
       setSavedTracks(prev => [...prev, {
-        id: Math.random().toString(36).substr(2, 9),
+        id: createClientId(),
         paths: trackPaths.filter(path => path.length > 1),
         color: '#EDC727',
         time: trackTime,
@@ -262,7 +263,6 @@ export const useTrackRecording = ({
     trackTime,
     savedTracks,
     setSavedTracks,
-    trackingStateRef,
     appendTrackPoint,
     activeTrackDistanceDisplay,
     formatTime,
