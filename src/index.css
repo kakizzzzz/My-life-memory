@@ -239,6 +239,7 @@ select {
   box-sizing: border-box;
   padding-bottom: 3.25rem;
   scroll-padding-bottom: calc(env(safe-area-inset-bottom) + 5rem);
+  line-height: 1.42;
 }
 
 .note-rich-editor p {
@@ -329,7 +330,7 @@ select {
 }
 
 .note-reader-content {
-  line-height: 1.16;
+  line-height: 1.38;
   overflow-wrap: anywhere;
 }
 
