@@ -99,6 +99,9 @@ const mosaicMapHtml = `<!DOCTYPE html>
       let offsetX = 0;
       let offsetY = 0;
       let scale = 1;
+      let pixelRatio = 1;
+      let viewWidth = window.innerWidth;
+      let viewHeight = window.innerHeight;
       let hasMoved = false;
       let dragStartClientX = 0;
       let dragStartClientY = 0;
@@ -129,8 +132,13 @@ const mosaicMapHtml = `<!DOCTYPE html>
       });
 
       function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+        viewWidth = window.innerWidth;
+        viewHeight = window.innerHeight;
+        canvas.width = Math.round(viewWidth * pixelRatio);
+        canvas.height = Math.round(viewHeight * pixelRatio);
+        canvas.style.width = viewWidth + 'px';
+        canvas.style.height = viewHeight + 'px';
         generateGrid();
       }
 
@@ -148,10 +156,10 @@ const mosaicMapHtml = `<!DOCTYPE html>
           colorToFeature.clear();
 
           const baseScale = isFullscreen
-            ? Math.max(canvas.width, canvas.height) / 2.5
-            : canvas.width / 6.5;
-          const mapWidth = isFullscreen ? baseScale * Math.PI * 2 : canvas.width;
-          const mapHeight = isFullscreen ? baseScale * Math.PI * 2 : canvas.height;
+            ? Math.max(viewWidth, viewHeight) / 2.5
+            : viewWidth / 6.5;
+          const mapWidth = isFullscreen ? baseScale * Math.PI * 2 : viewWidth;
+          const mapHeight = isFullscreen ? baseScale * Math.PI * 2 : viewHeight;
           const offscreenCanvas = document.createElement('canvas');
           const offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
           offscreenCanvas.width = mapWidth;
@@ -159,7 +167,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
 
           const projection = d3.geoMercator()
             .scale(baseScale)
-            .translate(isFullscreen ? [mapWidth / 2, mapHeight / 2] : [canvas.width / 2, canvas.height / 1.6]);
+            .translate(isFullscreen ? [mapWidth / 2, mapHeight / 2] : [viewWidth / 2, viewHeight / 1.6]);
 
           const path = d3.geoPath().projection(projection).context(offscreenCtx);
           const heatRadius = isFullscreen ? Math.max(16, baseScale * 0.045) : Math.max(7, baseScale * 0.14);
@@ -270,8 +278,8 @@ const mosaicMapHtml = `<!DOCTYPE html>
             const focusCoords = projection([120, 35]);
             const centerX = focusCoords ? focusCoords[0] : offscreenCanvas.width / 2;
             const centerY = focusCoords ? focusCoords[1] : offscreenCanvas.height / 2;
-            offsetX = canvas.width / 2 - centerX;
-            offsetY = canvas.height / 2 - centerY;
+            offsetX = viewWidth / 2 - centerX;
+            offsetY = viewHeight / 2 - centerY;
             scale = 1;
           } else {
             offsetX = 0;
@@ -391,8 +399,9 @@ const mosaicMapHtml = `<!DOCTYPE html>
       }
 
       function draw(now = performance.now()) {
+        ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
         ctx.fillStyle = '#0f172a';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, viewWidth, viewHeight);
 
         if (isFullscreen) {
           const actualWidth = (mapBounds.maxX - mapBounds.minX) * scale;
@@ -402,16 +411,16 @@ const mosaicMapHtml = `<!DOCTYPE html>
           const mapTop = mapBounds.minY * scale;
           const mapBottom = mapBounds.maxY * scale;
 
-          if (actualWidth <= canvas.width) {
-            offsetX = (canvas.width - actualWidth) / 2 - mapLeft;
+          if (actualWidth <= viewWidth) {
+            offsetX = (viewWidth - actualWidth) / 2 - mapLeft;
           } else {
-            offsetX = Math.max(canvas.width - mapRight, Math.min(-mapLeft, offsetX));
+            offsetX = Math.max(viewWidth - mapRight, Math.min(-mapLeft, offsetX));
           }
 
-          if (actualHeight <= canvas.height) {
-            offsetY = (canvas.height - actualHeight) / 2 - mapTop;
+          if (actualHeight <= viewHeight) {
+            offsetY = (viewHeight - actualHeight) / 2 - mapTop;
           } else {
-            offsetY = Math.max(canvas.height - mapBottom, Math.min(-mapTop, offsetY));
+            offsetY = Math.max(viewHeight - mapBottom, Math.min(-mapTop, offsetY));
           }
         }
 
@@ -421,9 +430,9 @@ const mosaicMapHtml = `<!DOCTYPE html>
 
         const viewPadding = config.blockSize * 3;
         const viewLeft = isFullscreen ? (-offsetX / scale) - viewPadding : -Infinity;
-        const viewRight = isFullscreen ? ((canvas.width - offsetX) / scale) + viewPadding : Infinity;
+        const viewRight = isFullscreen ? ((viewWidth - offsetX) / scale) + viewPadding : Infinity;
         const viewTop = isFullscreen ? (-offsetY / scale) - viewPadding : -Infinity;
-        const viewBottom = isFullscreen ? ((canvas.height - offsetY) / scale) + viewPadding : Infinity;
+        const viewBottom = isFullscreen ? ((viewHeight - offsetY) / scale) + viewPadding : Infinity;
         const drawSize = config.blockSize - config.gap;
 
         gridData.forEach(block => {
