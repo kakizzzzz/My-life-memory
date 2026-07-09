@@ -22,18 +22,15 @@ import { useMcpTokens } from './hooks/useMcpTokens';
 import { usePasswordChange } from './hooks/usePasswordChange';
 import { useGalleryActions } from './hooks/useGalleryActions';
 import { usePhotoLocationImport } from './hooks/usePhotoLocationImport';
-import { useTrackSummary } from './hooks/useTrackSummary';
 import { useReaderController } from './hooks/useReaderController';
 import { useMapStarActions } from './hooks/useMapStarActions';
 import { useSearchActions } from './hooks/useSearchActions';
+import { useTrackRecording } from './hooks/useTrackRecording';
+import { useCloudMediaMaintenance } from './hooks/useCloudMediaMaintenance';
 import { isCloudBackendEnabled, supabaseConfigMessage } from './lib/supabaseClient';
 import {
   buildStorageImageSrc,
-  isSupabaseMediaEnabled,
-  retryPendingImageDeletions,
   storagePlaceholderSrc,
-  warmStorageImageUrls,
-  type StoredImageMetadata,
 } from './lib/mediaStorage';
 import { normalizePersistedAppState } from './lib/appStateNormalize';
 import { exportReadableUserData } from './lib/userDataExport';
@@ -44,10 +41,7 @@ import {
 } from './lib/dateUtils';
 import {
   getBearingBetweenPoints,
-  getTrackAccuracy,
   ROUTE_DETAIL_DOT_MIN_ZOOM,
-  shouldAcceptTrackPoint,
-  type TrackPoint,
   type TrackPointMetadata,
 } from './lib/trackUtils';
 import { createLocationIcon } from './lib/mapMarkerUtils';
@@ -65,7 +59,6 @@ import {
 } from './lib/defaultStarUtils';
 import { normalizeAccountId } from './lib/accountUtils';
 import {
-  clearTrackDraft,
   getPersistableAvatarUrl,
   getPublicProfileSnapshot,
   hasLoginAccount,
@@ -74,14 +67,8 @@ import {
   markAutoUserManualSeen,
   readAutoUserManualSeen,
   readPersistedAppState,
-  readTrackDraft,
   writePersistedAppState,
-  writeTrackDraft,
 } from './lib/localPersistence';
-import {
-  getStoredImagesFromNote,
-  uniqueStoredImages,
-} from './lib/noteHtmlUtils';
 import type {
   AppView,
   EditingNoteTarget,
@@ -106,7 +93,6 @@ import {
   DEFAULT_USER_LOCATION,
   GEOLOCATION_OPTIONS,
   LEGACY_RECORD_STAR_LOCATION,
-  TRACK_STALE_POSITION_GRACE_MS,
 } from './constants/appDefaults';
 import {
   DEFAULT_NAME_PREFIX,
@@ -231,14 +217,6 @@ export default function App() {
   const [activeTag, setActiveTag] = useState<{ order: number, groupId: number } | null>(null);
   const [currentTagGroupId, setCurrentTagGroupId] = useState<number>(0);
 
-  // Tracking Mode State
-  const [isTracking, setIsTracking] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [trackPaths, setTrackPaths] = useState<[number, number][][]>([]);
-  const [trackTime, setTrackTime] = useState(0);
-  const [savedTracks, setSavedTracks] = useState<TrackData[]>(() => (
-    Array.isArray(persistedPrivateState?.savedTracks) ? persistedPrivateState.savedTracks : []
-  ));
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [selectedTrackLatLng, setSelectedTrackLatLng] = useState<[number, number] | null>(null);
   const [mapZoom, setMapZoom] = useState(16);
@@ -247,8 +225,7 @@ export default function App() {
   const gpsWatchIdRef = React.useRef<number | null>(null);
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
-  const lastTrackPointRef = React.useRef<TrackPoint | null>(null);
-  const trackingStartedAtRef = React.useRef(0);
+  const appendTrackPointRef = React.useRef<((newLoc: [number, number], metadata?: TrackPointMetadata) => void) | null>(null);
   const lastCompassHeadingAtRef = React.useRef(0);
   const isRequestingHeadingPermissionRef = React.useRef(false);
   const hasSyncedDefaultStarToGpsRef = React.useRef(false);
@@ -258,81 +235,6 @@ export default function App() {
   const cloudSaveTimerRef = React.useRef<number | null>(null);
   const hasRequestedEntryLocationRef = React.useRef(false);
   const autoOpenedManualAccountRef = React.useRef<string | null>(null);
-  const checkedTrackDraftAccountRef = React.useRef<string | null>(null);
-  const trackingStateRef = React.useRef({ isTracking, isPaused });
-  const trackDraftStateRef = React.useRef({ paths: trackPaths, time: trackTime });
-  useEffect(() => {
-    trackingStateRef.current = { isTracking, isPaused };
-  }, [isTracking, isPaused]);
-
-  useEffect(() => {
-    trackDraftStateRef.current = { paths: trackPaths, time: trackTime };
-  }, [trackPaths, trackTime]);
-
-  const appendTrackPoint = React.useCallback((
-    newLoc: [number, number],
-    metadata: TrackPointMetadata = {}
-  ) => {
-    const accuracy = getTrackAccuracy(metadata.accuracy);
-    const timestamp = Number.isFinite(metadata.timestamp) ? metadata.timestamp as number : Date.now();
-    const previousAcceptedPoint = lastTrackPointRef.current;
-    const nextPoint: TrackPoint = { location: newLoc, timestamp, accuracy };
-
-    if (
-      trackingStartedAtRef.current > 0 &&
-      timestamp < trackingStartedAtRef.current - TRACK_STALE_POSITION_GRACE_MS
-    ) {
-      return;
-    }
-
-    const startNewSegment = () => {
-      setTrackPaths(prev => {
-        if (prev.length === 0) return [[newLoc]];
-        const newPaths = [...prev];
-        const lastIndex = newPaths.length - 1;
-        const currentSegment = newPaths[lastIndex];
-        if (currentSegment.length === 0) {
-          newPaths[lastIndex] = [newLoc];
-          return newPaths;
-        }
-        if (currentSegment.length === 1) {
-          newPaths[lastIndex] = [newLoc];
-          return newPaths;
-        }
-        return [...newPaths, [newLoc]];
-      });
-      lastTrackPointRef.current = nextPoint;
-    };
-
-    const decision = shouldAcceptTrackPoint(previousAcceptedPoint, nextPoint, metadata);
-
-    if (decision.action === 'reject') {
-      return;
-    }
-
-    if (decision.action === 'segment') {
-      startNewSegment();
-      return;
-    }
-
-    setTrackPaths(prev => {
-      if (prev.length === 0) return [[newLoc]];
-
-      const newPaths = [...prev];
-      const lastIndex = newPaths.length - 1;
-      const currentSegment = [...newPaths[lastIndex]];
-      const lastPoint = currentSegment[currentSegment.length - 1];
-
-      if (lastPoint && L.latLng(lastPoint).distanceTo(L.latLng(newLoc)) < 0.75) {
-        return prev;
-      }
-
-      currentSegment.push(newLoc);
-      newPaths[lastIndex] = currentSegment;
-      return newPaths;
-    });
-    lastTrackPointRef.current = nextPoint;
-  }, []);
 
   const syncDefaultStarNearUser = React.useCallback((newLoc: [number, number], force = false) => {
     if (!force && hasSyncedDefaultStarToGpsRef.current) return;
@@ -393,13 +295,13 @@ export default function App() {
       gpsHeading
     );
     if (trackingStateRef.current.isTracking && !trackingStateRef.current.isPaused) {
-      appendTrackPoint(newLoc, {
+      appendTrackPointRef.current?.(newLoc, {
         accuracy,
         timestamp: position.timestamp,
         speed: position.coords.speed,
       });
     }
-  }, [appendTrackPoint, applyLocationPoint, syncDefaultStarNearUser]);
+  }, [applyLocationPoint, syncDefaultStarNearUser]);
 
   const stopGpsWatch = React.useCallback(() => {
     if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
@@ -534,6 +436,36 @@ export default function App() {
     }
   }, [closeInitialPermissionPrompt, handleOpenPermissions]);
 
+  const {
+    isTracking,
+    isPaused,
+    trackPaths,
+    trackTime,
+    savedTracks,
+    setSavedTracks,
+    trackingStateRef,
+    appendTrackPoint,
+    activeTrackDistanceDisplay,
+    formatTime,
+    startTrackingRoute,
+    toggleTrackingPause,
+    stopTrackingRoute,
+    saveTrackingRoute,
+    resetTrackDraftCheck,
+  } = useTrackRecording({
+    initialSavedTracks: persistedPrivateState?.savedTracks,
+    isSignedIn,
+    profileAccount: profile.account,
+    language,
+    userLocation,
+    requestUserLocation,
+    startHeadingWatch,
+    setActiveView,
+    setActiveHomePanel,
+    onStart: () => setIsMenuOpen(false),
+  });
+  appendTrackPointRef.current = appendTrackPoint;
+
   useEffect(() => {
     if (!isSignedIn || activeView !== 'map' || hasRequestedEntryLocationRef.current) return;
     hasRequestedEntryLocationRef.current = true;
@@ -609,8 +541,8 @@ export default function App() {
     if (isSignedIn) return;
     hasRequestedEntryLocationRef.current = false;
     autoOpenedManualAccountRef.current = null;
-    checkedTrackDraftAccountRef.current = null;
     hasSyncedDefaultStarToGpsRef.current = false;
+    resetTrackDraftCheck();
     setHasSeenInitialPermissionPrompt(false);
     setActiveView('home');
     setActiveHomePanel(null);
@@ -623,7 +555,7 @@ export default function App() {
     setIsRecordsCalendarOpen(false);
     setReadingNoteTarget(null);
     setEditingNoteTarget(null);
-  }, [isSignedIn]);
+  }, [isSignedIn, resetTrackDraftCheck]);
 
   useEffect(() => {
     if (isCloudBackendEnabled) {
@@ -670,63 +602,6 @@ export default function App() {
   }, [deviceHeading, isTracking, isWatchingUserLocation, userLocation]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isTracking && !isPaused) {
-      interval = setInterval(() => {
-        setTrackTime(prev => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isTracking, isPaused]);
-
-  useEffect(() => {
-    if (!isSignedIn || isTracking) return;
-    const account = normalizeAccountId(profile.account);
-    if (!account || checkedTrackDraftAccountRef.current === account) return;
-    checkedTrackDraftAccountRef.current = account;
-
-    const draft = readTrackDraft(account);
-    if (!draft) return;
-
-    const restorePrompt = (HOME_COPY[language as keyof typeof HOME_COPY] || HOME_COPY.en).restoreTrackDraft;
-    if (window.confirm(restorePrompt)) {
-      setTrackPaths(draft.paths);
-      setTrackTime(draft.time);
-      setIsTracking(true);
-      setIsPaused(true);
-      trackingStateRef.current = { isTracking: true, isPaused: true };
-      lastTrackPointRef.current = null;
-      trackingStartedAtRef.current = Date.now();
-      setActiveView('map');
-      setActiveHomePanel(null);
-    } else {
-      clearTrackDraft(account);
-    }
-  }, [isSignedIn, isTracking, language, profile.account]);
-
-  useEffect(() => {
-    if (!isSignedIn || !isTracking) return;
-    const account = normalizeAccountId(profile.account);
-    if (!account) return;
-
-    const saveDraft = () => {
-      const paths = trackDraftStateRef.current.paths.filter(path => path.length > 0);
-      if (paths.length === 0) return;
-      writeTrackDraft(account, {
-        paths,
-        time: trackDraftStateRef.current.time,
-        savedAt: Date.now(),
-      });
-    };
-
-    saveDraft();
-    const interval = window.setInterval(saveDraft, 4000);
-    return () => window.clearInterval(interval);
-  }, [isSignedIn, isTracking, profile.account]);
-
-  useEffect(() => {
     const shouldWatchLocation = isWatchingUserLocation || isTracking;
 
     if (!shouldWatchLocation || !canUseBrowserGeolocation()) {
@@ -754,7 +629,6 @@ export default function App() {
     stopHeadingWatch();
   }, [stopGpsWatch, stopHeadingWatch]);
 
-  const { trackDistanceKm, activeTrackDistanceDisplay, formatTime } = useTrackSummary(trackPaths);
   const {
     starDragPreview,
     onMapClick,
@@ -1100,46 +974,16 @@ export default function App() {
     setLoginError('');
   };
 
-  const getReferencedStoredMedia = React.useCallback(() => (
-    uniqueStoredImages([
-      profile.avatarImage,
-      ...stars.flatMap(star => (
-        (star.notes || []).flatMap(note => getStoredImagesFromNote(note))
-      )),
-    ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata)))
-  ), [profile.avatarImage, stars]);
+  const handleCloudMediaReady = React.useCallback(() => {
+    setMediaRefreshKey(key => key + 1);
+  }, []);
 
-  useEffect(() => {
-    if (!isSupabaseMediaEnabled || !isSignedIn) return;
-
-    let isMounted = true;
-    const metadataList = getReferencedStoredMedia();
-
-    void warmStorageImageUrls(metadataList).then(() => {
-      if (isMounted) setMediaRefreshKey(key => key + 1);
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [getReferencedStoredMedia, isSignedIn, profile.account]);
-
-  useEffect(() => {
-    if (!isSupabaseMediaEnabled || !isSignedIn) return;
-
-    const retryDeletes = () => {
-      void retryPendingImageDeletions();
-    };
-
-    retryDeletes();
-    window.addEventListener('online', retryDeletes);
-    window.addEventListener('focus', retryDeletes);
-
-    return () => {
-      window.removeEventListener('online', retryDeletes);
-      window.removeEventListener('focus', retryDeletes);
-    };
-  }, [isSignedIn, profile.account]);
+  useCloudMediaMaintenance({
+    isSignedIn,
+    profile,
+    stars,
+    onMediaReady: handleCloudMediaReady,
+  });
 
   useEffect(() => {
     if (!isCloudBackendEnabled) return;
@@ -1487,56 +1331,6 @@ export default function App() {
   const screenTopPaddingClass = 'pt-16';
   const btnClass = "w-12 h-12 rounded-full bg-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 transition-all shadow-sm";
   const starPlacementButtonClass = `${btnClass} touch-none`;
-
-  const startTrackingRoute = () => {
-    clearTrackDraft(profile.account);
-    void startHeadingWatch();
-    const startedAt = Date.now();
-    trackingStartedAtRef.current = startedAt;
-    lastTrackPointRef.current = null;
-    trackingStateRef.current = { isTracking: true, isPaused: false };
-    setIsTracking(true);
-    setIsPaused(false);
-    const didRequestGps = requestUserLocation(true);
-    setTrackPaths(didRequestGps ? [] : [[userLocation]]);
-    if (!didRequestGps) {
-      lastTrackPointRef.current = { location: userLocation, timestamp: Date.now() };
-    }
-    setTrackTime(0);
-    setIsMenuOpen(false);
-  };
-
-  const toggleTrackingPause = () => {
-    setIsPaused(!isPaused);
-    if (isPaused) {
-      lastTrackPointRef.current = null;
-      trackingStartedAtRef.current = Date.now();
-      setTrackPaths(prev => [...prev, []]);
-    }
-  };
-
-  const stopTrackingRoute = () => {
-    lastTrackPointRef.current = null;
-    trackingStartedAtRef.current = 0;
-    clearTrackDraft(profile.account);
-    setIsTracking(false);
-    setTrackPaths([]);
-    setTrackTime(0);
-    setIsPaused(false);
-  };
-
-  const saveTrackingRoute = () => {
-    if (trackPaths.some(p => p.length > 1)) {
-      setSavedTracks(prev => [...prev, {
-        id: Math.random().toString(36).substr(2, 9),
-        paths: trackPaths.filter(p => p.length > 1),
-        color: '#EDC727',
-        time: trackTime,
-        distance: trackDistanceKm
-      }]);
-    }
-    stopTrackingRoute();
-  };
 
   const locationIcon = React.useMemo(
     () => createLocationIcon(mapStyle, systemTheme.icon, deviceHeading),
