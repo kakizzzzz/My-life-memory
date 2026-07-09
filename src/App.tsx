@@ -33,14 +33,7 @@ import {
 } from './lib/mediaStorage';
 import { sanitizeRichHtml } from './lib/htmlSanitizer';
 import { normalizePersistedAppState } from './lib/appStateNormalize';
-import {
-  buildReadableExportHtml,
-  exportImageSource,
-  exportStoredImage,
-  getInlineExportImageSources,
-  hasImageExportError,
-  type ExportedImageData,
-} from './lib/exportReport';
+import { exportReadableUserData } from './lib/userDataExport';
 import {
   dateFromCalendarDateKey,
   formatRecordMonth,
@@ -97,7 +90,6 @@ import {
   escapeHtml,
   extractImagesFromHtml,
   extractStoredImagesFromHtml,
-  getLastReaderContentChild,
   getReadableNoteHtml,
   getReadableTitleHtml,
   getRemovedStoredImages,
@@ -106,12 +98,23 @@ import {
   htmlToText,
   imageToReaderHtml,
   readerEditableTailHtml,
-  readerNodeHasMeaningfulContent,
   uniqueStoredImages,
 } from './lib/noteHtmlUtils';
-import { cssColorToHex, createClientId } from './lib/generalUtils';
+import { createClientId } from './lib/generalUtils';
 import { countSearchMatches, parseCoordinateSearch } from './lib/searchUtils';
 import { getNoteTimestamp } from './lib/noteDataUtils';
+import {
+  applyReaderStyleToSelection as applyReaderDomStyleToSelection,
+  getReaderElementForTarget as getReaderDomElementForTarget,
+  getReaderSelectionRange as getReaderDomSelectionRange,
+  insertStyledReaderText as insertStyledReaderDomText,
+  moveReaderCaretToContentEnd as moveReaderDomCaretToContentEnd,
+  moveReaderCaretToPoint as moveReaderDomCaretToPoint,
+  readerRangeIsInsideElement,
+  readerRangeStartsInsideNonEditable,
+  saveReaderSelectionRange,
+  type ReaderTextTarget,
+} from './lib/readerDomUtils';
 import type {
   AppView,
   HomePanel,
@@ -146,7 +149,6 @@ import {
 } from './constants/language';
 import {
   DEFAULT_SYSTEM_THEME,
-  READER_FONT_SIZES,
 } from './constants/theme';
 import {
   MAP_TOOL_ICON_STROKE,
@@ -292,7 +294,7 @@ export default function App() {
   const [readingNoteTarget, setReadingNoteTarget] = useState<ReadingNoteTarget | null>(null);
   const [isReaderToolsOpen, setIsReaderToolsOpen] = useState(false);
   const [readerActivePanel, setReaderActivePanel] = useState<'font' | 'color' | null>(null);
-  const [readerActiveTextTarget, setReaderActiveTextTarget] = useState<'title' | 'content'>('content');
+  const [readerActiveTextTarget, setReaderActiveTextTarget] = useState<ReaderTextTarget>('content');
   const [readerSelectedFontSize, setReaderSelectedFontSize] = useState(18);
   const [readerSelectedColor, setReaderSelectedColor] = useState('#D2936D');
   const [readerSelectedUnderline, setReaderSelectedUnderline] = useState(false);
@@ -2167,64 +2169,15 @@ export default function App() {
     setExportDataStatus('');
 
     try {
-      const exportedAt = new Date().toISOString();
-      const locations = await Promise.all(stars.map(async (star, starIndex) => {
-        const notes = await Promise.all((star.notes || []).map(async (note, noteIndex) => {
-          if (!hasMeaningfulNoteContent(note)) return null;
-          const timestamp = getNoteTimestamp(note);
-          const storedImages = await Promise.all(
-            getStoredImagesFromNote(note).map((metadata, imageIndex) => (
-              exportStoredImage(metadata, `locations.${starIndex}.notes.${noteIndex}.images.${imageIndex}`)
-            ))
-          );
-          const inlineImages = await Promise.all(
-            getInlineExportImageSources(note).map((src, imageIndex) => (
-              exportImageSource(src, `locations.${starIndex}.notes.${noteIndex}.inlineImages.${imageIndex}`)
-            ))
-          );
-          const images = [
-            ...storedImages,
-            ...inlineImages.filter((image): image is ExportedImageData => Boolean(image)),
-          ];
-
-          return {
-            title: htmlToText(note.titleHtml) || note.title || `${homeCopy.noteLabel} ${noteIndex + 1}`,
-            text: htmlToText(note.contentHtml) || note.content || '',
-            timestamp,
-            images,
-          };
-        }));
-
-        return {
-          index: starIndex + 1,
-          lat: star.lat,
-          lng: star.lng,
-          createdAt: star.createdAt || null,
-          notes: notes.filter((note): note is NonNullable<typeof note> => Boolean(note)),
-        };
-      }));
-
-      const readableLocations = locations.filter(location => location.notes.length > 0);
-      const html = buildReadableExportHtml({
-        appName: 'My Life Memory',
-        account: normalizeAccountId(profile.account),
-        profileName: profile.name,
-        exportedAt,
-        locale: languageLocale,
-        locations: readableLocations,
+      const result = await exportReadableUserData({
+        stars,
+        profile,
+        languageLocale,
+        copy: {
+          noteLabel: homeCopy.noteLabel,
+        },
       });
-      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-      const objectUrl = URL.createObjectURL(blob);
-      const accountSlug = normalizeAccountId(profile.account) || 'user';
-      const dateSlug = exportedAt.slice(0, 10);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = `my-life-memory-${accountSlug}-${dateSlug}.html`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      setExportDataStatus(hasImageExportError(readableLocations) ? homeCopy.exportDataPartial : homeCopy.exportDataReady);
+      setExportDataStatus(result.hasImageError ? homeCopy.exportDataPartial : homeCopy.exportDataReady);
     } catch (error) {
       console.error('Could not export user data:', error);
       setExportDataStatus(homeCopy.exportDataFailed);
@@ -2365,276 +2318,47 @@ export default function App() {
     }));
   }, [readerRecord]);
 
-  const readerRangeIsInsideElement = React.useCallback((range: Range, element: HTMLElement | null) => (
-    Boolean(element && element.contains(range.commonAncestorContainer))
-  ), []);
-
-  const getReaderCaretRangeFromPoint = React.useCallback((clientX: number, clientY: number) => {
-    const documentWithCaret = document as Document & {
-      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-      caretRangeFromPoint?: (x: number, y: number) => Range | null;
-    };
-
-    if (documentWithCaret.caretPositionFromPoint) {
-      const position = documentWithCaret.caretPositionFromPoint(clientX, clientY);
-      if (!position) return null;
-      const range = document.createRange();
-      range.setStart(position.offsetNode, position.offset);
-      range.collapse(true);
-      return range;
-    }
-
-    return documentWithCaret.caretRangeFromPoint?.(clientX, clientY) || null;
-  }, []);
-
-  const readerRangeStartsInsideNonEditable = React.useCallback((range: Range, element: HTMLElement | null) => {
-    const parentElement = range.startContainer.nodeType === Node.ELEMENT_NODE
-      ? range.startContainer as Element
-      : range.startContainer.parentElement;
-    const nonEditable = parentElement?.closest('[contenteditable="false"], [data-note-image="true"], button');
-    return Boolean(element && nonEditable && element.contains(nonEditable));
-  }, []);
-
   const moveReaderCaretToContentEnd = React.useCallback(() => {
-    const editor = readerContentRef.current;
-    const selection = window.getSelection();
-    if (!editor || !selection) return false;
-
-    ensureReaderEditableTailAfterMedia(editor);
-    const lastChild = getLastReaderContentChild(editor);
-    const range = document.createRange();
-    editor.focus();
-
-    if (
-      lastChild instanceof HTMLElement &&
-      ['P', 'DIV', 'LI', 'BLOCKQUOTE'].includes(lastChild.tagName)
-    ) {
-      if (!readerNodeHasMeaningfulContent(lastChild)) {
-        range.setStart(lastChild, 0);
-      } else {
-        range.selectNodeContents(lastChild);
-      }
-    } else {
-      range.selectNodeContents(editor);
-    }
-
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    readerSavedRangeRef.current = range.cloneRange();
-    return true;
+    return moveReaderDomCaretToContentEnd(readerContentRef.current, readerSavedRangeRef);
   }, []);
 
   const moveReaderCaretToPoint = React.useCallback((clientX: number, clientY: number) => {
-    const editor = readerContentRef.current;
-    const selection = window.getSelection();
-    if (!editor || !selection) return false;
-
-    ensureReaderEditableTailAfterMedia(editor);
-    const range = getReaderCaretRangeFromPoint(clientX, clientY);
-    if (
-      !range ||
-      !readerRangeIsInsideElement(range, editor) ||
-      readerRangeStartsInsideNonEditable(range, editor) ||
-      (range.startContainer === editor && editor.childNodes.length > 0)
-    ) {
-      return false;
-    }
-
-    editor.focus();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    readerSavedRangeRef.current = range.cloneRange();
-    return true;
-  }, [getReaderCaretRangeFromPoint, readerRangeIsInsideElement, readerRangeStartsInsideNonEditable]);
-
-  const getReaderElementForTarget = React.useCallback((target: 'title' | 'content') => (
-    target === 'title' ? readerTitleRef.current : readerContentRef.current
-  ), []);
-
-  const getReaderTargetFromRange = React.useCallback((range: Range): 'title' | 'content' | null => {
-    if (readerRangeIsInsideElement(range, readerTitleRef.current)) return 'title';
-    if (readerRangeIsInsideElement(range, readerContentRef.current)) return 'content';
-    return null;
-  }, [readerRangeIsInsideElement]);
-
-  const normalizeReaderFontSize = (fontSize: number) => {
-    const roundedSize = Math.round(fontSize);
-    return READER_FONT_SIZES.find(size => Math.abs(size - roundedSize) <= 1) || roundedSize;
-  };
-
-  const getReaderTextNodeInRange = React.useCallback((range: Range, element: HTMLElement) => {
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: node => {
-          if (!node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
-          const parentElement = node.parentElement;
-          if (parentElement?.closest('[contenteditable="false"], [data-note-image="true"], button')) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          return range.intersectsNode(node)
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_REJECT;
-        },
-      }
-    );
-    return walker.nextNode();
+    return moveReaderDomCaretToPoint(readerContentRef.current, clientX, clientY, readerSavedRangeRef);
   }, []);
 
-  const getReaderComputedElement = (node: Node | null, element: HTMLElement) => {
-    if (!node) return element;
-    const candidate = node.nodeType === Node.ELEMENT_NODE
-      ? node as Element
-      : node.parentElement;
-    return candidate instanceof HTMLElement && element.contains(candidate) ? candidate : element;
-  };
-
-  const getReaderUnderlineFromElement = (element: HTMLElement) => {
-    const decorationLine = window.getComputedStyle(element).textDecorationLine;
-    return decorationLine.includes('underline') || Boolean(element.closest('u'));
-  };
-
-  const syncReaderToolbarFromRange = React.useCallback((range: Range) => {
-    const target = getReaderTargetFromRange(range);
-    if (!target) return;
-    const element = getReaderElementForTarget(target);
-    if (!element) return;
-    const textNode = range.collapsed ? range.startContainer : getReaderTextNodeInRange(range, element);
-    const computedElement = getReaderComputedElement(textNode, element);
-    const computedStyle = window.getComputedStyle(computedElement);
-    const fontSize = Number.parseFloat(computedStyle.fontSize);
-    setReaderActiveTextTarget(target);
-    setReaderSelectedFontSize(Number.isFinite(fontSize) ? normalizeReaderFontSize(fontSize) : 18);
-    setReaderSelectedColor(cssColorToHex(computedStyle.color, readerRecord?.note.color || '#D2936D'));
-    setReaderSelectedUnderline(getReaderUnderlineFromElement(computedElement));
-  }, [getReaderElementForTarget, getReaderTargetFromRange, getReaderTextNodeInRange, readerRecord?.note.color]);
+  const getReaderElementForTarget = React.useCallback((target: ReaderTextTarget) => (
+    getReaderDomElementForTarget(target, readerTitleRef.current, readerContentRef.current)
+  ), []);
 
   const saveReaderSelection = React.useCallback(() => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    const target = getReaderTargetFromRange(range);
-    if (!target) return;
-    readerSavedRangeRef.current = range.cloneRange();
-    syncReaderToolbarFromRange(range);
-  }, [getReaderTargetFromRange, syncReaderToolbarFromRange]);
-
-  const restoreReaderRange = React.useCallback((element: HTMLElement, range: Range) => {
-    const selection = window.getSelection();
-    if (!selection || !readerRangeIsInsideElement(range, element)) return false;
-    element.focus();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    readerSavedRangeRef.current = range.cloneRange();
-    return true;
-  }, [readerRangeIsInsideElement]);
+    const toolbarState = saveReaderSelectionRange(
+      readerSavedRangeRef,
+      readerTitleRef.current,
+      readerContentRef.current,
+      readerRecord?.note.color || '#D2936D'
+    );
+    if (!toolbarState) return;
+    setReaderActiveTextTarget(toolbarState.target);
+    setReaderSelectedFontSize(toolbarState.fontSize);
+    setReaderSelectedColor(toolbarState.color);
+    setReaderSelectedUnderline(toolbarState.underline);
+  }, [readerRecord?.note.color]);
 
   const getReaderSelectionRange = React.useCallback((target = readerActiveTextTarget) => {
-    const element = getReaderElementForTarget(target);
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      if (readerRangeIsInsideElement(range, element)) return range.cloneRange();
-    }
-    const savedRange = readerSavedRangeRef.current;
-    if (savedRange && readerRangeIsInsideElement(savedRange, element)) return savedRange.cloneRange();
-    return null;
-  }, [getReaderElementForTarget, readerActiveTextTarget, readerRangeIsInsideElement]);
-
-  const splitReaderRangeTextBoundaries = (range: Range) => {
-    if (
-      range.startContainer === range.endContainer &&
-      range.startContainer.nodeType === Node.TEXT_NODE
-    ) {
-      const textNode = range.startContainer as Text;
-      const startOffset = range.startOffset;
-      const endOffset = range.endOffset;
-      textNode.splitText(endOffset);
-      const selectedText = textNode.splitText(startOffset);
-      range.setStart(selectedText, 0);
-      range.setEnd(selectedText, selectedText.length);
-      return;
-    }
-
-    if (
-      range.endContainer.nodeType === Node.TEXT_NODE &&
-      range.endOffset > 0 &&
-      range.endOffset < (range.endContainer.textContent?.length || 0)
-    ) {
-      (range.endContainer as Text).splitText(range.endOffset);
-    }
-
-    if (
-      range.startContainer.nodeType === Node.TEXT_NODE &&
-      range.startOffset > 0 &&
-      range.startOffset < (range.startContainer.textContent?.length || 0)
-    ) {
-      const selectedStart = (range.startContainer as Text).splitText(range.startOffset);
-      range.setStart(selectedStart, 0);
-    }
-  };
+    return getReaderDomSelectionRange(target, readerTitleRef.current, readerContentRef.current, readerSavedRangeRef);
+  }, [readerActiveTextTarget]);
 
   const applyReaderStyleToSelection = React.useCallback((styles: Record<string, string>) => {
-    const target = readerActiveTextTarget;
-    const element = getReaderElementForTarget(target);
-    const range = getReaderSelectionRange(target);
-    const selection = window.getSelection();
-    if (!element || !range || !selection || !readerRangeIsInsideElement(range, element)) return false;
-
-    if (range.collapsed) {
-      const pendingRef = target === 'title' ? readerPendingTitleStylesRef : readerPendingContentStylesRef;
-      pendingRef.current = { ...pendingRef.current, ...styles };
-      restoreReaderRange(element, range);
-      return true;
-    }
-
-    const workingRange = range.cloneRange();
-    splitReaderRangeTextBoundaries(workingRange);
-
-    const selectedTextNodes: Text[] = [];
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: node => {
-          if (!node.textContent) return NodeFilter.FILTER_REJECT;
-          const parentElement = node.parentElement;
-          if (parentElement?.closest('[contenteditable="false"], [data-note-image="true"], button')) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          return workingRange.intersectsNode(node)
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_REJECT;
-        },
-      }
-    );
-
-    while (walker.nextNode()) {
-      selectedTextNodes.push(walker.currentNode as Text);
-    }
-
-    if (selectedTextNodes.length === 0) return false;
-    const styledNodes = selectedTextNodes.map(textNode => {
-      const span = document.createElement('span');
-      Object.entries(styles).forEach(([property, value]) => {
-        span.style.setProperty(property, value);
-      });
-      textNode.replaceWith(span);
-      span.appendChild(textNode);
-      return span;
+    return applyReaderDomStyleToSelection({
+      target: readerActiveTextTarget,
+      titleEditor: readerTitleRef.current,
+      contentEditor: readerContentRef.current,
+      savedRangeRef: readerSavedRangeRef,
+      pendingTitleStylesRef: readerPendingTitleStylesRef,
+      pendingContentStylesRef: readerPendingContentStylesRef,
+      styles,
     });
-
-    element.focus();
-    selection.removeAllRanges();
-    const newRange = document.createRange();
-    newRange.setStartBefore(styledNodes[0]);
-    newRange.setEndAfter(styledNodes[styledNodes.length - 1]);
-    selection.addRange(newRange);
-    readerSavedRangeRef.current = newRange.cloneRange();
-    return true;
-  }, [getReaderElementForTarget, getReaderSelectionRange, readerActiveTextTarget, readerRangeIsInsideElement, restoreReaderRange]);
+  }, [readerActiveTextTarget]);
 
   const openReaderFromRecord = React.useCallback((starId: string, noteId: string) => {
     setReadingNoteTarget({ starId, noteId });
@@ -2683,32 +2407,15 @@ export default function App() {
   }, [applyReaderStyleToSelection, readerSelectedUnderline]);
 
   const insertStyledReaderText = React.useCallback((
-    element: HTMLElement,
+    element: HTMLElement | null,
     range: Range | null,
     text: string,
     styles: Record<string, string>
   ) => {
-    if (!range || !range.collapsed || !readerRangeIsInsideElement(range, element)) return false;
-    const span = document.createElement('span');
-    Object.entries(styles).forEach(([property, value]) => {
-      span.style.setProperty(property, value);
-    });
-    span.textContent = text;
-    range.deleteContents();
-    range.insertNode(span);
-    const selection = window.getSelection();
-    if (selection) {
-      const nextRange = document.createRange();
-      nextRange.setStartAfter(span);
-      nextRange.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(nextRange);
-      readerSavedRangeRef.current = nextRange.cloneRange();
-    }
-    return true;
-  }, [readerRangeIsInsideElement]);
+    return insertStyledReaderDomText(element, range, text, styles, readerSavedRangeRef);
+  }, []);
 
-  const handleReaderBeforeInput = React.useCallback((target: 'title' | 'content', event: React.FormEvent<HTMLElement>) => {
+  const handleReaderBeforeInput = React.useCallback((target: ReaderTextTarget, event: React.FormEvent<HTMLElement>) => {
     const inputEvent = event.nativeEvent as InputEvent;
     if (inputEvent.inputType !== 'insertText' || !inputEvent.data) return;
     const pendingRef = target === 'title' ? readerPendingTitleStylesRef : readerPendingContentStylesRef;
