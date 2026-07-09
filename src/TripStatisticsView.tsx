@@ -636,7 +636,6 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
   const [rankingScrollState, setRankingScrollState] = React.useState({ canLeft: false, canRight: false, hasOverflow: false });
   const [expandedMapKey, setExpandedMapKey] = React.useState(0);
   const [isExpandedMapOpen, setIsExpandedMapOpen] = React.useState(false);
-  const scrollRootRef = React.useRef<HTMLDivElement | null>(null);
   const rankingScrollRef = React.useRef<HTMLDivElement>(null);
   const rankingHoldRef = React.useRef<{ delayId: number | null; intervalId: number | null; didRepeat: boolean }>({
     delayId: null,
@@ -750,9 +749,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
 
   return (
     <div
-      ref={scrollRootRef}
-      className="relative z-[900] flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain bg-[var(--app-page)] pb-32 font-sans pointer-events-auto [touch-action:pan-y]"
-      style={{ WebkitOverflowScrolling: 'touch' }}
+      className="relative z-[900] flex min-h-[100svh] w-full flex-col overflow-visible bg-[var(--app-page)] pb-32 font-sans pointer-events-auto"
     >
       <div className="flex flex-col items-center pb-6 pt-14">
         <div className="mb-6 w-[320px]">
