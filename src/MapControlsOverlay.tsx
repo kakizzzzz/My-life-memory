@@ -1,4 +1,4 @@
-import type React from 'react';
+import React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, ChevronRight, MapPin, Menu, Minus, Pause, Play, Plus, Route, Save, Search, Star, Tag, X } from 'lucide-react';
 import { MapStyleThumbnail } from './MapStyleThumbnail';
@@ -270,6 +270,35 @@ export function TrackingControlsOverlay({
   onSave,
   formatTime,
 }: TrackingControlsOverlayProps) {
+  const [isGpsToastVisible, setIsGpsToastVisible] = React.useState(false);
+  const gpsToastTimerRef = React.useRef<number | null>(null);
+
+  React.useEffect(() => () => {
+    if (gpsToastTimerRef.current !== null) {
+      window.clearTimeout(gpsToastTimerRef.current);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!gpsStatusText) {
+      setIsGpsToastVisible(false);
+      if (gpsToastTimerRef.current !== null) {
+        window.clearTimeout(gpsToastTimerRef.current);
+        gpsToastTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (gpsToastTimerRef.current !== null) {
+      window.clearTimeout(gpsToastTimerRef.current);
+    }
+    setIsGpsToastVisible(true);
+    gpsToastTimerRef.current = window.setTimeout(() => {
+      setIsGpsToastVisible(false);
+      gpsToastTimerRef.current = null;
+    }, 500);
+  }, [gpsStatusText]);
+
   return (
     <>
       <div className="absolute top-[var(--app-chrome-top)] left-4 z-[1000] bg-[var(--app-active-surface)] rounded-[24px] shadow-md px-6 py-4 border border-[var(--app-card)] min-w-[160px]">
@@ -286,13 +315,22 @@ export function TrackingControlsOverlay({
         <div className="text-[24px] leading-none font-semibold text-black text-left mb-1">
           {formatTime(trackTime)}
         </div>
-        {gpsStatusText && (
-          <div className="mt-2 max-w-[160px] text-left text-[12px] leading-tight font-semibold text-black/55">
-            {gpsStatusText}
-          </div>
-        )}
         <div className="w-full h-[3px] bg-gray-200 mt-3 mb-2 rounded-full"></div>
       </div>
+
+      <AnimatePresence>
+        {gpsStatusText && isGpsToastVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.12 }}
+            className="pointer-events-none fixed left-1/2 bottom-[calc(env(safe-area-inset-bottom)+7.5rem)] z-[2500] max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full bg-black/75 px-4 py-2 text-center text-[13px] font-medium text-white shadow-lg"
+          >
+            {gpsStatusText}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="absolute top-[var(--app-chrome-top)] right-4 z-[1000]">
         <button
