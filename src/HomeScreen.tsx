@@ -54,6 +54,7 @@ type HomeScreenProps = {
   onAvatarInput: (event: React.ChangeEvent<HTMLInputElement>) => void;
   authMode: CloudAuthAction;
   isAuthBusy: boolean;
+  cloudAuthHydrating: boolean;
   cloudConfigError: string;
   loginAccount: string;
   loginPassword: string;
@@ -116,6 +117,7 @@ export function HomeScreen({
   onAvatarInput,
   authMode,
   isAuthBusy,
+  cloudAuthHydrating,
   cloudConfigError,
   loginAccount,
   loginPassword,
@@ -258,6 +260,20 @@ export function HomeScreen({
                     </button>
                   ))}
                 </div>
+                {cloudAuthHydrating ? (
+                  <div className="relative z-10 flex min-h-full flex-col items-center justify-center">
+                    <div className="relative flex w-full flex-col items-center">
+                      <div className="relative z-10 mb-8 w-full text-center">
+                        <h1 className="app-display-title text-[36px] font-bold leading-none text-black">
+                          My life memory
+                        </h1>
+                      </div>
+                      <div className="relative z-10 w-full rounded-[18px] bg-[var(--app-card)] p-4 text-center text-[15px] font-medium text-black/55">
+                        {homeCopy.restoringSession}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
                 <form
                   onSubmit={authMode === 'register' ? onRegisterSubmit : onLoginSubmit}
                   className="relative z-10 flex min-h-full flex-col items-center justify-center"
@@ -366,6 +382,7 @@ export function HomeScreen({
                     </div>
                   </div>
                 </form>
+                )}
               </>
             ) : !activeHomePanel && (
               <>

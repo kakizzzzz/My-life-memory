@@ -343,6 +343,7 @@ export default function App() {
     loginError,
     setLoginError,
     isAuthBusy,
+    cloudAuthHydrating,
     handleLogin,
     handleRegister,
     handleSignOut,
@@ -842,6 +843,7 @@ export default function App() {
         onAvatarInput={handleAvatarInput}
         authMode={authMode}
         isAuthBusy={isAuthBusy}
+        cloudAuthHydrating={cloudAuthHydrating}
         cloudConfigError={cloudConfigError}
         loginAccount={loginAccount}
         loginPassword={loginPassword}

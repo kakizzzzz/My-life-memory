@@ -99,9 +99,13 @@ export const useCloudAuthSync = ({
   const [isPasswordRevealed, setIsPasswordRevealed] = React.useState(false);
   const [loginError, setLoginError] = React.useState('');
   const [isAuthBusy, setIsAuthBusy] = React.useState(false);
+  const [cloudAuthHydrating, setCloudAuthHydrating] = React.useState(() => isCloudBackendEnabled);
   const isApplyingCloudStateRef = React.useRef(false);
   const cloudReadyToSaveRef = React.useRef(!isCloudBackendEnabled);
   const cloudRegistrationInProgressRef = React.useRef(false);
+  const cloudInteractiveAuthInProgressRef = React.useRef(false);
+  const hydratingCloudSessionRef = React.useRef<{ userId: string; accessToken: string } | null>(null);
+  const hydratedCloudUserIdRef = React.useRef<string | null>(null);
   const cloudSaveTimerRef = React.useRef<number | null>(null);
 
   const createAppStateSnapshot = React.useCallback((profileOverride?: Partial<UserProfile>): PersistedAppState => {
@@ -222,24 +226,54 @@ export const useCloudAuthSync = ({
   const hydrateCloudSession = React.useCallback(async (session: Awaited<ReturnType<typeof getCloudSession>>) => {
     if (!isCloudBackendEnabled) return;
     if (cloudRegistrationInProgressRef.current) return;
+    if (cloudInteractiveAuthInProgressRef.current) return;
 
     if (!session?.user) {
+      hydratingCloudSessionRef.current = null;
+      hydratedCloudUserIdRef.current = null;
       cloudReadyToSaveRef.current = false;
+      setCloudAuthHydrating(false);
       setIsSignedIn(false);
       setActiveHomePanel(null);
       return;
     }
 
+    const userId = session.user.id;
+    const accessToken = session.access_token || '';
+    const hydratingSession = hydratingCloudSessionRef.current;
+
+    if (
+      hydratingSession &&
+      (hydratingSession.userId === userId || Boolean(accessToken && hydratingSession.accessToken === accessToken))
+    ) {
+      return;
+    }
+
+    if (hydratedCloudUserIdRef.current === userId) {
+      setCloudAuthHydrating(false);
+      return;
+    }
+
+    hydratingCloudSessionRef.current = { userId, accessToken };
+    setCloudAuthHydrating(true);
+
     try {
       const { profile: cloudProfile, state } = await loadCloudAccountData(session.user);
       applyCloudSnapshot(cloudProfile, state);
+      hydratedCloudUserIdRef.current = userId;
     } catch (error) {
       console.error('Could not load cloud account data:', error);
       setLoginError(getCloudAuthErrorMessage(error, 'login'));
+      hydratedCloudUserIdRef.current = null;
       cloudReadyToSaveRef.current = false;
       setIsSignedIn(false);
       setActiveHomePanel(null);
       void signOutCloudAccount();
+    } finally {
+      if (hydratingCloudSessionRef.current?.userId === userId) {
+        hydratingCloudSessionRef.current = null;
+      }
+      setCloudAuthHydrating(false);
     }
   }, [applyCloudSnapshot, getCloudAuthErrorMessage, setActiveHomePanel, setIsSignedIn]);
   const hydrateCloudSessionRef = React.useRef(hydrateCloudSession);
@@ -289,6 +323,7 @@ export const useCloudAuthSync = ({
     if (isCloudBackendEnabled) {
       setIsAuthBusy(true);
       setLoginError('');
+      cloudInteractiveAuthInProgressRef.current = true;
 
       try {
         const {
@@ -310,6 +345,7 @@ export const useCloudAuthSync = ({
         void signOutCloudAccount();
         setLoginError(getCloudAuthErrorMessage(error, 'login'));
       } finally {
+        cloudInteractiveAuthInProgressRef.current = false;
         setIsAuthBusy(false);
       }
 
@@ -439,6 +475,9 @@ export const useCloudAuthSync = ({
   const handleSignOut = React.useCallback(() => {
     if (isCloudBackendEnabled) {
       cloudReadyToSaveRef.current = false;
+      hydratingCloudSessionRef.current = null;
+      hydratedCloudUserIdRef.current = null;
+      setCloudAuthHydrating(false);
       void signOutCloudAccount();
     }
     setActiveHomePanel(null);
@@ -453,9 +492,13 @@ export const useCloudAuthSync = ({
     if (!isCloudBackendEnabled) return;
 
     let isMounted = true;
+    setCloudAuthHydrating(true);
     void getCloudSession().then(session => {
       if (!isMounted) return;
       void hydrateCloudSessionRef.current(session);
+    }).catch(error => {
+      console.error('Could not restore cloud session:', error);
+      if (isMounted) setCloudAuthHydrating(false);
     });
 
     const unsubscribe = onCloudAuthStateChange(session => {
@@ -513,6 +556,7 @@ export const useCloudAuthSync = ({
     loginError,
     setLoginError,
     isAuthBusy,
+    cloudAuthHydrating,
     handleLogin,
     handleRegister,
     handleSignOut,
