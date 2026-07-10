@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_MAP_STYLE, MAP_TILES } from '../src/constants/mapTiles';
 
-test('login map default is satellite', () => {
-  assert.equal(DEFAULT_MAP_STYLE, 'aerial');
+test('login map default is the gray vector style', () => {
+  assert.equal(DEFAULT_MAP_STYLE, 'light');
 });
 
 test('street styles use the open OpenFreeMap vector service', () => {

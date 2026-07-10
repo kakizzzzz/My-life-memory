@@ -14,7 +14,7 @@ export type MapTileDefinition = MapTileDefinitionBase & {
 
 export type MapTileConfig = Record<MapStyle, MapTileDefinition>;
 
-export const DEFAULT_MAP_STYLE: MapStyle = 'aerial';
+export const DEFAULT_MAP_STYLE: MapStyle = 'light';
 
 const OSM_ATTRIBUTION_LINK = (
   '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
