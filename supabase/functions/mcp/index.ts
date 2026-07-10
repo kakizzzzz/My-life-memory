@@ -236,11 +236,21 @@ const authenticateMcpRequest = async (
     });
   }
 
-  await admin
-    .from('mcp_tokens')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('id', data.id)
-    .catch(() => {});
+  try {
+    const { error: usageUpdateError } = await admin
+      .from('mcp_tokens')
+      .update({ last_used_at: new Date().toISOString() })
+      .eq('id', data.id);
+    if (usageUpdateError) {
+      console.warn('MCP token usage timestamp was not updated', {
+        message: usageUpdateError.message,
+      });
+    }
+  } catch (error) {
+    console.warn('MCP token usage timestamp was not updated', {
+      message: error instanceof Error ? error.message : 'Unknown update error',
+    });
+  }
 
   return {
     userId: data.user_id,
@@ -365,7 +375,10 @@ serve(async request => {
     auth = await authenticateMcpRequest(request, config, localCorsHeaders);
   } catch (error) {
     if (error instanceof Response) return error;
-    return json(rpcError(null, -32001, 'Unauthorized'), 401);
+    console.error('MCP authentication failed unexpectedly', {
+      message: error instanceof Error ? error.message : 'Unknown authentication error',
+    });
+    return json(rpcError(null, -32000, 'MCP authentication failed unexpectedly.'), 500);
   }
 
   if (request.method === 'GET') {

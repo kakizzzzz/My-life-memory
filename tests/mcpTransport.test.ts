@@ -17,3 +17,9 @@ test('cloud MCP exposes JSON Streamable HTTP instead of a broken legacy SSE endp
   assert.match(source, /405/);
   assert.match(source, /Allow: 'POST, OPTIONS'/);
 });
+
+test('cloud MCP does not call catch on the Supabase query builder', () => {
+  assert.doesNotMatch(source, /\.eq\('id', data\.id\)\s*\.catch\(/);
+  assert.match(source, /error: usageUpdateError/);
+  assert.match(source, /MCP authentication failed unexpectedly/);
+});
