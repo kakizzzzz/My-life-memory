@@ -82,7 +82,7 @@ export function MapCanvas({
   onSelectStar,
   onMoveStar,
 }: MapCanvasProps) {
-  const mapAttribution = mapTiles[mapStyle].attribution;
+  const tileConfig = mapTiles[mapStyle];
 
   return (
     <div className={`absolute inset-0 z-0 bg-[#e5e5e5] ${mapStyle === 'dark' ? 'theme-dark' : ''} ${mapStyle === 'light' ? 'theme-light' : ''}`}>
@@ -95,7 +95,9 @@ export function MapCanvas({
         attributionControl={false}
       >
         <TileLayer
-          url={mapTiles[mapStyle].url}
+          url={tileConfig.url}
+          maxNativeZoom={tileConfig.maxNativeZoom}
+          maxZoom={tileConfig.maxZoom}
         />
         <Marker
           position={userLocation}
@@ -144,7 +146,7 @@ export function MapCanvas({
       </MapContainer>
 
       <div
-        className="pointer-events-auto absolute bottom-0 right-0 z-[850]"
+        className="map-attribution pointer-events-auto absolute bottom-0 right-0 z-[850]"
         style={{
           backgroundColor: 'rgba(255, 255, 255, 0.08)',
           color: 'rgba(75, 85, 99, 0.58)',
@@ -155,8 +157,8 @@ export function MapCanvas({
           transform: 'scale(0.86)',
           transformOrigin: 'bottom right',
         }}
-        aria-label="Map attribution"
-        dangerouslySetInnerHTML={{ __html: mapAttribution }}
+        aria-label="Map attribution and licence information"
+        dangerouslySetInnerHTML={{ __html: tileConfig.attribution }}
       />
     </div>
   );
