@@ -52,7 +52,7 @@ export function CloudSyncToast() {
 
   return (
     <div
-      className="pointer-events-none fixed left-1/2 z-[3200] max-w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full bg-black/75 px-4 py-2 text-center text-[13px] font-medium leading-snug text-white shadow-lg backdrop-blur-sm"
+      className="app-feedback-toast pointer-events-none fixed left-1/2 z-[3200] max-w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full px-4 py-2 text-center text-[13px] font-medium leading-snug"
       style={{ bottom: 'calc(env(safe-area-inset-bottom) + 7.5rem)' }}
       role="status"
       aria-live="polite"

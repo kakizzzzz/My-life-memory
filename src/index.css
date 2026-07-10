@@ -96,6 +96,14 @@ select {
   outline-offset: 1px;
 }
 
+.app-feedback-toast {
+  background-color: rgba(111, 112, 108, 0.9);
+  color: #fff;
+  box-shadow: 0 5px 18px rgba(30, 30, 28, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 /* Keep the vector basemap restrained so it stays behind the memory markers. */
 .theme-dark .app-vector-map {
   filter: saturate(72%) brightness(82%) contrast(108%);

@@ -84,6 +84,23 @@ export function MapCanvas({
   onMoveStar,
 }: MapCanvasProps) {
   const tileConfig = mapTiles[mapStyle];
+  const attributionAppearance = mapStyle === 'dark'
+    ? {
+        backgroundColor: 'rgba(12, 18, 24, 0.32)',
+        color: 'rgba(255, 255, 255, 0.68)',
+        opacity: 0.82,
+      }
+    : mapStyle === 'aerial'
+      ? {
+          backgroundColor: 'rgba(255, 255, 255, 0.34)',
+          color: 'rgba(17, 17, 17, 0.72)',
+          opacity: 0.86,
+        }
+      : {
+          backgroundColor: 'rgba(255, 255, 255, 0.12)',
+          color: 'rgba(55, 65, 81, 0.72)',
+          opacity: 0.55,
+        };
 
   return (
     <div className={`absolute inset-0 z-0 bg-[#e5e5e5] ${mapStyle === 'dark' ? 'theme-dark' : ''} ${mapStyle === 'light' ? 'theme-light' : ''}`}>
@@ -95,7 +112,10 @@ export function MapCanvas({
         zoomControl={false}
         attributionControl={false}
       >
-        <VectorMapLayer styleUrl={tileConfig.styleUrl} />
+        <VectorMapLayer
+          styleUrl={tileConfig.styleUrl}
+          showBuildingOutlines={mapStyle === 'aerial'}
+        />
         <Marker
           position={userLocation}
           icon={locationIcon}
@@ -145,11 +165,9 @@ export function MapCanvas({
       <div
         className="map-attribution pointer-events-auto absolute bottom-0 right-0 z-[850]"
         style={{
-          backgroundColor: 'rgba(255, 255, 255, 0.08)',
-          color: 'rgba(75, 85, 99, 0.58)',
+          ...attributionAppearance,
           fontSize: '8px',
           lineHeight: 1.1,
-          opacity: 0.26,
           padding: '0 3px',
           transform: 'scale(0.86)',
           transformOrigin: 'bottom right',

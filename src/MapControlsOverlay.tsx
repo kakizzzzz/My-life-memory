@@ -80,7 +80,7 @@ export function PhotoLocationToast({ status }: PhotoLocationToastProps) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 8, scale: 0.98 }}
         transition={{ duration: 0.12 }}
-        className="pointer-events-none fixed left-1/2 top-[calc(env(safe-area-inset-top)+5rem)] z-[2500] max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full bg-black/75 px-4 py-2 text-center text-[13px] font-medium text-white shadow-lg"
+        className="app-feedback-toast pointer-events-none fixed left-1/2 top-[calc(env(safe-area-inset-top)+5rem)] z-[2500] max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full px-4 py-2 text-center text-[13px] font-medium"
       >
         {status}
       </motion.div>
@@ -325,7 +325,7 @@ export function TrackingControlsOverlay({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.12 }}
-            className="pointer-events-none fixed left-1/2 bottom-[calc(env(safe-area-inset-bottom)+7.5rem)] z-[2500] max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full bg-black/75 px-4 py-2 text-center text-[13px] font-medium text-white shadow-lg"
+            className="app-feedback-toast pointer-events-none fixed left-1/2 bottom-[calc(env(safe-area-inset-bottom)+7.5rem)] z-[2500] max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full px-4 py-2 text-center text-[13px] font-medium"
           >
             {gpsStatusText}
           </motion.div>
