@@ -81,12 +81,23 @@ select {
 }
 .leaflet-bottom.leaflet-right .leaflet-control-attribution a,
 .leaflet-container .leaflet-control-attribution a {
-  color: rgba(75, 85, 99, 0.58) !important; /* Tailwind gray-600 */
+  color: rgba(75, 85, 99, 0.58) !important;
 }
 
-/* Custom night map filter to turn black/gray map into readable dark blue/gray map */
+.map-attribution a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.map-attribution a:focus-visible {
+  border-radius: 2px;
+  outline: 1px solid currentColor;
+  outline-offset: 1px;
+}
+
+/* Convert the open light terrain tiles into the existing dark blue/gray mood. */
 .theme-dark .leaflet-tile-pane {
-  filter: sepia(80%) hue-rotate(185deg) saturate(150%) brightness(190%) contrast(90%) !important;
+  filter: grayscale(100%) invert(92%) hue-rotate(175deg) brightness(68%) contrast(115%) saturate(65%) !important;
 }
 
 /* Custom light map filter to make it purely grayscale like the reference */
