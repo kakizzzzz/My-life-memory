@@ -7,6 +7,7 @@ import {
   forbiddenOriginResponse,
   hitRateLimit,
   isOriginAllowed,
+  parseMcpAccessToken,
   rateLimitResponse,
   tokenPrefix,
 } from '../_shared/security.ts';
@@ -153,11 +154,6 @@ const sha256Hex = async (value: string) => {
   return bytesToHex(new Uint8Array(hash));
 };
 
-const getBearerToken = (request: Request) => {
-  const authorization = request.headers.get('authorization') || '';
-  return authorization.match(/^Bearer\s+(.+)$/i)?.[1] || '';
-};
-
 const readJsonResponse = async (response: Response) => {
   const text = await response.text();
   if (!text) return null;
@@ -191,7 +187,7 @@ const authenticateMcpRequest = async (
   config: ReturnType<typeof getConfig>,
   corsHeaders: Record<string, string>,
 ) => {
-  const token = getBearerToken(request);
+  const token = parseMcpAccessToken(request.headers.get('authorization') || '');
   if (!token) {
     const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
     if (limit.limited) throw rateLimitResponse(corsHeaders, limit.retryAfterSeconds);

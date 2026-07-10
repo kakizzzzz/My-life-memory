@@ -80,6 +80,17 @@ export const tokenPrefix = (value: string) => (
   value ? value.slice(0, 12) : 'none'
 );
 
+const MCP_ACCESS_TOKEN_PATTERN = /^mlm_[0-9a-f]{64}$/;
+
+export const parseMcpAccessToken = (authorization: string) => {
+  const value = authorization.trim();
+  const bearerValue = value.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || '';
+
+  if (MCP_ACCESS_TOKEN_PATTERN.test(bearerValue)) return bearerValue;
+  if (MCP_ACCESS_TOKEN_PATTERN.test(value)) return value;
+  return '';
+};
+
 export const hitRateLimit = (key: string, limit: number, windowMs: number) => {
   const now = Date.now();
   const existing = rateBuckets.get(key);
