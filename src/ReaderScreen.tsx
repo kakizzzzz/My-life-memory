@@ -100,7 +100,7 @@ export function ReaderScreen({
   const readerUiCopy = React.useMemo(() => {
     if (homeCopy.backToRecords === '返回记录') {
       return {
-        saved: '已保存',
+        saved: '正在保存…',
         exitTitle: '不保存并退出？',
         exitBody: '当前修改不会保存，你可以继续回来修改。',
         keepEditing: '继续修改',
@@ -109,7 +109,7 @@ export function ReaderScreen({
     }
     if (homeCopy.backToRecords === '기록으로 돌아가기') {
       return {
-        saved: '저장됨',
+        saved: '저장 중…',
         exitTitle: '저장하지 않고 나갈까요?',
         exitBody: '현재 수정 내용은 저장되지 않습니다. 계속 편집할 수 있습니다.',
         keepEditing: '계속 수정',
@@ -117,7 +117,7 @@ export function ReaderScreen({
       };
     }
     return {
-      saved: 'Saved',
+      saved: 'Saving…',
       exitTitle: 'Leave without saving?',
       exitBody: 'Your current edits will not be saved. You can keep editing instead.',
       keepEditing: 'Keep editing',
