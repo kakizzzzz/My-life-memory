@@ -84,7 +84,7 @@ import {
 import {
   DEFAULT_SYSTEM_THEME,
 } from './constants/theme';
-import { MAP_TILES } from './constants/mapTiles';
+import { DEFAULT_MAP_STYLE, MAP_TILES } from './constants/mapTiles';
 import {
   MAP_TOOL_ICON_STROKE,
   UI_ICON_STROKE,
@@ -111,7 +111,7 @@ export default function App() {
   );
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyle>(() => (
-    isMapStyle(persistedAppState?.mapStyle) ? persistedAppState.mapStyle : 'light'
+    isMapStyle(persistedPrivateState?.mapStyle) ? persistedPrivateState.mapStyle : DEFAULT_MAP_STYLE
   ));
   const [isMapStyleMenuOpen, setIsMapStyleMenuOpen] = useState(false);
   const [activeView, setActiveView] = useState<AppView>(() => initialSignedIn ? 'map' : 'home');

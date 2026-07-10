@@ -29,7 +29,6 @@ import { normalizeAccountId } from '../lib/accountUtils';
 import {
   getPersistableAvatarUrl,
   getPublicProfileSnapshot,
-  isMapStyle,
 } from '../lib/localPersistence';
 import { storagePlaceholderSrc } from '../lib/mediaStorage';
 import {
@@ -41,6 +40,7 @@ import {
   DEFAULT_PROFILE,
 } from '../constants/appDefaults';
 import { DEFAULT_SYSTEM_THEME } from '../constants/theme';
+import { DEFAULT_MAP_STYLE } from '../constants/mapTiles';
 import type {
   AppView,
   HomePanel,
@@ -152,7 +152,7 @@ export const useCloudAuthSync = ({
   }, [isSignedIn, language, mapStyle, profile, savedTracks, stars, systemTheme]);
 
   const createCleanCloudInitialState = React.useCallback((account: string): PersistedAppState => ({
-    mapStyle: 'light',
+    mapStyle: DEFAULT_MAP_STYLE,
     systemTheme: DEFAULT_SYSTEM_THEME,
     profile: {
       account,
@@ -174,7 +174,7 @@ export const useCloudAuthSync = ({
     isApplyingCloudStateRef.current = true;
     cloudReadyToSaveRef.current = false;
 
-    if (isMapStyle(remoteState.mapStyle)) setMapStyle(remoteState.mapStyle);
+    setMapStyle(DEFAULT_MAP_STYLE);
     setSystemTheme({
       ...DEFAULT_SYSTEM_THEME,
       ...(remoteState.systemTheme || {}),
