@@ -187,8 +187,14 @@ const authenticateMcpRequest = async (
   config: ReturnType<typeof getConfig>,
   corsHeaders: Record<string, string>,
 ) => {
-  const token = parseMcpAccessToken(request.headers.get('authorization') || '');
+  const authorization = request.headers.get('authorization') || '';
+  const token = parseMcpAccessToken(authorization);
   if (!token) {
+    console.warn('MCP authentication rejected', {
+      reason: 'invalid_format',
+      authorizationLength: authorization.trim().length,
+      hasBearerScheme: /^Bearer\s+/i.test(authorization.trim()),
+    });
     const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
     if (limit.limited) throw rateLimitResponse(corsHeaders, limit.retryAfterSeconds);
     throw new Response(JSON.stringify(rpcError(null, -32001, 'Unauthorized')), {
@@ -219,6 +225,11 @@ const authenticateMcpRequest = async (
   }
 
   if (!data?.user_id) {
+    console.warn('MCP authentication rejected', {
+      reason: 'hash_miss',
+      tokenLength: token.length,
+      tokenHashPrefix: tokenHash.slice(0, 12),
+    });
     const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:${tokenPrefix(token)}`, 10, 10 * 60_000);
     if (limit.limited) throw rateLimitResponse(corsHeaders, limit.retryAfterSeconds);
     throw new Response(JSON.stringify(rpcError(null, -32001, 'Unauthorized')), {
