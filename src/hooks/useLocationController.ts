@@ -32,6 +32,12 @@ type TrackingState = {
   isPaused: boolean;
 };
 
+const PASSIVE_GEOLOCATION_OPTIONS: PositionOptions = {
+  enableHighAccuracy: false,
+  maximumAge: 30_000,
+  timeout: 10_000,
+};
+
 export const useLocationController = ({
   initialStars,
   isSignedIn,
@@ -45,6 +51,9 @@ export const useLocationController = ({
   const [flyTarget, setFlyTarget] = React.useState<[number, number] | null>(null);
   const [deviceHeading, setDeviceHeading] = React.useState(0);
   const [isWatchingUserLocation, setIsWatchingUserLocation] = React.useState(false);
+  const [isDocumentVisible, setIsDocumentVisible] = React.useState(() => (
+    typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  ));
   const [stars, setStars] = React.useState<StarData[]>(() => (
     normalizeInitialStars(initialStars) || [createDefaultRecordStar()]
   ));
@@ -128,7 +137,7 @@ export const useLocationController = ({
         speed: position.coords.speed,
       });
     }
-  }, [applyLocationPoint, syncDefaultStarNearUser, trackingStateRef]);
+  }, [applyLocationPoint, syncDefaultStarNearUser]);
 
   const stopGpsWatch = React.useCallback(() => {
     if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
@@ -185,6 +194,9 @@ export const useLocationController = ({
     }
 
     setIsWatchingUserLocation(true);
+    const options = trackingStateRef.current.isTracking
+      ? GEOLOCATION_OPTIONS
+      : PASSIVE_GEOLOCATION_OPTIONS;
     navigator.geolocation.getCurrentPosition(
       position => {
         applyGpsPosition(position, shouldFly);
@@ -197,10 +209,10 @@ export const useLocationController = ({
         }
         isLocating.current = false;
       },
-      GEOLOCATION_OPTIONS
+      options
     );
     return true;
-  }, [applyGpsPosition, trackingStateRef, userLocation]);
+  }, [applyGpsPosition, userLocation]);
 
   const requestLocationPermissionOnce = React.useCallback(() => new Promise<boolean>(resolve => {
     if (!canUseBrowserGeolocation()) {
@@ -220,9 +232,9 @@ export const useLocationController = ({
         }
         resolve(false);
       },
-      GEOLOCATION_OPTIONS
+      PASSIVE_GEOLOCATION_OPTIONS
     );
-  }), [applyGpsPosition, trackingStateRef]);
+  }), [applyGpsPosition]);
 
   const handleOpenPermissions = React.useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -293,10 +305,21 @@ export const useLocationController = ({
   }, [activeView, hasSeenInitialPermissionPrompt, isSignedIn, permissionRequestState, requestLocationPermissionOnce]);
 
   React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    (window as typeof window & {
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = () => {
+      setIsDocumentVisible(document.visibilityState !== 'hidden');
+    };
+    handleVisibilityChange();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  React.useEffect(() => {
+    if (!import.meta.env.DEV || typeof window === 'undefined') return;
+    const debugWindow = window as typeof window & {
       __MAP_APP_SENSOR_DEBUG__?: Record<string, unknown>;
-    }).__MAP_APP_SENSOR_DEBUG__ = {
+    };
+    debugWindow.__MAP_APP_SENSOR_DEBUG__ = {
       userLocation,
       deviceHeading,
       isWatchingUserLocation,
@@ -312,16 +335,24 @@ export const useLocationController = ({
         ? Date.now() - lastCompassHeadingAtRef.current
         : null,
     };
+    return () => {
+      delete debugWindow.__MAP_APP_SENSOR_DEBUG__;
+    };
   }, [deviceHeading, isWatchingUserLocation, trackingActive, userLocation]);
 
   React.useEffect(() => {
-    const shouldWatchLocation = isWatchingUserLocation || trackingActive;
+    const shouldWatchLocation = trackingActive || (
+      isWatchingUserLocation &&
+      activeView === 'map' &&
+      isDocumentVisible
+    );
 
     if (!shouldWatchLocation || !canUseBrowserGeolocation()) {
       stopGpsWatch();
       return;
     }
 
+    const options = trackingActive ? GEOLOCATION_OPTIONS : PASSIVE_GEOLOCATION_OPTIONS;
     gpsWatchIdRef.current = navigator.geolocation.watchPosition(
       position => applyGpsPosition(position),
       error => {
@@ -331,11 +362,16 @@ export const useLocationController = ({
           setIsWatchingUserLocation(false);
         }
       },
-      GEOLOCATION_OPTIONS
+      options
     );
 
     return stopGpsWatch;
-  }, [applyGpsPosition, isWatchingUserLocation, stopGpsWatch, trackingActive, trackingStateRef]);
+  }, [activeView, applyGpsPosition, isDocumentVisible, isWatchingUserLocation, stopGpsWatch, trackingActive]);
+
+  React.useEffect(() => {
+    if (trackingActive) return;
+    if (activeView !== 'map' || !isDocumentVisible) stopHeadingWatch();
+  }, [activeView, isDocumentVisible, stopHeadingWatch, trackingActive]);
 
   React.useEffect(() => () => {
     stopGpsWatch();
@@ -349,12 +385,15 @@ export const useLocationController = ({
     hasSyncedDefaultStarToGpsRef.current = false;
     setHasSeenInitialPermissionPrompt(false);
     setIsInitialPermissionPromptOpen(false);
-  }, []);
+    setIsWatchingUserLocation(false);
+    stopGpsWatch();
+    if (!trackingStateRef.current.isTracking) stopHeadingWatch();
+  }, [stopGpsWatch, stopHeadingWatch]);
 
   const setTrackingState = React.useCallback((state: TrackingState) => {
     trackingStateRef.current = state;
     setTrackingActive(state.isTracking);
-  }, [trackingStateRef]);
+  }, []);
 
   return {
     userLocation,
