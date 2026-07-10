@@ -18,7 +18,9 @@ export const getCloudSyncStatus = () => currentStatus;
 
 export const subscribeCloudSyncStatus = (listener: () => void) => {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 };
 
 export const setCloudSyncStatus = (phase: CloudSyncPhase, language = currentStatus.language) => {
