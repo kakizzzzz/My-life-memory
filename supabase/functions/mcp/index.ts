@@ -225,6 +225,7 @@ const authenticateMcpRequest = async (
     console.warn('MCP authentication rejected', {
       reason: 'hash_miss',
       tokenLength: token.length,
+      tokenPrefix: tokenPrefix(token),
       tokenHashPrefix: tokenHash.slice(0, 12),
     });
     const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:${tokenPrefix(token)}`, 10, 10 * 60_000);

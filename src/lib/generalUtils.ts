@@ -16,7 +16,7 @@ export const createClientId = () => (
 );
 
 export const copyToClipboard = async (text: string) => {
-  if (!text) return;
+  if (!text) throw new Error('Nothing to copy.');
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
     return;
@@ -28,6 +28,10 @@ export const copyToClipboard = async (text: string) => {
   textarea.style.left = '-9999px';
   document.body.appendChild(textarea);
   textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
+  try {
+    const copied = document.execCommand('copy');
+    if (!copied) throw new Error('Clipboard copy was rejected.');
+  } finally {
+    textarea.remove();
+  }
 };
