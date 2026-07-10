@@ -18,7 +18,8 @@ The built-in map styles request remote tiles from EOX::Maps.
 - Service information and permitted application use: https://maps.eox.at/
 - Light and dark styles use the EOX Terrain Light layer.
 - Rendering attribution: © EOX
-- EOX provides its public demo service as-is and may rate-limit requests. The application does not bundle or redistribute EOX tile files.
+- EOX requests a link back to EOX::Maps and the relevant data/rendering attribution. Those links remain visible in the map corner.
+- EOX provides its public demo service as-is and may rate-limit requests. The application does not bundle, mirror, bulk-download, or redistribute EOX tile files.
 - Deployments expecting substantial traffic should arrange an appropriate dedicated tile service instead of treating the public demo endpoint as an unlimited CDN.
 
 ## Sentinel-2 Cloudless
