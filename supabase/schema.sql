@@ -15,9 +15,19 @@ create table if not exists public.profiles (
 create table if not exists public.app_states (
   user_id uuid primary key references auth.users(id) on delete cascade,
   state jsonb not null default '{}'::jsonb,
+  revision bigint not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.app_states
+  add column if not exists revision bigint not null default 0;
+
+alter table public.app_states
+  drop constraint if exists app_states_revision_nonnegative;
+
+alter table public.app_states
+  add constraint app_states_revision_nonnegative check (revision >= 0);
 
 -- Remove legacy password data if an older frontend wrote it into app state.
 update public.app_states
