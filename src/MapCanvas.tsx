@@ -1,4 +1,4 @@
-import { MapContainer, Marker, TileLayer } from 'react-leaflet';
+import { MapContainer, Marker } from 'react-leaflet';
 import type { DivIcon, Icon, LeafletMouseEvent, Map as LeafletMap } from 'leaflet';
 import { StarActionOverlay } from './StarActionOverlay';
 import { TrackActionOverlay } from './TrackActionOverlay';
@@ -10,6 +10,7 @@ import {
   StarNavigationOverlay,
 } from './MapRuntimeComponents';
 import { MapDataLayers, type TagPolyline } from './MapDataLayers';
+import { VectorMapLayer } from './VectorMapLayer';
 import type { MapTileConfig } from './constants/mapTiles';
 import type { MapStyle, StarData, TrackData } from './types/app';
 
@@ -94,11 +95,7 @@ export function MapCanvas({
         zoomControl={false}
         attributionControl={false}
       >
-        <TileLayer
-          url={tileConfig.url}
-          maxNativeZoom={tileConfig.maxNativeZoom}
-          maxZoom={tileConfig.maxZoom}
-        />
+        <VectorMapLayer styleUrl={tileConfig.styleUrl} />
         <Marker
           position={userLocation}
           icon={locationIcon}

@@ -4,32 +4,42 @@ The Apache License 2.0 in this repository applies to the My Life Memory source c
 
 ## OpenStreetMap data
 
-The light and dark map styles include map data from OpenStreetMap and other open datasets rendered by EOX.
+The light and dark map styles include map data from OpenStreetMap delivered through OpenFreeMap and the OpenMapTiles schema.
 
 - Attribution: © OpenStreetMap contributors
 - Licence information: https://www.openstreetmap.org/copyright
 - OpenStreetMap data is available under the Open Data Commons Open Database License (ODbL).
 - OpenStreetMap attribution remains visible beside the interactive map and links to the copyright and licence information.
 
-## EOX::Maps
+## OpenFreeMap and OpenMapTiles
 
-The built-in map styles request remote tiles from EOX::Maps.
+The light and dark styles request remote vector map resources from OpenFreeMap.
 
-- Service information and permitted application use: https://maps.eox.at/
-- Light and dark styles use the EOX Terrain Light layer.
-- Rendering attribution: © EOX
-- EOX requests a link back to EOX::Maps and the relevant data/rendering attribution. Those links remain visible in the map corner.
-- EOX provides its public demo service as-is and may rate-limit requests. The application does not bundle, mirror, bulk-download, or redistribute EOX tile files.
-- Deployments expecting substantial traffic should arrange an appropriate dedicated tile service instead of treating the public demo endpoint as an unlimited CDN.
+- Service and source information: https://openfreemap.org/
+- OpenMapTiles information: https://openmaptiles.org/
+- OpenFreeMap's public instance is free to use without an API key and is provided without an SLA.
+- Attribution remains visible as OpenFreeMap, OpenMapTiles, and OpenStreetMap links.
+- The application does not bundle, mirror, bulk-download, or redistribute OpenFreeMap tiles.
 
-## Sentinel-2 Cloudless
+## MapLibre GL JS and the Leaflet compatibility layer
 
-The aerial style uses the EOX Sentinel-2 Cloudless 2025 viewing layer.
+OpenFreeMap vector styles are rendered with MapLibre GL JS and `@maplibre/maplibre-gl-leaflet`.
 
-- Product and source information: https://cloudless.eox.at/
-- Service information: https://maps.eox.at/
-- Attribution shown in the app: Sentinel-2 cloudless 2025 © EOX, contains modified Copernicus Sentinel data 2025.
-- The aerial layer is loaded remotely and is not distributed under this repository's Apache License 2.0.
+- MapLibre GL JS is an open-source, community-governed WebGL map renderer.
+- The Leaflet compatibility layer keeps the existing Leaflet markers, routes, and location controls working above the vector basemap.
+- These packages retain their upstream licences as recorded in `package-lock.json` and package metadata.
+
+## VersaTiles Satellite and orthophotos
+
+The aerial style uses the public VersaTiles Satellite style and tile service.
+
+- Service information: https://versatiles.org/
+- Imagery sources and their attribution requirements: https://versatiles.org/sources/
+- Tileset documentation: https://docs.versatiles.org/basics/tilesets.html#satellite
+- The tileset combines openly available global satellite imagery with regional public orthophotos. Resolution and source licensing vary by region.
+- The application displays a linked `VersaTiles imagery sources` credit and the OpenStreetMap attribution used by the hybrid style.
+- The application does not bundle, mirror, bulk-download, or redistribute the hosted imagery. The public server is provided without an application-specific SLA; substantial deployments should review the service policy or self-host the published dataset.
+- Imagery, source datasets, and the hosted service are not distributed under this repository's Apache License 2.0.
 
 ## Fonts and software dependencies
 

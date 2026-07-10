@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&family=Noto+Serif+KR:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 @theme {
   --font-sans: "Afacad", "Noto Serif SC", "Noto Serif KR", "Songti SC", "Apple SD Gothic Neo", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -95,14 +96,13 @@ select {
   outline-offset: 1px;
 }
 
-/* Convert the open light terrain tiles into the existing dark blue/gray mood. */
-.theme-dark .leaflet-tile-pane {
-  filter: grayscale(100%) invert(92%) hue-rotate(175deg) brightness(68%) contrast(115%) saturate(65%) !important;
+/* Keep the vector basemap restrained so it stays behind the memory markers. */
+.theme-dark .app-vector-map {
+  filter: saturate(72%) brightness(82%) contrast(108%);
 }
 
-/* Custom light map filter to make it purely grayscale like the reference */
-.theme-light .leaflet-tile-pane {
-  filter: grayscale(100%) !important;
+.theme-light .app-vector-map {
+  filter: grayscale(88%) saturate(35%) contrast(96%) brightness(103%);
 }
 
 .app-location-div-icon,

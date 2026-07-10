@@ -28,7 +28,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - React 19 + TypeScript
 - Vite 6
 - Tailwind CSS 4
-- Leaflet + React Leaflet
+- Leaflet + React Leaflet + MapLibre GL JS
 - Motion for small UI transitions
 - Supabase Auth, Postgres, Row Level Security, and private Storage
 - Supabase Edge Functions for invite registration, the Memory API, MCP token management, and cloud MCP
@@ -37,9 +37,11 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 
 ## Map Data And Tile Services
 
-- Built-in map tiles are loaded remotely from EOX::Maps.
-- Light and dark styles use EOX Terrain Light, with OpenStreetMap and other open datasets.
-- The aerial style uses EOX Sentinel-2 Cloudless 2025 imagery.
+- Light and dark styles use OpenFreeMap vector maps rendered with MapLibre GL JS through the Leaflet compatibility layer.
+- OpenFreeMap styles use OpenMapTiles schema and OpenStreetMap data. Required source and licence links remain visible.
+- The aerial style uses the public VersaTiles Satellite style, which combines openly available satellite imagery with higher-resolution public orthophotos where coverage exists.
+- VersaTiles requires no account or API key. Its official imagery-source link and OpenStreetMap attribution remain visible.
+- Open imagery resolution varies by region. Areas without public orthophoto coverage cannot match proprietary Google, Apple, or commercial imagery, and the app does not use unlicensed raw tile URLs to imitate them.
 - Required source and licence links remain visible in the map corner.
 - The Apache License 2.0 applies to this repository's source code, not to third-party map data, imagery, hosted services, fonts, or dependencies.
 - See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [NOTICE](NOTICE) before changing providers, removing attribution, or deploying for substantial traffic.

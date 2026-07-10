@@ -65,8 +65,8 @@ type TrackingControlsOverlayProps = {
 };
 
 const MAP_STYLE_OPTIONS: { style: MapStyle; getLabel: (copy: MapControlsCopy) => string }[] = [
-  { style: 'dark', getLabel: copy => copy.darkMapAlt },
   { style: 'aerial', getLabel: copy => copy.aerialMapAlt },
+  { style: 'dark', getLabel: copy => copy.darkMapAlt },
   { style: 'light', getLabel: copy => copy.lightMapAlt },
 ];
 
