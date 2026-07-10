@@ -304,6 +304,9 @@ export const dehydrateStorageMediaHtml = (html: string) => {
   if (!html || typeof document === 'undefined') return html;
   const container = document.createElement('div');
   container.innerHTML = html;
+  container.querySelectorAll<HTMLElement>('[data-note-tail="true"]').forEach(tail => {
+    if (!tail.textContent?.trim() && !tail.querySelector('img')) tail.remove();
+  });
   container.querySelectorAll<HTMLImageElement>('img[data-media-provider="supabase"][data-media-path]').forEach(image => {
     const metadata = imageMetadataFromElement(image);
     if (!metadata) return;
