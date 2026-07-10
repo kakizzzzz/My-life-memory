@@ -7,6 +7,8 @@ test('built-in map providers use the openly permitted EOX service', () => {
     assert.match(tile.url, /^https:\/\/tiles\.maps\.eox\.at\//);
     assert.doesNotMatch(tile.url, /cartocdn|arcgisonline|google/i);
     assert.match(tile.attribution, /https:\/\//);
+    assert.match(tile.attribution, /target="_blank"/);
+    assert.match(tile.attribution, /rel="noopener noreferrer"/);
     assert.match(tile.attribution, /EOX/);
   }
 });
