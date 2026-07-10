@@ -95,6 +95,8 @@ export const useReaderController = ({
   const readerSavedRangeRef = React.useRef<Range | null>(null);
   const readerPendingTitleStylesRef = React.useRef<Record<string, string>>({});
   const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
+  const readerUploadedImagesRef = React.useRef<StoredImageMetadata[]>([]);
+  const readerTransactionKeyRef = React.useRef<string | null>(null);
 
   const readerRecord = React.useMemo(() => {
     if (!readingNoteTarget) return null;
@@ -110,6 +112,24 @@ export const useReaderController = ({
     };
   }, [homeCopy.noteImageAlt, homeCopy.removeImage, homeCopy.untitledNote, mediaRefreshKey, readingNoteTarget, stars]);
   const readerRecordKey = readerRecord ? `${readerRecord.star.id}-${readerRecord.note.id}` : null;
+
+  const discardUploadedReaderImages = React.useCallback(() => {
+    const uploadedImages = readerUploadedImagesRef.current;
+    readerUploadedImagesRef.current = [];
+    if (uploadedImages.length > 0) deleteStoredImages(uploadedImages);
+  }, []);
+
+  React.useEffect(() => {
+    const previousKey = readerTransactionKeyRef.current;
+    if (previousKey && previousKey !== readerRecordKey) {
+      discardUploadedReaderImages();
+    }
+    readerTransactionKeyRef.current = readerRecordKey;
+  }, [discardUploadedReaderImages, readerRecordKey]);
+
+  React.useEffect(() => () => {
+    discardUploadedReaderImages();
+  }, [discardUploadedReaderImages]);
 
   React.useLayoutEffect(() => {
     if (activeView !== 'reader' || !readerRecord) return;
@@ -132,16 +152,33 @@ export const useReaderController = ({
   }, [activeView, readerRecordKey, readerRecord?.titleHtml, readerRecord?.contentHtml]);
 
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
-    if (!readerRecord) return;
+    if (!readerRecord) return false;
     if (readerContentRef.current) ensureReaderEditableTailAfterMedia(readerContentRef.current);
     const titleHtml = sanitizeRichHtml(readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml);
     const rawContentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
     const contentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(rawContentHtml));
+    const baselineTitleHtml = sanitizeRichHtml(readerRecord.titleHtml);
+    const baselineContentHtml = sanitizeRichHtml(dehydrateStorageMediaHtml(readerRecord.contentHtml));
+    const hasDraftChanges = titleHtml !== baselineTitleHtml || contentHtml !== baselineContentHtml;
+    const hasExplicitUpdates = Object.keys(updates).length > 0;
+    const images = extractStoredImagesFromHtml(contentHtml);
+    const uploadedImages = uniqueStoredImages(readerUploadedImagesRef.current);
+
+    if (!hasDraftChanges && !hasExplicitUpdates) {
+      readerUploadedImagesRef.current = [];
+      if (uploadedImages.length > 0) deleteStoredImages(uploadedImages);
+      return false;
+    }
+
+    const previousImages = getStoredImagesFromNote(readerRecord.note);
+    const removedExistingImages = getRemovedStoredImages(previousImages, images);
+    const unusedUploadedImages = getRemovedStoredImages(uploadedImages, images);
+    deleteStoredImages([...removedExistingImages, ...unusedUploadedImages]);
+    readerUploadedImagesRef.current = [];
+
     const title = htmlToText(titleHtml);
     const content = htmlToText(contentHtml);
     const timestamp = Date.now();
-    const images = extractStoredImagesFromHtml(contentHtml);
-    deleteStoredImages(getRemovedStoredImages(getStoredImagesFromNote(readerRecord.note), images));
 
     setStars(prev => prev.map(star => {
       if (star.id !== readerRecord.star.id) return star;
@@ -165,6 +202,7 @@ export const useReaderController = ({
         )),
       };
     }));
+    return true;
   }, [readerRecord, setStars]);
 
   const moveReaderCaretToContentEnd = React.useCallback(() => {
@@ -224,13 +262,15 @@ export const useReaderController = ({
 
   const locateReaderRecord = React.useCallback(() => {
     if (!readerRecord) return;
+    saveReaderDraft();
     setFlyTarget([readerRecord.star.lat, readerRecord.star.lng]);
     setSelectedStarId(readerRecord.star.id);
     setActiveTag(null);
     setActiveView('map');
     setActiveHomePanel(null);
     setIsReaderToolsOpen(false);
-  }, [readerRecord, setActiveHomePanel, setActiveTag, setActiveView, setFlyTarget, setSelectedStarId]);
+    setReadingNoteTarget(null);
+  }, [readerRecord, saveReaderDraft, setActiveHomePanel, setActiveTag, setActiveView, setFlyTarget, setSelectedStarId]);
 
   const keepReaderSelectionPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
     event.preventDefault();
@@ -291,8 +331,6 @@ export const useReaderController = ({
     if (removeButton) {
       event.preventDefault();
       const figure = removeButton.closest('[data-note-image="true"]');
-      const metadata = imageMetadataFromElement(figure);
-      if (metadata) void deleteImageFromStorageReliably(metadata);
       figure?.remove();
       if (editor) ensureReaderEditableTailAfterMedia(editor);
       return;
@@ -333,6 +371,12 @@ export const useReaderController = ({
           folder: 'notes',
           fileName: compressedFile.name,
         });
+        if (uploaded.metadata) {
+          readerUploadedImagesRef.current = uniqueStoredImages([
+            ...readerUploadedImagesRef.current,
+            uploaded.metadata,
+          ]);
+        }
         imageHtml = imageToReaderHtml(uploaded.src, homeCopy.noteImageAlt, homeCopy.removeImage, uploaded.metadata);
       } catch (error) {
         console.warn('Supabase Storage upload failed, using data URL fallback:', error);
