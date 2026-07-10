@@ -162,7 +162,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 5. Deploy the Supabase Edge Functions `register-with-invite`, `memory-api`, `mcp-token`, and `mcp`.
 6. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
 7. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
-8. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call Edge Functions, for example `https://yourname.github.io,http://localhost:3000`.
+8. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
 9. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
 10. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 11. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
@@ -211,7 +211,7 @@ For GitHub Pages:
 - The frontend must use only the Supabase publishable/anon key.
 - `service_role` belongs only in trusted server environments and is not needed for this app.
 - Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
-- Edge Functions reject browser origins outside `ALLOWED_ORIGINS` and apply basic in-memory rate limits by IP plus account/token prefix.
+- Browser-facing Edge Functions reject origins outside `ALLOWED_ORIGINS`. The cloud `mcp` endpoint accepts native MCP origins because access is instead gated by a per-user bearer token; all functions continue to apply basic in-memory rate limits by IP plus account/token prefix.
 - The `memory-api` Edge Function must authenticate a real user bearer token, or a private internal MCP call with a resolved `user_id`, before reading or changing app state.
 - Cloud MCP tokens are per-user. The app shows the full token once, stores only one active hash per user in `public.mcp_tokens`, and can delete the active token from Settings.
 - The local MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.

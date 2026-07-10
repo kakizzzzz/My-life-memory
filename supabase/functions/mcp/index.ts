@@ -3,17 +3,14 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   clientIp,
-  createCorsHeaders,
-  forbiddenOriginResponse,
   hitRateLimit,
-  isOriginAllowed,
   parseMcpAccessToken,
   rateLimitResponse,
   tokenPrefix,
 } from '../_shared/security.ts';
 
 const DEFAULT_CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Expose-Headers': 'mcp-session-id',
@@ -332,16 +329,10 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
 };
 
 serve(async request => {
-  if (!isOriginAllowed(request)) {
-    return forbiddenOriginResponse();
-  }
-
-  const localCorsHeaders = createCorsHeaders(
-    request,
-    'GET, POST, OPTIONS',
-    'authorization, x-client-info, apikey, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id',
-    'mcp-session-id',
-  );
+  // Native MCP clients use null, custom, or no Origin. This remote endpoint is
+  // protected by a per-user bearer token, while browser-facing functions keep
+  // their stricter ALLOWED_ORIGINS checks.
+  const localCorsHeaders = DEFAULT_CORS_HEADERS;
   const json = (
     body: unknown,
     status = 200,
@@ -377,19 +368,11 @@ serve(async request => {
   }
 
   if (request.method === 'GET') {
-    const accept = request.headers.get('accept') || '';
-    if (!accept.includes('text/event-stream')) {
-      return json(rpcError(null, -32000, 'Not Acceptable: Client must accept text/event-stream'), 406);
-    }
-    return new Response('event: endpoint\ndata: /mcp\n\n', {
-      status: 200,
-      headers: {
-        ...localCorsHeaders,
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
+    return json(
+      rpcError(null, -32000, 'This server uses JSON-response Streamable HTTP over POST.'),
+      405,
+      { Allow: 'POST, OPTIONS' },
+    );
   }
 
   if (request.method !== 'POST') {
