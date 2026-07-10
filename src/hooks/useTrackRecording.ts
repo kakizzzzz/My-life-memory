@@ -14,7 +14,11 @@ import {
   type TrackPoint,
   type TrackPointMetadata,
 } from '../lib/trackUtils';
-import { TRACK_ROUTE_GOOD_ACCURACY_METERS, TRACK_STALE_POSITION_GRACE_MS } from '../constants/appDefaults';
+import {
+  TRACK_MAX_ACCURACY_METERS,
+  TRACK_ROUTE_GOOD_ACCURACY_METERS,
+  TRACK_STALE_POSITION_GRACE_MS,
+} from '../constants/appDefaults';
 import { useTrackSummary } from './useTrackSummary';
 import type { AppView, HomePanel, TrackData } from '../types/app';
 
@@ -22,6 +26,8 @@ type TrackingState = {
   isTracking: boolean;
   isPaused: boolean;
 };
+
+const WEAK_GPS_SEGMENT_RESET_MS = 15_000;
 
 export const useTrackRecording = ({
   initialSavedTracks,
@@ -60,7 +66,39 @@ export const useTrackRecording = ({
   const lastTrackPointRef = React.useRef<TrackPoint | null>(null);
   const trackingStartedAtRef = React.useRef(0);
   const trackDraftStateRef = React.useRef({ paths: trackPaths, time: trackTime });
+  const accumulatedActiveMsRef = React.useRef(0);
+  const activeClockStartedAtRef = React.useRef<number | null>(null);
+  const weakGpsStartedAtRef = React.useRef<number | null>(null);
+  const shouldStartSegmentAfterWeakGpsRef = React.useRef(false);
   const { trackDistanceKm, activeTrackDistanceDisplay, formatTime } = useTrackSummary(trackPaths);
+
+  const getElapsedTrackSeconds = React.useCallback((now = Date.now()) => {
+    const activeElapsed = activeClockStartedAtRef.current === null
+      ? 0
+      : Math.max(0, now - activeClockStartedAtRef.current);
+    return Math.max(0, Math.floor((accumulatedActiveMsRef.current + activeElapsed) / 1000));
+  }, []);
+
+  const syncTrackTimeFromClock = React.useCallback(() => {
+    const nextTime = getElapsedTrackSeconds();
+    setTrackTime(previous => previous === nextTime ? previous : nextTime);
+    return nextTime;
+  }, [getElapsedTrackSeconds]);
+
+  const pauseActiveClock = React.useCallback((now = Date.now()) => {
+    if (activeClockStartedAtRef.current !== null) {
+      accumulatedActiveMsRef.current += Math.max(0, now - activeClockStartedAtRef.current);
+      activeClockStartedAtRef.current = null;
+    }
+    return syncTrackTimeFromClock();
+  }, [syncTrackTimeFromClock]);
+
+  const resumeActiveClock = React.useCallback((now = Date.now()) => {
+    if (activeClockStartedAtRef.current === null) {
+      activeClockStartedAtRef.current = now;
+    }
+    syncTrackTimeFromClock();
+  }, [syncTrackTimeFromClock]);
 
   React.useEffect(() => {
     onTrackingStateChange?.({ isTracking, isPaused });
@@ -78,12 +116,25 @@ export const useTrackRecording = ({
     const timestamp = Number.isFinite(metadata.timestamp) ? metadata.timestamp as number : Date.now();
     const previousAcceptedPoint = lastTrackPointRef.current;
     const nextPoint: TrackPoint = { location: newLoc, timestamp, accuracy };
+    const hasWeakAccuracy = accuracy !== undefined && accuracy > TRACK_ROUTE_GOOD_ACCURACY_METERS;
 
-    if (accuracy !== undefined && accuracy > TRACK_ROUTE_GOOD_ACCURACY_METERS) {
+    if (hasWeakAccuracy) {
       setIsTrackGpsWeak(true);
+      if (weakGpsStartedAtRef.current === null) weakGpsStartedAtRef.current = timestamp;
+    } else {
+      setIsTrackGpsWeak(false);
+      if (
+        weakGpsStartedAtRef.current !== null &&
+        timestamp - weakGpsStartedAtRef.current >= WEAK_GPS_SEGMENT_RESET_MS
+      ) {
+        shouldStartSegmentAfterWeakGpsRef.current = true;
+      }
+      weakGpsStartedAtRef.current = null;
+    }
+
+    if (accuracy !== undefined && accuracy > TRACK_MAX_ACCURACY_METERS) {
       return;
     }
-    setIsTrackGpsWeak(false);
 
     if (
       trackingStartedAtRef.current > 0 &&
@@ -110,6 +161,12 @@ export const useTrackRecording = ({
       });
       lastTrackPointRef.current = nextPoint;
     };
+
+    if (shouldStartSegmentAfterWeakGpsRef.current && previousAcceptedPoint) {
+      shouldStartSegmentAfterWeakGpsRef.current = false;
+      startNewSegment();
+      return;
+    }
 
     const decision = shouldAcceptTrackPoint(previousAcceptedPoint, nextPoint, metadata);
 
@@ -146,6 +203,10 @@ export const useTrackRecording = ({
     void startHeadingWatch();
     const startedAt = Date.now();
     trackingStartedAtRef.current = startedAt;
+    accumulatedActiveMsRef.current = 0;
+    activeClockStartedAtRef.current = startedAt;
+    weakGpsStartedAtRef.current = null;
+    shouldStartSegmentAfterWeakGpsRef.current = false;
     lastTrackPointRef.current = null;
     setIsTrackGpsWeak(false);
     const nextTrackingState = { isTracking: true, isPaused: false };
@@ -162,19 +223,32 @@ export const useTrackRecording = ({
   }, [onStart, onTrackingStateChange, profileAccount, requestUserLocation, startHeadingWatch, userLocation]);
 
   const toggleTrackingPause = React.useCallback(() => {
+    const nextPaused = !isPaused;
     setIsTrackGpsWeak(false);
-    setIsPaused(!isPaused);
-    if (isPaused) {
+    weakGpsStartedAtRef.current = null;
+    shouldStartSegmentAfterWeakGpsRef.current = false;
+    setIsPaused(nextPaused);
+
+    if (nextPaused) {
+      pauseActiveClock();
+    } else {
       lastTrackPointRef.current = null;
       trackingStartedAtRef.current = Date.now();
       setTrackPaths(prev => [...prev, []]);
+      resumeActiveClock();
     }
-    onTrackingStateChange?.({ isTracking, isPaused: !isPaused });
-  }, [isPaused, isTracking, onTrackingStateChange]);
+
+    onTrackingStateChange?.({ isTracking, isPaused: nextPaused });
+  }, [isPaused, isTracking, onTrackingStateChange, pauseActiveClock, resumeActiveClock]);
 
   const stopTrackingRoute = React.useCallback(() => {
+    pauseActiveClock();
     lastTrackPointRef.current = null;
     trackingStartedAtRef.current = 0;
+    accumulatedActiveMsRef.current = 0;
+    activeClockStartedAtRef.current = null;
+    weakGpsStartedAtRef.current = null;
+    shouldStartSegmentAfterWeakGpsRef.current = false;
     setIsTrackGpsWeak(false);
     clearTrackDraft(profileAccount);
     const nextTrackingState = { isTracking: false, isPaused: false };
@@ -183,32 +257,35 @@ export const useTrackRecording = ({
     setTrackPaths([]);
     setTrackTime(0);
     setIsPaused(false);
-  }, [onTrackingStateChange, profileAccount]);
+  }, [onTrackingStateChange, pauseActiveClock, profileAccount]);
 
   const saveTrackingRoute = React.useCallback(() => {
+    const finalTrackTime = getElapsedTrackSeconds();
     if (trackPaths.some(path => path.length > 1)) {
       setSavedTracks(prev => [...prev, {
         id: createClientId(),
         paths: trackPaths.filter(path => path.length > 1),
         color: '#EDC727',
-        time: trackTime,
+        time: finalTrackTime,
         distance: trackDistanceKm,
       }]);
     }
     stopTrackingRoute();
-  }, [stopTrackingRoute, trackDistanceKm, trackPaths, trackTime]);
+  }, [getElapsedTrackSeconds, stopTrackingRoute, trackDistanceKm, trackPaths]);
 
   React.useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isTracking && !isPaused) {
-      interval = setInterval(() => {
-        setTrackTime(prev => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
+    if (!isTracking || isPaused) return;
+    syncTrackTimeFromClock();
+    const interval = window.setInterval(syncTrackTimeFromClock, 1000);
+    const handleVisibilityChange = () => {
+      if (!document.hidden) syncTrackTimeFromClock();
     };
-  }, [isTracking, isPaused]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isPaused, isTracking, syncTrackTimeFromClock]);
 
   React.useEffect(() => {
     if (!isSignedIn || isTracking) return;
@@ -223,6 +300,8 @@ export const useTrackRecording = ({
     if (window.confirm(restorePrompt)) {
       setTrackPaths(draft.paths);
       setTrackTime(draft.time);
+      accumulatedActiveMsRef.current = draft.time * 1000;
+      activeClockStartedAtRef.current = null;
       setIsTracking(true);
       setIsPaused(true);
       const nextTrackingState = { isTracking: true, isPaused: true };
@@ -244,9 +323,10 @@ export const useTrackRecording = ({
     const saveDraft = () => {
       const paths = trackDraftStateRef.current.paths.filter(path => path.length > 0);
       if (paths.length === 0) return;
+      const time = isPaused ? trackDraftStateRef.current.time : getElapsedTrackSeconds();
       writeTrackDraft(account, {
         paths,
-        time: trackDraftStateRef.current.time,
+        time,
         savedAt: Date.now(),
       });
     };
@@ -254,7 +334,7 @@ export const useTrackRecording = ({
     saveDraft();
     const interval = window.setInterval(saveDraft, 4000);
     return () => window.clearInterval(interval);
-  }, [isSignedIn, isTracking, profileAccount]);
+  }, [getElapsedTrackSeconds, isPaused, isSignedIn, isTracking, profileAccount]);
 
   const resetTrackDraftCheck = React.useCallback(() => {
     checkedTrackDraftAccountRef.current = null;
