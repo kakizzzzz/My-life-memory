@@ -103,7 +103,6 @@ export const readPendingCloudSnapshot = async (userId: string): Promise<PendingC
   try {
     const transaction = database.transaction(STORE_NAME, 'readonly');
     const value = await requestResult(transaction.objectStore(STORE_NAME).get(userId));
-    await transactionDone(transaction);
     return value && typeof value === 'object' ? value as PendingCloudSnapshot : null;
   } finally {
     database.close();
@@ -115,8 +114,9 @@ export const writePendingCloudSnapshot = async (snapshot: PendingCloudSnapshot) 
   if (!database) throw new Error('IndexedDB is unavailable.');
   try {
     const transaction = database.transaction(STORE_NAME, 'readwrite');
+    const done = transactionDone(transaction);
     transaction.objectStore(STORE_NAME).put(snapshot);
-    await transactionDone(transaction);
+    await done;
   } finally {
     database.close();
   }
@@ -127,8 +127,9 @@ export const clearPendingCloudSnapshot = async (userId: string) => {
   if (!database) return;
   try {
     const transaction = database.transaction(STORE_NAME, 'readwrite');
+    const done = transactionDone(transaction);
     transaction.objectStore(STORE_NAME).delete(userId);
-    await transactionDone(transaction);
+    await done;
   } finally {
     database.close();
   }
