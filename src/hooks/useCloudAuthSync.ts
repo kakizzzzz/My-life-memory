@@ -7,7 +7,6 @@ import {
   loginCloudAccount,
   onCloudAuthStateChange,
   registerCloudAccount,
-  saveCloudAppState,
   saveCloudProfile,
   signOutCloudAccount,
   CloudAuthError,
@@ -15,6 +14,16 @@ import {
   type CloudAuthAction,
   type CloudProfile,
 } from '../lib/cloudBackend';
+import {
+  CloudStateConflictError,
+  clearPendingCloudSnapshot,
+  readCloudStateRevision,
+  readPendingCloudSnapshot,
+  saveCloudStateVersioned,
+  writePendingCloudSnapshot,
+  type PendingCloudSnapshot,
+} from '../lib/cloudSyncPersistence';
+import { setCloudSyncStatus } from '../lib/cloudSyncStatus';
 import { normalizePersistedAppState } from '../lib/appStateNormalize';
 import { normalizeAccountId } from '../lib/accountUtils';
 import {
@@ -44,6 +53,8 @@ import type {
 } from '../types/app';
 
 type HomeCopy = typeof HOME_COPY.en;
+
+const CLOUD_SAVE_DEBOUNCE_MS = 650;
 
 export const useCloudAuthSync = ({
   canUseLocalAuthFallback,
@@ -107,6 +118,21 @@ export const useCloudAuthSync = ({
   const hydratingCloudSessionRef = React.useRef<{ userId: string; accessToken: string } | null>(null);
   const hydratedCloudUserIdRef = React.useRef<string | null>(null);
   const cloudSaveTimerRef = React.useRef<number | null>(null);
+  const cloudUserIdRef = React.useRef<string | null>(null);
+  const cloudRevisionRef = React.useRef(0);
+  const cloudRevisionSupportedRef = React.useRef(false);
+  const cloudConflictRef = React.useRef(false);
+  const pendingCloudSnapshotRef = React.useRef<PendingCloudSnapshot | null>(null);
+  const cloudSaveSequenceRef = React.useRef(0);
+  const cloudSaveInFlightRef = React.useRef(false);
+  const cloudFlushRequestedRef = React.useRef(false);
+  const cloudPersistenceChainRef = React.useRef<Promise<void>>(Promise.resolve());
+  const flushCloudSaveRef = React.useRef<() => Promise<void>>(async () => {});
+
+  React.useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.lang = language === 'zh' ? 'zh-CN' : language === 'ko' ? 'ko' : 'en';
+  }, [language]);
 
   const createAppStateSnapshot = React.useCallback((profileOverride?: Partial<UserProfile>): PersistedAppState => {
     const snapshotProfile = {
@@ -178,6 +204,9 @@ export const useCloudAuthSync = ({
     window.setTimeout(() => {
       isApplyingCloudStateRef.current = false;
       cloudReadyToSaveRef.current = true;
+      if (pendingCloudSnapshotRef.current && !cloudConflictRef.current) {
+        void flushCloudSaveRef.current();
+      }
     }, 0);
   }, [
     buildDefaultProfileName,
@@ -192,6 +221,37 @@ export const useCloudAuthSync = ({
     setSystemTheme,
     syncDefaultStarNearUser,
   ]);
+
+  const resolveCloudSnapshot = React.useCallback(async (
+    userId: string,
+    cloudProfile: CloudProfile,
+    cloudState: CloudAppState | null
+  ) => {
+    const [revisionInfo, pendingSnapshot] = await Promise.all([
+      readCloudStateRevision(userId),
+      readPendingCloudSnapshot(userId).catch(error => {
+        console.warn('Could not read pending cloud snapshot:', error);
+        return null;
+      }),
+    ]);
+
+    cloudUserIdRef.current = userId;
+    cloudRevisionRef.current = revisionInfo.revision;
+    cloudRevisionSupportedRef.current = revisionInfo.supported;
+    pendingCloudSnapshotRef.current = pendingSnapshot;
+
+    if (pendingSnapshot) {
+      const hasConflict = revisionInfo.supported && pendingSnapshot.baseRevision !== revisionInfo.revision;
+      cloudConflictRef.current = hasConflict;
+      setCloudSyncStatus(hasConflict ? 'conflict' : 'local', pendingSnapshot.language || language);
+      applyCloudSnapshot(pendingSnapshot.profile, pendingSnapshot.state as CloudAppState);
+      return;
+    }
+
+    cloudConflictRef.current = false;
+    setCloudSyncStatus('idle', language);
+    applyCloudSnapshot(cloudProfile, cloudState);
+  }, [applyCloudSnapshot, language]);
 
   const getCloudAuthErrorMessage = React.useCallback((error: unknown, action: CloudAuthAction) => {
     const code = (
@@ -223,6 +283,88 @@ export const useCloudAuthSync = ({
     return action === 'register' ? homeCopy.registerError : homeCopy.loginError;
   }, [homeCopy]);
 
+  const flushCloudSave = React.useCallback(async () => {
+    if (
+      !isCloudBackendEnabled ||
+      !cloudReadyToSaveRef.current ||
+      cloudConflictRef.current
+    ) return;
+
+    if (cloudSaveInFlightRef.current) {
+      cloudFlushRequestedRef.current = true;
+      return;
+    }
+
+    const userId = cloudUserIdRef.current;
+    if (!userId) return;
+
+    let pendingSnapshot = pendingCloudSnapshotRef.current;
+    if (!pendingSnapshot) {
+      pendingSnapshot = await readPendingCloudSnapshot(userId).catch(() => null);
+      pendingCloudSnapshotRef.current = pendingSnapshot;
+    }
+    if (!pendingSnapshot) return;
+
+    cloudSaveInFlightRef.current = true;
+    cloudFlushRequestedRef.current = false;
+    setCloudSyncStatus('syncing', pendingSnapshot.language);
+
+    try {
+      await saveCloudProfile(pendingSnapshot.profile);
+      const revisionInfo = await saveCloudStateVersioned(
+        pendingSnapshot.state,
+        pendingSnapshot.baseRevision,
+        cloudRevisionSupportedRef.current
+      );
+      cloudRevisionRef.current = revisionInfo.revision;
+      cloudRevisionSupportedRef.current = revisionInfo.supported;
+
+      const latestSnapshot = pendingCloudSnapshotRef.current;
+      if (!latestSnapshot || latestSnapshot.sequence === pendingSnapshot.sequence) {
+        pendingCloudSnapshotRef.current = null;
+        try {
+          await clearPendingCloudSnapshot(userId);
+        } catch (error) {
+          console.warn('Cloud state synced but pending snapshot cleanup failed:', error);
+        }
+        setCloudSyncStatus('synced', pendingSnapshot.language);
+      } else {
+        const rebasedSnapshot: PendingCloudSnapshot = {
+          ...latestSnapshot,
+          baseRevision: revisionInfo.revision,
+        };
+        pendingCloudSnapshotRef.current = rebasedSnapshot;
+        try {
+          await writePendingCloudSnapshot(rebasedSnapshot);
+        } catch (error) {
+          console.warn('Could not rebase pending cloud snapshot:', error);
+          setCloudSyncStatus('error', rebasedSnapshot.language);
+        }
+        cloudFlushRequestedRef.current = true;
+      }
+    } catch (error) {
+      if (error instanceof CloudStateConflictError) {
+        cloudConflictRef.current = true;
+        setCloudSyncStatus('conflict', pendingSnapshot.language);
+      } else {
+        console.error('Could not save cloud app state:', error);
+        setCloudSyncStatus('error', pendingSnapshot.language);
+      }
+    } finally {
+      cloudSaveInFlightRef.current = false;
+      if (cloudFlushRequestedRef.current && !cloudConflictRef.current) {
+        cloudFlushRequestedRef.current = false;
+        queueMicrotask(() => {
+          void flushCloudSaveRef.current();
+        });
+      }
+    }
+  }, []);
+
+  React.useEffect(() => {
+    flushCloudSaveRef.current = flushCloudSave;
+  }, [flushCloudSave]);
+
   const hydrateCloudSession = React.useCallback(async (session: Awaited<ReturnType<typeof getCloudSession>>) => {
     if (!isCloudBackendEnabled) return;
     if (cloudRegistrationInProgressRef.current) return;
@@ -231,10 +373,12 @@ export const useCloudAuthSync = ({
     if (!session?.user) {
       hydratingCloudSessionRef.current = null;
       hydratedCloudUserIdRef.current = null;
+      cloudUserIdRef.current = null;
       cloudReadyToSaveRef.current = false;
       setCloudAuthHydrating(false);
       setIsSignedIn(false);
       setActiveHomePanel(null);
+      setCloudSyncStatus('idle', language);
       return;
     }
 
@@ -259,12 +403,13 @@ export const useCloudAuthSync = ({
 
     try {
       const { profile: cloudProfile, state } = await loadCloudAccountData(session.user);
-      applyCloudSnapshot(cloudProfile, state);
+      await resolveCloudSnapshot(userId, cloudProfile, state);
       hydratedCloudUserIdRef.current = userId;
     } catch (error) {
       console.error('Could not load cloud account data:', error);
       setLoginError(getCloudAuthErrorMessage(error, 'login'));
       hydratedCloudUserIdRef.current = null;
+      cloudUserIdRef.current = null;
       cloudReadyToSaveRef.current = false;
       setIsSignedIn(false);
       setActiveHomePanel(null);
@@ -275,7 +420,7 @@ export const useCloudAuthSync = ({
       }
       setCloudAuthHydrating(false);
     }
-  }, [applyCloudSnapshot, getCloudAuthErrorMessage, setActiveHomePanel, setIsSignedIn]);
+  }, [getCloudAuthErrorMessage, language, resolveCloudSnapshot, setActiveHomePanel, setIsSignedIn]);
   const hydrateCloudSessionRef = React.useRef(hydrateCloudSession);
 
   React.useEffect(() => {
@@ -337,11 +482,18 @@ export const useCloudAuthSync = ({
           initialProfile: initialProfileForCloud,
           initialState,
         });
+        const session = await getCloudSession();
 
-        applyCloudSnapshot(result.profile, result.state);
+        if (session?.user) {
+          await resolveCloudSnapshot(session.user.id, result.profile, result.state);
+          hydratedCloudUserIdRef.current = session.user.id;
+        } else {
+          applyCloudSnapshot(result.profile, result.state);
+        }
       } catch (error) {
         console.error('Cloud login failed:', error);
         cloudReadyToSaveRef.current = false;
+        cloudUserIdRef.current = null;
         void signOutCloudAccount();
         setLoginError(getCloudAuthErrorMessage(error, 'login'));
       } finally {
@@ -377,6 +529,7 @@ export const useCloudAuthSync = ({
     loginPassword,
     profile.account,
     profile.password,
+    resolveCloudSnapshot,
     setActiveHomePanel,
     setActiveView,
     setIsSignedIn,
@@ -473,20 +626,28 @@ export const useCloudAuthSync = ({
   ]);
 
   const handleSignOut = React.useCallback(() => {
+    if (cloudSaveTimerRef.current !== null) {
+      window.clearTimeout(cloudSaveTimerRef.current);
+      cloudSaveTimerRef.current = null;
+    }
     if (isCloudBackendEnabled) {
       cloudReadyToSaveRef.current = false;
       hydratingCloudSessionRef.current = null;
       hydratedCloudUserIdRef.current = null;
+      cloudUserIdRef.current = null;
+      pendingCloudSnapshotRef.current = null;
+      cloudConflictRef.current = false;
       setCloudAuthHydrating(false);
       void signOutCloudAccount();
     }
+    setCloudSyncStatus('idle', language);
     setActiveHomePanel(null);
     setIsSignedIn(false);
     setLoginAccount('');
     setLoginPassword('');
     setIsPasswordRevealed(false);
     setLoginError('');
-  }, [setActiveHomePanel, setIsSignedIn]);
+  }, [language, setActiveHomePanel, setIsSignedIn]);
 
   React.useEffect(() => {
     if (!isCloudBackendEnabled) return;
@@ -513,34 +674,80 @@ export const useCloudAuthSync = ({
   }, []);
 
   React.useEffect(() => {
-    if (!isCloudBackendEnabled || !isSignedIn || !cloudReadyToSaveRef.current || isApplyingCloudStateRef.current) return;
+    if (
+      !isCloudBackendEnabled ||
+      !isSignedIn ||
+      !cloudReadyToSaveRef.current ||
+      isApplyingCloudStateRef.current ||
+      cloudConflictRef.current
+    ) return;
+
+    const userId = cloudUserIdRef.current;
+    if (!userId) return;
 
     if (cloudSaveTimerRef.current !== null) {
       window.clearTimeout(cloudSaveTimerRef.current);
     }
 
-    const snapshot = createAppStateSnapshot() as CloudAppState;
-    const cloudProfile: CloudProfile = {
-      account: normalizeAccountId(profile.account),
-      name: profile.name,
-      avatarUrl: getPersistableAvatarUrl(profile),
+    const sequence = cloudSaveSequenceRef.current + 1;
+    cloudSaveSequenceRef.current = sequence;
+    const pendingSnapshot: PendingCloudSnapshot = {
+      userId,
+      state: createAppStateSnapshot(),
+      profile: {
+        account: normalizeAccountId(profile.account),
+        name: profile.name,
+        avatarUrl: getPersistableAvatarUrl(profile),
+      },
+      baseRevision: cloudRevisionRef.current,
+      sequence,
+      savedAt: Date.now(),
+      language,
     };
+    pendingCloudSnapshotRef.current = pendingSnapshot;
 
-    cloudSaveTimerRef.current = window.setTimeout(() => {
-      void Promise.all([
-        saveCloudProfile(cloudProfile),
-        saveCloudAppState(snapshot),
-      ]).catch(error => {
-        console.error('Could not save cloud app state:', error);
+    cloudPersistenceChainRef.current = cloudPersistenceChainRef.current
+      .catch(() => {})
+      .then(async () => {
+        await writePendingCloudSnapshot(pendingSnapshot);
+        if (pendingCloudSnapshotRef.current?.sequence !== sequence) return;
+        setCloudSyncStatus('local', language);
+        cloudSaveTimerRef.current = window.setTimeout(() => {
+          cloudSaveTimerRef.current = null;
+          void flushCloudSaveRef.current();
+        }, CLOUD_SAVE_DEBOUNCE_MS);
+      })
+      .catch(error => {
+        console.error('Could not persist pending cloud snapshot:', error);
+        setCloudSyncStatus('error', language);
       });
-    }, 900);
 
     return () => {
       if (cloudSaveTimerRef.current !== null) {
         window.clearTimeout(cloudSaveTimerRef.current);
+        cloudSaveTimerRef.current = null;
       }
     };
-  }, [createAppStateSnapshot, isSignedIn, profile.account, profile.avatarImage, profile.avatarUrl, profile.name]);
+  }, [createAppStateSnapshot, isSignedIn, language, profile.account, profile.avatarImage, profile.avatarUrl, profile.name]);
+
+  React.useEffect(() => {
+    if (!isCloudBackendEnabled) return;
+    const retryPendingSave = () => {
+      if (!cloudConflictRef.current) void flushCloudSaveRef.current();
+    };
+    window.addEventListener('online', retryPendingSave);
+    window.addEventListener('focus', retryPendingSave);
+    return () => {
+      window.removeEventListener('online', retryPendingSave);
+      window.removeEventListener('focus', retryPendingSave);
+    };
+  }, []);
+
+  React.useEffect(() => () => {
+    if (cloudSaveTimerRef.current !== null) {
+      window.clearTimeout(cloudSaveTimerRef.current);
+    }
+  }, []);
 
   return {
     authMode,
