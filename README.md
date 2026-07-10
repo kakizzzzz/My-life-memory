@@ -35,6 +35,15 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Local Model Context Protocol (MCP) server for AI clients
 - GitHub Pages for static hosting
 
+## Map Data And Tile Services
+
+- Built-in map tiles are loaded remotely from EOX::Maps.
+- Light and dark styles use EOX Terrain Light, with OpenStreetMap and other open datasets.
+- The aerial style uses EOX Sentinel-2 Cloudless 2025 imagery.
+- Required source and licence links remain visible in the map corner.
+- The Apache License 2.0 applies to this repository's source code, not to third-party map data, imagery, hosted services, fonts, or dependencies.
+- See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [NOTICE](NOTICE) before changing providers, removing attribution, or deploying for substantial traffic.
+
 ## Data And Storage
 
 - Supabase Auth stores passwords and sessions.
@@ -192,6 +201,7 @@ For GitHub Pages:
    - start the local MCP server and list read-only tools
    - reload on another device/browser
    - delete the image and confirm it disappears
+   - switch all map styles and confirm attribution links remain visible and open the correct provider/licence pages
 
 ## Security Notes
 
@@ -223,9 +233,12 @@ For GitHub Pages:
 npm run dev
 npm run mcp:memory
 npm run lint
+npm test
 npm run build
 ```
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+My Life Memory source code is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+
+Third-party map data, imagery, hosted services, fonts, and dependencies are not relicensed by Apache 2.0. See [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
