@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "mcp:memory": "node mcp/my-life-memory.mjs",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
