@@ -97,6 +97,13 @@ select {
 }
 
 .app-feedback-toast {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding-block: 0.5rem;
+  line-height: 1.25;
   background-color: rgba(111, 112, 108, 0.9);
   color: #fff;
   box-shadow: 0 5px 18px rgba(30, 30, 28, 0.14);
