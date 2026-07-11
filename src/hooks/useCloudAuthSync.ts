@@ -7,7 +7,6 @@ import {
   loginCloudAccount,
   onCloudAuthStateChange,
   registerCloudAccount,
-  saveCloudProfile,
   signOutCloudAccount,
   CloudAuthError,
   type CloudAppState,
@@ -19,8 +18,9 @@ import {
   clearPendingCloudSnapshot,
   readCloudStateRevision,
   readPendingCloudSnapshot,
-  saveCloudStateVersioned,
+  saveCloudSnapshotVersioned,
   writePendingCloudSnapshot,
+  type CloudRevisionInfo,
   type PendingCloudSnapshot,
 } from '../lib/cloudSyncPersistence';
 import {
@@ -51,6 +51,7 @@ import type {
   HomePanel,
   MapStyle,
   PersistedAppState,
+  ProfileConflictData,
   StarData,
   SystemTheme,
   TrackData,
@@ -116,6 +117,7 @@ export const useCloudAuthSync = ({
   const [loginError, setLoginError] = React.useState('');
   const [isAuthBusy, setIsAuthBusy] = React.useState(false);
   const [cloudAuthHydrating, setCloudAuthHydrating] = React.useState(() => isCloudBackendEnabled);
+  const [profileConflicts, setProfileConflicts] = React.useState<ProfileConflictData[]>([]);
   const isApplyingCloudStateRef = React.useRef(false);
   const cloudReadyToSaveRef = React.useRef(!isCloudBackendEnabled);
   const cloudRegistrationInProgressRef = React.useRef(false);
@@ -150,12 +152,13 @@ export const useCloudAuthSync = ({
       mapStyle,
       systemTheme,
       profile: getPublicProfileSnapshot(snapshotProfile),
+      profileConflicts,
       isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
       language,
       stars,
       savedTracks,
     };
-  }, [isSignedIn, language, mapStyle, profile, savedTracks, stars, systemTheme]);
+  }, [isSignedIn, language, mapStyle, profile, profileConflicts, savedTracks, stars, systemTheme]);
 
   const createCleanCloudInitialState = React.useCallback((account: string): PersistedAppState => ({
     mapStyle: DEFAULT_MAP_STYLE,
@@ -165,6 +168,7 @@ export const useCloudAuthSync = ({
       name: buildDefaultProfileName(account),
       avatarUrl: '',
     },
+    profileConflicts: [],
     isSignedIn: false,
     language,
     stars: [createDefaultRecordStar()],
@@ -194,6 +198,7 @@ export const useCloudAuthSync = ({
       avatarUrl: avatarImage ? storagePlaceholderSrc(avatarImage) : cloudProfile.avatarUrl || remoteProfile.avatarUrl || prev.avatarUrl || '',
       avatarImage,
     }));
+    setProfileConflicts(Array.isArray(remoteState.profileConflicts) ? remoteState.profileConflicts : []);
     setStars(normalizeInitialStars(remoteState.stars) || [createDefaultRecordStar()]);
     const lastGpsLocation = getLastGpsLocation();
     if (lastGpsLocation) {
@@ -231,15 +236,14 @@ export const useCloudAuthSync = ({
   const resolveCloudSnapshot = React.useCallback(async (
     userId: string,
     cloudProfile: CloudProfile,
-    cloudState: CloudAppState | null
+    cloudState: CloudAppState | null,
+    loadedRevisionInfo?: CloudRevisionInfo
   ) => {
-    const [revisionInfo, pendingSnapshot] = await Promise.all([
-      readCloudStateRevision(userId),
-      readPendingCloudSnapshot(userId).catch(error => {
-        console.warn('Could not read pending cloud snapshot:', error);
-        return null;
-      }),
-    ]);
+    const revisionInfo = loadedRevisionInfo || await readCloudStateRevision(userId);
+    const pendingSnapshot = await readPendingCloudSnapshot(userId).catch(error => {
+      console.warn('Could not read pending cloud snapshot:', error);
+      return null;
+    });
 
     cloudUserIdRef.current = userId;
     cloudRevisionRef.current = revisionInfo.revision;
@@ -317,9 +321,9 @@ export const useCloudAuthSync = ({
     setCloudSyncStatus('syncing', pendingSnapshot.language);
 
     try {
-      await saveCloudProfile(pendingSnapshot.profile);
-      const revisionInfo = await saveCloudStateVersioned(
+      const revisionInfo = await saveCloudSnapshotVersioned(
         pendingSnapshot.state,
+        pendingSnapshot.profile,
         pendingSnapshot.baseRevision,
         cloudRevisionSupportedRef.current
       );
@@ -381,10 +385,13 @@ export const useCloudAuthSync = ({
     setCloudSyncStatus('syncing', language);
     const session = await getCloudSession();
     if (!session?.user || session.user.id !== userId) throw new Error('No active cloud session.');
-    const [{ profile: cloudProfile, state: remoteState }, revisionInfo] = await Promise.all([
-      loadCloudAccountData(session.user),
-      readCloudStateRevision(userId),
-    ]);
+    const {
+      profile: cloudProfile,
+      state: remoteState,
+      revision,
+      revisionSupported,
+    } = await loadCloudAccountData(session.user);
+    const revisionInfo = { revision, supported: revisionSupported };
     const normalizedRemoteState = normalizePersistedAppState((remoteState || {}) as PersistedAppState) || {};
 
     if (strategy === 'local' || strategy === 'merge') {
@@ -432,7 +439,7 @@ export const useCloudAuthSync = ({
     await clearPendingCloudSnapshot(userId);
     pendingCloudSnapshotRef.current = null;
     cloudConflictRef.current = false;
-    await resolveCloudSnapshot(userId, cloudProfile, remoteState);
+    await resolveCloudSnapshot(userId, cloudProfile, remoteState, revisionInfo);
   }, [applyCloudSnapshot, language, resolveCloudSnapshot]);
 
   React.useEffect(() => {
@@ -477,8 +484,11 @@ export const useCloudAuthSync = ({
     setCloudAuthHydrating(true);
 
     try {
-      const { profile: cloudProfile, state } = await loadCloudAccountData(session.user);
-      await resolveCloudSnapshot(userId, cloudProfile, state);
+      const { profile: cloudProfile, state, revision, revisionSupported } = await loadCloudAccountData(session.user);
+      await resolveCloudSnapshot(userId, cloudProfile, state, {
+        revision,
+        supported: revisionSupported,
+      });
       hydratedCloudUserIdRef.current = userId;
     } catch (error) {
       console.error('Could not load cloud account data:', error);
@@ -560,7 +570,10 @@ export const useCloudAuthSync = ({
         const session = await getCloudSession();
 
         if (session?.user) {
-          await resolveCloudSnapshot(session.user.id, result.profile, result.state);
+          await resolveCloudSnapshot(session.user.id, result.profile, result.state, {
+            revision: result.revision,
+            supported: result.revisionSupported,
+          });
           hydratedCloudUserIdRef.current = session.user.id;
         } else {
           applyCloudSnapshot(result.profile, result.state);
@@ -722,6 +735,7 @@ export const useCloudAuthSync = ({
     setLoginPassword('');
     setIsPasswordRevealed(false);
     setLoginError('');
+    setProfileConflicts([]);
   }, [language, setActiveHomePanel, setIsSignedIn]);
 
   React.useEffect(() => {
@@ -842,6 +856,7 @@ export const useCloudAuthSync = ({
     setLoginError,
     isAuthBusy,
     cloudAuthHydrating,
+    profileConflicts,
     handleLogin,
     handleRegister,
     handleSignOut,

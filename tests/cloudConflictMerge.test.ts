@@ -66,3 +66,42 @@ test('preserves remote content when it was edited after a local deletion', () =>
   const merged = mergeCloudConflictState(base, local, remote, 'zh');
   assert.equal(merged.stars?.[0].notes?.[0].content, 'remote edit');
 });
+
+test('merges independent star metadata edits without creating a duplicate', () => {
+  const base = state([note('a', 'base')]);
+  const local = structuredClone(base);
+  const remote = structuredClone(base);
+  local.stars![0].color = '#112233';
+  remote.stars![0].tagOrder = 2;
+
+  const merged = mergeCloudConflictState(base, local, remote, 'zh');
+  assert.equal(merged.stars?.length, 1);
+  assert.equal(merged.stars?.[0].color, '#112233');
+  assert.equal(merged.stars?.[0].tagOrder, 2);
+});
+
+test('keeps a remote star copy when both devices move the same star differently', () => {
+  const base = state([note('a', 'base')]);
+  const local = structuredClone(base);
+  const remote = structuredClone(base);
+  local.stars![0].lat = 31.3;
+  remote.stars![0].lat = 31.4;
+
+  const merged = mergeCloudConflictState(base, local, remote, 'zh');
+  assert.equal(merged.stars?.length, 2);
+  assert.equal(merged.stars?.[0].lat, 31.3);
+  assert.equal(merged.stars?.[1].lat, 31.4);
+  assert.deepEqual(merged.stars?.[1].notes, []);
+  assert.match(merged.stars?.[1].id || '', /^star-1-conflict-/);
+});
+
+test('keeps a recoverable remote profile record for same-field conflicts', () => {
+  const base = { ...state([]), profile: { name: 'Base', account: 'owner' } };
+  const local = { ...state([]), profile: { name: 'Local', account: 'owner' } };
+  const remote = { ...state([]), profile: { name: 'Remote', account: 'owner' } };
+
+  const merged = mergeCloudConflictState(base, local, remote, 'zh');
+  assert.equal(merged.profile?.name, 'Local');
+  assert.equal(merged.profileConflicts?.[0].name, 'Remote');
+  assert.equal(merged.profileConflicts?.[0].source, 'remote');
+});

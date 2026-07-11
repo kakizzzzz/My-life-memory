@@ -347,6 +347,7 @@ export default function App() {
     setLoginError,
     isAuthBusy,
     cloudAuthHydrating,
+    profileConflicts,
     handleLogin,
     handleRegister,
     handleSignOut,
@@ -382,6 +383,7 @@ export default function App() {
   useCloudMediaMaintenance({
     isSignedIn,
     profile,
+    profileConflicts,
     stars,
     setProfile,
     setStars,

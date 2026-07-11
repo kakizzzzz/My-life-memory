@@ -57,6 +57,19 @@ type ProfileRow = {
 
 type AppStateRow = {
   state: CloudAppState | null;
+  revision?: number | null;
+};
+
+type AtomicSnapshotRow = ProfileRow & {
+  state: CloudAppState | null;
+  revision: number | null;
+};
+
+export type CloudAccountData = {
+  profile: CloudProfile;
+  state: CloudAppState | null;
+  revision: number;
+  revisionSupported: boolean;
 };
 
 const SENSITIVE_CLOUD_STATE_KEYS = new Set([
@@ -331,21 +344,72 @@ export const onCloudAuthStateChange = (callback: (session: CloudSession | null) 
   return () => data.subscription.unsubscribe();
 };
 
-export const loadCloudAccountData = async (user: User): Promise<{ profile: CloudProfile; state: CloudAppState | null }> => {
+const isMissingRevisionColumnError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
+  const text = `${code} ${message}`.toLowerCase();
+  return code === '42703' || code === 'PGRST204' || (text.includes('revision') && text.includes('column'));
+};
+
+const isMissingSnapshotFunctionError = (error: unknown, functionName: string) => {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
+  const text = `${code} ${message}`.toLowerCase();
+  return code === 'PGRST202' || (text.includes(functionName.toLowerCase()) && text.includes('function'));
+};
+
+export const loadCloudAccountData = async (user: User): Promise<CloudAccountData> => {
   const client = requireSupabase();
   const fallbackAccountId = inferAccountFromAuthUser(user);
 
-  const [{ data: profileRow, error: profileError }, { data: stateRow, error: stateError }] = await Promise.all([
-    client
-      .from('profiles')
-      .select('account_id,name,avatar_url')
-      .eq('id', user.id)
-      .maybeSingle<ProfileRow>(),
-    client
+  const atomicResult = await client.rpc('load_app_snapshot');
+  if (!atomicResult.error) {
+    const row = (Array.isArray(atomicResult.data) ? atomicResult.data[0] : atomicResult.data) as AtomicSnapshotRow | null;
+    if (row) {
+      return {
+        profile: rowToProfile(row, fallbackAccountId),
+        state: sanitizeCloudAppState(row.state || null),
+        revision: Math.max(0, Number(row.revision) || 0),
+        revisionSupported: true,
+      };
+    }
+  } else if (!isMissingSnapshotFunctionError(atomicResult.error, 'load_app_snapshot')) {
+    throw toCloudAuthError(atomicResult.error, 'setup_required', {
+      phase: 'state_load',
+      userId: user.id,
+      accountId: fallbackAccountId,
+      email: user.email,
+      ...extractSupabaseErrorMeta(atomicResult.error),
+      message: extractSupabaseErrorText(atomicResult.error),
+    });
+  }
+
+  const profileRequest = client
+    .from('profiles')
+    .select('account_id,name,avatar_url')
+    .eq('id', user.id)
+    .maybeSingle<ProfileRow>();
+  let stateResult = await client
+    .from('app_states')
+    .select('state,revision')
+    .eq('user_id', user.id)
+    .maybeSingle<AppStateRow>();
+  let revisionSupported = true;
+
+  if (stateResult.error && isMissingRevisionColumnError(stateResult.error)) {
+    revisionSupported = false;
+    stateResult = await client
       .from('app_states')
       .select('state')
       .eq('user_id', user.id)
-      .maybeSingle<AppStateRow>(),
+      .maybeSingle<AppStateRow>();
+  }
+
+  const [{ data: profileRow, error: profileError }, { data: stateRow, error: stateError }] = await Promise.all([
+    profileRequest,
+    Promise.resolve(stateResult),
   ]);
 
   if (profileError) {
@@ -390,6 +454,8 @@ export const loadCloudAccountData = async (user: User): Promise<{ profile: Cloud
   return {
     profile,
     state: sanitizeCloudAppState(stateRow?.state || null),
+    revision: Math.max(0, Number(stateRow?.revision) || 0),
+    revisionSupported,
   };
 };
 
@@ -603,7 +669,7 @@ export const loginCloudAccount = async ({
       initialState,
     });
     const cloudProfile = await ensureCloudProfile(user, initialData.profile);
-    const { state } = await loadCloudAccountData(user);
+    const { state, revision, revisionSupported } = await loadCloudAccountData(user);
     if (!state) {
       await saveCloudAppState(initialData.state);
     }
@@ -611,6 +677,8 @@ export const loginCloudAccount = async ({
     return {
       profile: cloudProfile,
       state: state || initialData.state,
+      revision,
+      revisionSupported,
       isNewAccount: false,
     };
   } catch (error) {

@@ -1,4 +1,4 @@
-import type { NoteData, PersistedAppState, StarData, TrackData } from '../types/app';
+import type { NoteData, PersistedAppState, ProfileConflictData, StarData, TrackData } from '../types/app';
 import { escapeHtml } from './noteHtmlUtils';
 import { sanitizeRichHtml } from './htmlSanitizer';
 
@@ -15,6 +15,16 @@ const stableValue = (value: unknown): unknown => {
 const same = (left: unknown, right: unknown) => (
   JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right))
 );
+
+const conflictIdSuffix = (value: unknown) => {
+  const text = JSON.stringify(stableValue(value));
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
 
 const choose = <T,>(base: T | undefined, local: T | undefined, remote: T | undefined) => {
   if (same(local, remote)) return local;
@@ -34,7 +44,7 @@ const withConflictCopyTitle = (note: NoteData, language: string): NoteData => {
   const title = `${note.title || ''}${label}`;
   return {
     ...note,
-    id: `${note.id}-conflict-${Math.max(0, Number(note.updatedAt || note.createdAt) || 0)}`,
+    id: `${note.id}-conflict-${conflictIdSuffix(note)}`.slice(0, 96),
     title,
     titleHtml: sanitizeRichHtml(`${note.titleHtml || escapeHtml(note.title || '')}<span>${escapeHtml(label)}</span>`),
   };
@@ -93,7 +103,7 @@ const mergeStars = (
     if (!selected) return [];
     if (!local || !remote || same(local, remote)) return [selected];
 
-    return [{
+    const mergedStar = {
       ...selected,
       lat: choose(base?.lat, local.lat, remote.lat) ?? selected.lat,
       lng: choose(base?.lng, local.lng, remote.lng) ?? selected.lng,
@@ -101,7 +111,29 @@ const mergeStars = (
       tagOrder: choose(base?.tagOrder, local.tagOrder, remote.tagOrder),
       tagGroupId: choose(base?.tagGroupId, local.tagGroupId, remote.tagGroupId),
       notes: mergeNotes(base?.notes, local.notes, remote.notes, language),
-    }];
+    };
+    const coreKeys: Array<keyof Omit<StarData, 'id' | 'notes'>> = [
+      'lat',
+      'lng',
+      'createdAt',
+      'color',
+      'tagOrder',
+      'tagGroupId',
+    ];
+    const hasCoreConflict = coreKeys.some(key => (
+      !same(local[key], remote[key]) &&
+      (!base || (!same(local[key], base[key]) && !same(remote[key], base[key])))
+    ));
+    if (!hasCoreConflict) return [mergedStar];
+
+    return [
+      mergedStar,
+      {
+        ...remote,
+        id: `${remote.id}-conflict-${conflictIdSuffix(coreKeys.map(key => remote[key]))}`.slice(0, 96),
+        notes: [],
+      },
+    ];
   });
 };
 
@@ -125,7 +157,7 @@ const mergeTracks = (
     if (!selected) return;
     merged.push(selected);
     if (local && remote && !same(local, remote) && (!base || (!same(local, base) && !same(remote, base)))) {
-      merged.push({ ...remote, id: `${remote.id}-conflict-${Math.max(0, Number(remote.time) || 0)}` });
+      merged.push({ ...remote, id: `${remote.id}-conflict-${conflictIdSuffix(remote)}`.slice(0, 96) });
     }
   });
   return merged;
@@ -141,19 +173,63 @@ const mergeObject = (
     .filter(([, value]) => value !== undefined)
 );
 
+const getRemoteProfileConflict = (
+  base: PersistedAppState['profile'],
+  local: PersistedAppState['profile'],
+  remote: PersistedAppState['profile']
+): ProfileConflictData | null => {
+  const conflictingRemote: Omit<ProfileConflictData, 'capturedAt' | 'source'> = {};
+  (['name', 'avatarUrl', 'avatarImage'] as const).forEach(key => {
+    if (
+      !same(local?.[key], remote?.[key]) &&
+      (!base || (!same(local?.[key], base[key]) && !same(remote?.[key], base[key])))
+    ) {
+      conflictingRemote[key] = remote?.[key] as never;
+    }
+  });
+  if (!conflictingRemote.name && !conflictingRemote.avatarUrl && !conflictingRemote.avatarImage) return null;
+  return {
+    ...conflictingRemote,
+    capturedAt: Date.now(),
+    source: 'remote',
+  };
+};
+
+const mergeProfileConflicts = (
+  existing: ProfileConflictData[] = [],
+  incoming: ProfileConflictData | null
+) => {
+  if (!incoming) return existing;
+  const next = [...existing];
+  const alreadyStored = next.some(item => (
+    same(item.name, incoming.name) &&
+    same(item.avatarUrl, incoming.avatarUrl) &&
+    same(item.avatarImage, incoming.avatarImage)
+  ));
+  if (!alreadyStored) next.unshift(incoming);
+  return next.slice(0, 20);
+};
+
 export const mergeCloudConflictState = (
   base: PersistedAppState | undefined,
   local: PersistedAppState,
   remote: PersistedAppState,
   language = local.language || remote.language || 'en'
-): PersistedAppState => ({
-  ...remote,
-  ...local,
-  mapStyle: choose(base?.mapStyle, local.mapStyle, remote.mapStyle),
-  systemTheme: mergeObject(base?.systemTheme, local.systemTheme, remote.systemTheme),
-  profile: mergeObject(base?.profile, local.profile, remote.profile),
-  language: choose(base?.language, local.language, remote.language),
-  stars: mergeStars(base?.stars, local.stars, remote.stars, language),
-  savedTracks: mergeTracks(base?.savedTracks, local.savedTracks, remote.savedTracks),
-  isSignedIn: false,
-});
+): PersistedAppState => {
+  const remoteProfileConflict = getRemoteProfileConflict(base?.profile, local.profile, remote.profile);
+  return {
+    ...remote,
+    ...local,
+    mapStyle: choose(base?.mapStyle, local.mapStyle, remote.mapStyle),
+    systemTheme: mergeObject(base?.systemTheme, local.systemTheme, remote.systemTheme),
+    profile: mergeObject(base?.profile, local.profile, remote.profile),
+    profileConflicts: mergeProfileConflicts(
+      [...(local.profileConflicts || []), ...(remote.profileConflicts || [])],
+      remoteProfileConflict
+    ),
+    language: choose(base?.language, local.language, remote.language),
+    stars: mergeStars(base?.stars, local.stars, remote.stars, language),
+    savedTracks: mergeTracks(base?.savedTracks, local.savedTracks, remote.savedTracks),
+    isSignedIn: false,
+  };
+};

@@ -12,7 +12,7 @@ import {
 } from '../lib/noteHtmlUtils';
 import { migrateInlineMediaToStorage } from '../lib/mediaMigration';
 import { getCloudSyncStatus, subscribeCloudSyncStatus } from '../lib/cloudSyncStatus';
-import type { StarData, UserProfile } from '../types/app';
+import type { ProfileConflictData, StarData, UserProfile } from '../types/app';
 
 const MEDIA_SCAN_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const MEDIA_SCAN_STORAGE_KEY_PREFIX = 'my-life-memory-media-scan-v1:';
@@ -39,6 +39,7 @@ const markMediaScanComplete = (account: string) => {
 export const useCloudMediaMaintenance = ({
   isSignedIn,
   profile,
+  profileConflicts,
   stars,
   setProfile,
   setStars,
@@ -46,6 +47,7 @@ export const useCloudMediaMaintenance = ({
 }: {
   isSignedIn: boolean;
   profile: UserProfile;
+  profileConflicts: ProfileConflictData[];
   stars: StarData[];
   setProfile: React.Dispatch<React.SetStateAction<UserProfile>>;
   setStars: React.Dispatch<React.SetStateAction<StarData[]>>;
@@ -59,11 +61,12 @@ export const useCloudMediaMaintenance = ({
   const getReferencedStoredMedia = React.useCallback(() => (
     uniqueStoredImages([
       profile.avatarImage,
+      ...profileConflicts.map(conflict => conflict.avatarImage),
       ...stars.flatMap(star => (
         (star.notes || []).flatMap(note => getStoredImagesFromNote(note))
       )),
     ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata)))
-  ), [profile.avatarImage, stars]);
+  ), [profile.avatarImage, profileConflicts, stars]);
 
   React.useEffect(() => {
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
@@ -135,6 +138,7 @@ export const useCloudMediaMaintenance = ({
         const referencedMedia = uniqueStoredImages([
           migrated.profile.avatarImage,
           latestProfile.avatarImage,
+          ...profileConflicts.map(conflict => conflict.avatarImage),
           ...migrated.stars.flatMap(star => (
             (star.notes || []).flatMap(note => getStoredImagesFromNote(note))
           )),
@@ -171,5 +175,5 @@ export const useCloudMediaMaintenance = ({
       window.removeEventListener('mlm:media-maintenance', requestMaintenance);
       unsubscribeCloudSync();
     };
-  }, [isSignedIn, profile.account, setProfile, setStars]);
+  }, [isSignedIn, profile.account, profileConflicts, setProfile, setStars]);
 };

@@ -64,6 +64,14 @@ export type UserProfile = {
   avatarImage?: StoredImageMetadata;
 };
 
+export type ProfileConflictData = {
+  name?: string;
+  avatarUrl?: string;
+  avatarImage?: StoredImageMetadata;
+  capturedAt: number;
+  source: 'remote';
+};
+
 export type UploadedImage = {
   id: string;
   src: string;
@@ -108,6 +116,7 @@ export type PersistedAppState = {
   mapStyle?: MapStyle;
   systemTheme?: Partial<SystemTheme>;
   profile?: Partial<UserProfile>;
+  profileConflicts?: ProfileConflictData[];
   isSignedIn?: boolean;
   language?: string;
   stars?: StarData[];

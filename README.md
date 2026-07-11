@@ -20,6 +20,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Export a readable HTML memory report with note text, dates, coordinates, and embedded images instead of raw app-state JSON.
 - Change the account password from the profile screen through Supabase Auth without storing readable passwords in app state.
 - Sync per-user data with Supabase Auth, RLS-protected tables, and private Storage.
+- Save profile metadata and app state atomically with optimistic revision checks; multi-device conflicts preserve note copies, conflicting star locations, and recoverable profile metadata.
 - Retry failed image deletions so explicitly deleted photos do not remain in cloud storage.
 - Show an in-app user manual for map, record, statistics, account, icon, and permission behavior.
 
@@ -155,7 +156,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 1. Create a Supabase project.
 2. In Authentication settings, disable public Email signup after the invite function is deployed, so new users cannot bypass the invite flow with the anon key.
 3. Open SQL Editor and run `supabase/schema.sql`.
-4. Run every SQL file in `supabase/migrations/`, including the app-state revision and durable Edge Function rate-limit migrations.
+4. Run every SQL file in `supabase/migrations/`, including the app-state revision, durable Edge Function rate-limit, and atomic app snapshot migrations.
 5. Confirm these objects exist:
    - `public.profiles`
    - `public.app_states`

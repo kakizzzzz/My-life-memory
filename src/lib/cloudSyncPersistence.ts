@@ -1,5 +1,5 @@
 import type { CloudAppState, CloudProfile } from './cloudBackend';
-import { saveCloudAppState } from './cloudBackend';
+import { saveCloudAppState, saveCloudProfile } from './cloudBackend';
 import { normalizePersistedAppState } from './appStateNormalize';
 import { sanitizeRichHtmlFields } from './htmlSanitizer';
 import { supabase } from './supabaseClient';
@@ -73,6 +73,14 @@ const isMissingRevisionColumnError = (error: unknown) => {
     code === 'PGRST204' ||
     (text.includes('revision') && text.includes('column'))
   );
+};
+
+const isMissingAtomicSnapshotFunctionError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
+  const text = `${code} ${message}`.toLowerCase();
+  return code === 'PGRST202' || (text.includes('save_app_snapshot') && text.includes('function'));
 };
 
 const requestResult = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
@@ -201,4 +209,40 @@ export const saveCloudStateVersioned = async (
     revision: Math.max(nextRevision, Number(data.revision) || nextRevision),
     supported: true,
   };
+};
+
+export const saveCloudSnapshotVersioned = async (
+  state: PersistedAppState,
+  profile: CloudProfile,
+  expectedRevision: number,
+  revisionSupported: boolean
+): Promise<CloudRevisionInfo> => {
+  if (!supabase) throw new Error('Cloud backend is not configured.');
+
+  if (revisionSupported) {
+    const { data, error } = await supabase.rpc('save_app_snapshot', {
+      p_expected_revision: Math.max(0, expectedRevision),
+      p_state: sanitizeCloudAppState(state),
+      p_name: profile.name || '',
+      p_avatar_url: profile.avatarUrl || '',
+    });
+
+    if (!error) {
+      const row = Array.isArray(data) ? data[0] : data;
+      const saved = Boolean(row && typeof row === 'object' && 'saved' in row && row.saved);
+      const revision = Math.max(0, Number(
+        row && typeof row === 'object' && 'revision' in row ? row.revision : expectedRevision
+      ) || 0);
+      if (!saved) throw new CloudStateConflictError(revision);
+      return { revision, supported: true };
+    }
+
+    if (!isMissingAtomicSnapshotFunctionError(error)) throw error;
+  }
+
+  // Compatibility path for projects that have not run the atomic snapshot
+  // migration yet. State conflict detection still happens before profile save.
+  const revisionInfo = await saveCloudStateVersioned(state, expectedRevision, revisionSupported);
+  await saveCloudProfile(profile);
+  return revisionInfo;
 };

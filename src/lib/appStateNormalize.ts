@@ -191,12 +191,32 @@ const normalizeProfile = (value: unknown) => {
   };
 };
 
+const normalizeProfileConflicts = (value: unknown) => (
+  Array.isArray(value)
+    ? value.slice(0, 20).map(entry => {
+        if (!isRecord(entry)) return null;
+        const name = clampString(entry.name, 120);
+        const avatarUrl = clampString(entry.avatarUrl, 2000);
+        const avatarImage = normalizeStoredImage(entry.avatarImage) || undefined;
+        if (!name && !avatarUrl && !avatarImage) return null;
+        return {
+          name: name || undefined,
+          avatarUrl: avatarUrl || undefined,
+          avatarImage,
+          capturedAt: Math.max(0, getFiniteNumber(entry.capturedAt, Date.now())),
+          source: 'remote' as const,
+        };
+      }).filter(Boolean)
+    : []
+);
+
 export const normalizePersistedAppState = <T extends LooseRecord | null | undefined>(state: T): T => {
   if (!isRecord(state)) return null as T;
 
   const next: LooseRecord = {
     ...state,
     profile: normalizeProfile(state.profile),
+    profileConflicts: normalizeProfileConflicts(state.profileConflicts),
     stars: Array.isArray(state.stars)
       ? state.stars.slice(0, MAX_STARS).map(normalizeStar).filter(Boolean)
       : [],
