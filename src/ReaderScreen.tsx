@@ -34,6 +34,7 @@ type ReaderScreenProps = {
   readerSelectedUnderline: boolean;
   readerShowCustomPicker: boolean;
   onReaderImageInput: (event: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
+  onReaderEditorsReady: () => boolean;
   onBackToRecords: () => void;
   onReaderBeforeInput: (target: 'title' | 'content', event: React.FormEvent<HTMLElement>) => void;
   onReaderInput: () => void;
@@ -73,6 +74,7 @@ export function ReaderScreen({
   readerSelectedUnderline,
   readerShowCustomPicker,
   onReaderImageInput,
+  onReaderEditorsReady,
   onBackToRecords,
   onReaderBeforeInput,
   onReaderInput,
@@ -125,13 +127,15 @@ export function ReaderScreen({
     };
   }, [homeCopy.backToRecords]);
 
+  const fallbackTitleHtml = readerRecord?.titleHtml ?? '';
+  const fallbackContentHtml = readerRecord?.contentHtml ?? '';
   const readCurrentReaderHtml = React.useCallback(() => ({
-    titleHtml: readerTitleRef.current?.innerHTML ?? readerRecord?.titleHtml ?? '',
-    contentHtml: readerContentRef.current?.innerHTML ?? readerRecord?.contentHtml ?? '',
-  }), [readerContentRef, readerRecord, readerTitleRef]);
+    titleHtml: readerTitleRef.current?.innerHTML ?? fallbackTitleHtml,
+    contentHtml: readerContentRef.current?.innerHTML ?? fallbackContentHtml,
+  }), [fallbackContentHtml, fallbackTitleHtml, readerContentRef, readerTitleRef]);
 
   const updateReaderBaselineFromDom = React.useCallback(() => {
-    if (!readerRecord) {
+    if (!readerRecordKey) {
       readerBaselineRef.current = null;
       return;
     }
@@ -139,15 +143,20 @@ export function ReaderScreen({
       key: readerRecordKey,
       ...readCurrentReaderHtml(),
     };
-  }, [readCurrentReaderHtml, readerRecord, readerRecordKey]);
+  }, [readCurrentReaderHtml, readerRecordKey]);
 
   const hasReaderDraftChanges = React.useCallback(() => {
-    if (!readerRecord) return false;
+    if (!readerRecordKey) return false;
     const baseline = readerBaselineRef.current;
     if (!baseline || baseline.key !== readerRecordKey) return false;
     const current = readCurrentReaderHtml();
     return current.titleHtml !== baseline.titleHtml || current.contentHtml !== baseline.contentHtml;
-  }, [readCurrentReaderHtml, readerRecord, readerRecordKey]);
+  }, [readCurrentReaderHtml, readerRecordKey]);
+
+  React.useLayoutEffect(() => {
+    if (!isOpen || !readerRecordKey) return;
+    onReaderEditorsReady();
+  }, [isOpen, onReaderEditorsReady, readerRecordKey]);
 
   React.useEffect(() => () => {
     if (saveFeedbackTimerRef.current !== null) {
@@ -173,7 +182,7 @@ export function ReaderScreen({
     }
     const frameId = window.requestAnimationFrame(updateReaderBaselineFromDom);
     return () => window.cancelAnimationFrame(frameId);
-  }, [isOpen, readerRecord, readerRecordKey, updateReaderBaselineFromDom]);
+  }, [isOpen, readerRecordKey, updateReaderBaselineFromDom]);
 
   const showSaveFeedback = React.useCallback(() => {
     if (saveFeedbackTimerRef.current !== null) {

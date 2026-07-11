@@ -537,6 +537,7 @@ export default function App() {
     readerShowCustomPicker,
     setReaderShowCustomPicker,
     readerRecord,
+    hydrateReaderEditors,
     saveReaderDraft,
     saveReaderSelection,
     openReaderFromRecord,
@@ -984,6 +985,7 @@ export default function App() {
         readerSelectedUnderline={readerSelectedUnderline}
         readerShowCustomPicker={readerShowCustomPicker}
         onReaderImageInput={handleReaderImageInput}
+        onReaderEditorsReady={hydrateReaderEditors}
         onBackToRecords={() => {
           saveReaderDraft();
           setActiveView('records');

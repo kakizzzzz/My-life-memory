@@ -156,7 +156,9 @@ export function StarActionOverlay({
   const [isMapChooserOpen, setIsMapChooserOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
   const [customColor, setCustomColor] = useState('#EDC727');
+  const [customPickerPosition, setCustomPickerPosition] = useState<{ top: number; left: number } | null>(null);
   const copyTimerRef = React.useRef<number | null>(null);
+  const colorPanelRef = React.useRef<HTMLDivElement>(null);
   const selectedStar = selectedStarId ? stars.find(star => star.id === selectedStarId) : undefined;
   const selectedStarLat = selectedStar?.lat;
   const selectedStarLng = selectedStar?.lng;
@@ -216,6 +218,37 @@ export function StarActionOverlay({
       L.DomEvent.disableScrollPropagation(containerRef.current);
     }
   }, [selectedStarId, activeTab, showCustomPicker]);
+
+  React.useLayoutEffect(() => {
+    if (!showCustomPicker) {
+      setCustomPickerPosition(null);
+      return;
+    }
+
+    const updatePickerPosition = () => {
+      const panel = colorPanelRef.current;
+      if (!panel) return;
+      const rect = panel.getBoundingClientRect();
+      const pickerHeight = 96;
+      const gap = 8;
+      const top = rect.bottom + gap + pickerHeight <= window.innerHeight
+        ? rect.bottom + gap
+        : rect.top - pickerHeight - gap;
+      setCustomPickerPosition({
+        top: Math.max(gap, top),
+        left: Math.min(window.innerWidth - 70, Math.max(70, rect.left + rect.width / 2)),
+      });
+    };
+
+    const frameId = window.requestAnimationFrame(updatePickerPosition);
+    window.addEventListener('resize', updatePickerPosition);
+    map.on('move zoom viewreset', updatePickerPosition);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener('resize', updatePickerPosition);
+      map.off('move zoom viewreset', updatePickerPosition);
+    };
+  }, [map, showCustomPicker]);
 
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const isDragging = React.useRef(false);
@@ -413,7 +446,7 @@ export function StarActionOverlay({
 
       {activeTab === 'color' && (
         <div className="flex flex-col items-center relative">
-          <div className="bg-[var(--app-dark)] w-[124px] rounded-[20px] p-2.5 shadow-lg relative box-border">
+          <div ref={colorPanelRef} className="bg-[var(--app-dark)] w-[124px] rounded-[20px] p-2.5 shadow-lg relative box-border">
             <div className="grid grid-cols-4 gap-2">
               {DEFAULT_COLORS.map(c => (
                 <button 
@@ -441,13 +474,16 @@ export function StarActionOverlay({
             </div>
           </div>
           
-          {showCustomPicker && (
+          {showCustomPicker && customPickerPosition && createPortal(
             <div
-              className="bg-[var(--app-dark)] w-[124px] box-border rounded-[16px] p-2.5 shadow-xl flex flex-col gap-2 picker-popup absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50"
-              onPointerDown={(event) => event.stopPropagation()}
-              onPointerMove={(event) => event.stopPropagation()}
-              onPointerUp={(event) => event.stopPropagation()}
-              onPointerCancel={(event) => event.stopPropagation()}
+              className="bg-[var(--app-dark)] w-[124px] box-border rounded-[16px] p-2.5 shadow-xl flex flex-col gap-2 picker-popup"
+              style={{
+                position: 'fixed',
+                top: customPickerPosition.top,
+                left: customPickerPosition.left,
+                transform: 'translateX(-50%)',
+                zIndex: 2000,
+              }}
             >
                <HexColorPicker
                  color={customColor}
@@ -469,7 +505,8 @@ export function StarActionOverlay({
                     className="flex-1 min-w-0 h-[22px] bg-white/10 border border-white/20 text-white rounded-[6px] px-1.5 text-[12px] font-mono uppercase focus:outline-none focus:border-white/50"
                   />
                </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       )}

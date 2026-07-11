@@ -141,12 +141,12 @@ export const useReaderController = ({
     discardUploadedReaderImages();
   }, [discardUploadedReaderImages]);
 
-  React.useLayoutEffect(() => {
+  const hydrateReaderEditors = React.useCallback(() => {
     readerEditorReadyKeyRef.current = null;
-    if (activeView !== 'reader' || !readerRecord || !readerRecordKey) return;
+    if (activeView !== 'reader' || !readerRecord || !readerRecordKey) return false;
     const titleEditor = readerTitleRef.current;
     const contentEditor = readerContentRef.current;
-    if (!titleEditor || !contentEditor) return;
+    if (!titleEditor || !contentEditor) return false;
 
     if (titleEditor.innerHTML !== readerRecord.titleHtml) {
       titleEditor.innerHTML = sanitizeRichHtml(readerRecord.titleHtml);
@@ -162,13 +162,17 @@ export const useReaderController = ({
     readerPendingContentStylesRef.current = {};
     readerEditorReadyKeyRef.current = readerRecordKey;
     setReaderSelectedUnderline(false);
+    return true;
+  }, [activeView, readerRecordKey, readerRecord?.titleHtml, readerRecord?.contentHtml]);
 
+  React.useLayoutEffect(() => {
+    hydrateReaderEditors();
     return () => {
       if (readerEditorReadyKeyRef.current === readerRecordKey) {
         readerEditorReadyKeyRef.current = null;
       }
     };
-  }, [activeView, readerRecordKey, readerRecord?.titleHtml, readerRecord?.contentHtml]);
+  }, [hydrateReaderEditors, readerRecordKey]);
 
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
     if (!readerRecord || !isReaderEditorReadyForSave({
@@ -472,6 +476,7 @@ export const useReaderController = ({
     readerShowCustomPicker,
     setReaderShowCustomPicker,
     readerRecord,
+    hydrateReaderEditors,
     saveReaderDraft,
     saveReaderSelection,
     openReaderFromRecord,
