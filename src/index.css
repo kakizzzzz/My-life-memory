@@ -149,13 +149,19 @@ select {
 .picker-popup .react-colorful {
   width: 100%;
   height: 46px;
+  touch-action: none !important;
+  overscroll-behavior: contain;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .picker-popup .react-colorful__saturation {
   border-radius: 8px 8px 0 0;
+  touch-action: none !important;
 }
 .picker-popup .react-colorful__hue {
   height: 10px;
   border-radius: 0 0 8px 8px;
+  touch-action: none !important;
 }
 .picker-popup .react-colorful__pointer {
   width: 12px;

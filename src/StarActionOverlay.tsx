@@ -156,6 +156,9 @@ export function StarActionOverlay({
   const [isMapChooserOpen, setIsMapChooserOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
   const copyTimerRef = React.useRef<number | null>(null);
+  const selectedStar = selectedStarId ? stars.find(star => star.id === selectedStarId) : undefined;
+  const selectedStarLat = selectedStar?.lat;
+  const selectedStarLng = selectedStar?.lng;
   
   useEffect(() => {
     if (selectedStarId) {
@@ -184,12 +187,10 @@ export function StarActionOverlay({
   }, []);
 
   useEffect(() => {
-    if (!selectedStarId) return;
-    const star = stars.find(s => s.id === selectedStarId);
-    if (!star) return;
+    if (!selectedStarId || selectedStarLat === undefined || selectedStarLng === undefined) return;
 
     const updatePos = () => {
-      const pt = map.latLngToLayerPoint([star.lat, star.lng]);
+      const pt = map.latLngToLayerPoint([selectedStarLat, selectedStarLng]);
       setPos({ x: pt.x, y: pt.y });
     };
 
@@ -200,7 +201,7 @@ export function StarActionOverlay({
       map.off('zoom', updatePos);
       map.off('viewreset', updatePos);
     };
-  }, [map, selectedStarId, stars]);
+  }, [map, selectedStarId, selectedStarLat, selectedStarLng]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -233,7 +234,7 @@ export function StarActionOverlay({
   };
 
   if (!selectedStarId) return null;
-  const star = stars.find(s => s.id === selectedStarId);
+  const star = selectedStar;
   if (!star) return null;
 
   const latText = `${Math.abs(star.lat).toFixed(4)}° ${star.lat >= 0 ? 'N' : 'S'}`;
@@ -431,7 +432,13 @@ export function StarActionOverlay({
           </div>
           
           {showCustomPicker && (
-            <div className="bg-[var(--app-dark)] w-[124px] box-border rounded-[16px] p-2.5 shadow-xl flex flex-col gap-2 picker-popup absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50">
+            <div
+              className="bg-[var(--app-dark)] w-[124px] box-border rounded-[16px] p-2.5 shadow-xl flex flex-col gap-2 picker-popup absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50"
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerMove={(event) => event.stopPropagation()}
+              onPointerUp={(event) => event.stopPropagation()}
+              onPointerCancel={(event) => event.stopPropagation()}
+            >
                <HexColorPicker color={star.color || '#EDC727'} onChange={(c) => onUpdateStar(star.id, { color: c })} />
                <div className="flex items-center w-full">
                   <span className="text-white/70 font-mono text-[13px] leading-none pt-[1px] mr-1">#</span>
