@@ -76,7 +76,7 @@ export const usePhotoLocationImport = ({
     try {
       const coordinates = await readPhotoGpsCoordinates(file);
       if (!coordinates) {
-        showPhotoLocationStatus(copy.photoLocationNoGps, 500);
+        showPhotoLocationStatus(copy.photoLocationNoGps, 1800);
         return;
       }
 

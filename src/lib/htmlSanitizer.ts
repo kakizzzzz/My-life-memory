@@ -73,6 +73,15 @@ const sanitizeNode = (node: Node): Node | null => {
   const tagName = node.tagName.toUpperCase();
   if (BLOCKED_RICH_TAGS.has(tagName)) return null;
 
+  // Safari contenteditable uses DIV elements for new paragraphs. Normalize
+  // them into the allowed P tag so saving does not collapse adjacent lines.
+  if (tagName === 'DIV') {
+    const paragraph = document.createElement('p');
+    copySafeStyle(node, paragraph);
+    copyChildren(node, paragraph);
+    return paragraph;
+  }
+
   if (!ALLOWED_RICH_TAGS.has(tagName)) {
     const fragment = document.createDocumentFragment();
     copyChildren(node, fragment);

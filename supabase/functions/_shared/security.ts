@@ -232,7 +232,10 @@ export const sanitizeRichHtml = (html: unknown) => {
     output += escapeHtml(withoutBlocked.slice(cursor, match.index));
     cursor = match.index + match[0].length;
 
-    const tag = match[1].toLowerCase();
+    const sourceTag = match[1].toLowerCase();
+    // Safari contenteditable emits DIV for paragraphs. Persist the same safe
+    // structure as the browser sanitizer instead of joining adjacent lines.
+    const tag = sourceTag === 'div' ? 'p' : sourceTag;
     const isClosing = match[0].startsWith('</');
     if (!allowedTags.has(tag)) continue;
     if (isClosing) {
