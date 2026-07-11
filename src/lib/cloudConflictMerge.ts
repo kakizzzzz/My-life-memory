@@ -207,7 +207,7 @@ const mergeProfileConflicts = (
     same(item.avatarImage, incoming.avatarImage)
   ));
   if (!alreadyStored) next.unshift(incoming);
-  return next.slice(0, 20);
+  return next;
 };
 
 export const mergeCloudConflictState = (

@@ -131,9 +131,12 @@ export const readTrackDraft = (account: string): TrackDraftData | null => {
     }
     const paths = normalizeTrackDraftPaths(parsed.paths);
     if (paths.length === 0) return null;
+    const time = Math.max(0, Number(parsed.time) || 0);
+    const parsedCreatedAt = Math.max(0, Number(parsed.createdAt) || 0);
     return {
       paths,
-      time: Math.max(0, Number(parsed.time) || 0),
+      time,
+      createdAt: parsedCreatedAt || Math.max(0, savedAt - time * 1000),
       savedAt,
     };
   } catch {

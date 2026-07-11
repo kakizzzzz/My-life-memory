@@ -10,6 +10,7 @@ import {
 import { sanitizeRichHtmlFields } from './htmlSanitizer';
 import { normalizePersistedAppState } from './appStateNormalize';
 import { normalizeAccountId } from './accountUtils';
+import { loadNormalizedMemoryAccountData } from './memoryRepository';
 
 export type CloudProfile = {
   account: string;
@@ -49,27 +50,12 @@ export type CloudAuthErrorDetails = {
   raw?: unknown;
 };
 
-type ProfileRow = {
-  account_id: string;
-  name: string | null;
-  avatar_url: string | null;
-};
-
-type AppStateRow = {
-  state: CloudAppState | null;
-  revision?: number | null;
-};
-
-type AtomicSnapshotRow = ProfileRow & {
-  state: CloudAppState | null;
-  revision: number | null;
-};
-
 export type CloudAccountData = {
   profile: CloudProfile;
   state: CloudAppState | null;
   revision: number;
   revisionSupported: boolean;
+  dataModelVersion?: number;
 };
 
 const SENSITIVE_CLOUD_STATE_KEYS = new Set([
@@ -153,12 +139,6 @@ export const accountIdToAuthEmail = (accountId: string) => {
   const hex = Array.from(bytes).map(byte => byte.toString(16).padStart(2, '0')).join('');
   return `u_${hex}@accounts.my-life-memory.app`;
 };
-
-const rowToProfile = (row: ProfileRow, fallbackAccount = ''): CloudProfile => ({
-  account: row.account_id || fallbackAccount,
-  name: row.name || '',
-  avatarUrl: row.avatar_url || '',
-});
 
 const sanitizeCloudValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {
@@ -344,119 +324,26 @@ export const onCloudAuthStateChange = (callback: (session: CloudSession | null) 
   return () => data.subscription.unsubscribe();
 };
 
-const isMissingRevisionColumnError = (error: unknown) => {
-  if (!error || typeof error !== 'object') return false;
-  const code = 'code' in error ? String((error as { code?: unknown }).code || '') : '';
-  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
-  const text = `${code} ${message}`.toLowerCase();
-  return code === '42703' || code === 'PGRST204' || (text.includes('revision') && text.includes('column'));
-};
-
-const isMissingSnapshotFunctionError = (error: unknown, functionName: string) => {
-  if (!error || typeof error !== 'object') return false;
-  const code = 'code' in error ? String((error as { code?: unknown }).code || '') : '';
-  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
-  const text = `${code} ${message}`.toLowerCase();
-  return code === 'PGRST202' || (text.includes(functionName.toLowerCase()) && text.includes('function'));
-};
-
 export const loadCloudAccountData = async (user: User): Promise<CloudAccountData> => {
-  const client = requireSupabase();
-  const fallbackAccountId = inferAccountFromAuthUser(user);
-
-  const atomicResult = await client.rpc('load_app_snapshot');
-  if (!atomicResult.error) {
-    const row = (Array.isArray(atomicResult.data) ? atomicResult.data[0] : atomicResult.data) as AtomicSnapshotRow | null;
-    if (row) {
-      return {
-        profile: rowToProfile(row, fallbackAccountId),
-        state: sanitizeCloudAppState(row.state || null),
-        revision: Math.max(0, Number(row.revision) || 0),
-        revisionSupported: true,
-      };
-    }
-  } else if (!isMissingSnapshotFunctionError(atomicResult.error, 'load_app_snapshot')) {
-    throw toCloudAuthError(atomicResult.error, 'setup_required', {
+  try {
+    const normalized = await loadNormalizedMemoryAccountData(user);
+    return {
+      profile: normalized.profile,
+      state: sanitizeCloudAppState(normalized.state),
+      revision: normalized.revision,
+      revisionSupported: true,
+      dataModelVersion: normalized.dataModelVersion,
+    };
+  } catch (error) {
+    throw toCloudAuthError(error, 'setup_required', {
       phase: 'state_load',
       userId: user.id,
-      accountId: fallbackAccountId,
+      accountId: inferAccountFromAuthUser(user),
       email: user.email,
-      ...extractSupabaseErrorMeta(atomicResult.error),
-      message: extractSupabaseErrorText(atomicResult.error),
+      ...extractSupabaseErrorMeta(error),
+      message: extractSupabaseErrorText(error) || (error instanceof Error ? error.message : ''),
     });
   }
-
-  const profileRequest = client
-    .from('profiles')
-    .select('account_id,name,avatar_url')
-    .eq('id', user.id)
-    .maybeSingle<ProfileRow>();
-  let stateResult = await client
-    .from('app_states')
-    .select('state,revision')
-    .eq('user_id', user.id)
-    .maybeSingle<AppStateRow>();
-  let revisionSupported = true;
-
-  if (stateResult.error && isMissingRevisionColumnError(stateResult.error)) {
-    revisionSupported = false;
-    stateResult = await client
-      .from('app_states')
-      .select('state')
-      .eq('user_id', user.id)
-      .maybeSingle<AppStateRow>();
-  }
-
-  const [{ data: profileRow, error: profileError }, { data: stateRow, error: stateError }] = await Promise.all([
-    profileRequest,
-    Promise.resolve(stateResult),
-  ]);
-
-  if (profileError) {
-    throw toCloudAuthError(profileError, 'setup_required', {
-      phase: 'state_load',
-      userId: user.id,
-      accountId: fallbackAccountId,
-      email: user.email,
-      ...extractSupabaseErrorMeta(profileError),
-      message: extractSupabaseErrorText(profileError),
-    });
-  }
-
-  if (stateError) {
-    throw toCloudAuthError(stateError, 'setup_required', {
-      phase: 'state_load',
-      userId: user.id,
-      accountId: fallbackAccountId,
-      email: user.email,
-      ...extractSupabaseErrorMeta(stateError),
-      message: extractSupabaseErrorText(stateError),
-    });
-  }
-
-  const profile = profileRow
-    ? rowToProfile(profileRow, fallbackAccountId)
-    : await ensureCloudProfile(user, {
-        account: fallbackAccountId,
-        name: typeof user.user_metadata?.name === 'string' ? user.user_metadata.name : '',
-        avatarUrl: typeof user.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : '',
-      }).catch(error => {
-        throw toCloudAuthError(error, 'unknown', {
-          phase: 'profile_save',
-          userId: user.id,
-          accountId: fallbackAccountId,
-          email: user.email,
-          ...extractSupabaseErrorMeta(error),
-          message: extractSupabaseErrorText(error),
-        });
-      });
-
-  return {
-    profile,
-    state: sanitizeCloudAppState(stateRow?.state || null),
-    revision: Math.max(0, Number(stateRow?.revision) || 0),
-    revisionSupported,
-  };
 };
 
 const isEmailConfirmationError = (error: unknown) => {
@@ -519,38 +406,6 @@ const inferAccountFromAuthUser = (user: User, fallback = '') => {
   return normalizeAccountId(emailPrefix);
 };
 
-const ensureCloudProfile = async (user: User, profile: CloudProfile) => {
-  const client = requireSupabase();
-  const account = normalizeAccountId(profile.account || user.user_metadata?.account_id || '');
-  if (!account) throw new Error('Account ID is required.');
-
-  const { data: existing, error: readError } = await client
-    .from('profiles')
-    .select('account_id,name,avatar_url')
-    .eq('id', user.id)
-    .maybeSingle<ProfileRow>();
-
-  if (readError) throw readError;
-
-  if (existing) {
-    return rowToProfile(existing, account);
-  }
-
-  const { data, error } = await client
-    .from('profiles')
-    .insert({
-      id: user.id,
-      account_id: account,
-      name: profile.name || '',
-      avatar_url: profile.avatarUrl || '',
-    })
-    .select('account_id,name,avatar_url')
-    .single<ProfileRow>();
-
-  if (error) throw error;
-  return rowToProfile(data, account);
-};
-
 const buildInitialCloudData = ({
   account,
   initialProfile,
@@ -599,13 +454,9 @@ const readFunctionErrorPayload = async (error: unknown) => {
 export const loginCloudAccount = async ({
   account,
   password,
-  initialProfile,
-  initialState,
 }: {
   account: string;
   password: string;
-  initialProfile: CloudProfile;
-  initialState: CloudAppState;
 }) => {
   const client = requireSupabase();
   const clientProjectRef = supabaseProjectRef;
@@ -663,20 +514,11 @@ export const loginCloudAccount = async ({
   await activateCloudSession(signInResult.data.session, user.id);
 
   try {
-    const initialData = buildInitialCloudData({
-      account: normalizedAccount,
-      initialProfile,
-      initialState,
-    });
-    const cloudProfile = await ensureCloudProfile(user, initialData.profile);
-    const { state, revision, revisionSupported } = await loadCloudAccountData(user);
-    if (!state) {
-      await saveCloudAppState(initialData.state);
-    }
+    const { profile: cloudProfile, state, revision, revisionSupported } = await loadCloudAccountData(user);
 
     return {
       profile: cloudProfile,
-      state: state || initialData.state,
+      state,
       revision,
       revisionSupported,
       isNewAccount: false,
@@ -798,42 +640,6 @@ export const signInOrCreateCloudAccount = async (params: Parameters<typeof regis
     if (authError.code !== 'invalid_credentials') throw authError;
     return registerCloudAccount(params);
   }
-};
-
-export const saveCloudProfile = async (profile: CloudProfile) => {
-  const client = requireSupabase();
-  const { data: userData, error: userError } = await client.auth.getUser();
-  if (userError) throw userError;
-  const user = userData.user;
-  if (!user) throw new Error('No active cloud session.');
-
-  const { error } = await client
-    .from('profiles')
-    .update({
-      name: profile.name || '',
-      avatar_url: profile.avatarUrl || '',
-    })
-    .eq('id', user.id);
-
-  if (error) throw error;
-};
-
-export const saveCloudAppState = async (state: CloudAppState) => {
-  const client = requireSupabase();
-  const { data: userData, error: userError } = await client.auth.getUser();
-  if (userError) throw userError;
-  const user = userData.user;
-  if (!user) throw new Error('No active cloud session.');
-
-  const sanitizedState = sanitizeCloudAppState(state) || {};
-  const { error } = await client
-    .from('app_states')
-    .upsert({
-      user_id: user.id,
-      state: sanitizedState,
-    }, { onConflict: 'user_id' });
-
-  if (error) throw error;
 };
 
 const readCloudFunctionResponse = async <T>(response: Response): Promise<T> => {

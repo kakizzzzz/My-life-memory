@@ -14,23 +14,34 @@ import {
   type CloudProfile,
 } from '../lib/cloudBackend';
 import {
-  CloudStateConflictError,
-  clearPendingCloudSnapshot,
-  readCloudStateRevision,
-  readPendingCloudSnapshot,
-  saveCloudSnapshotVersioned,
-  writePendingCloudSnapshot,
-  type CloudRevisionInfo,
-  type PendingCloudSnapshot,
-} from '../lib/cloudSyncPersistence';
+  clearMemoryMutationOutbox,
+  enqueueMemoryMutations,
+  markLegacyPendingSnapshotResolved,
+  readMemoryMutationOutbox,
+  upgradeLegacyPendingSnapshot,
+  writeMemoryMutationOutbox,
+  type MemoryMutationOutbox,
+} from '../lib/memoryOutbox';
+import {
+  NormalizedMemoryConflictError,
+  applyMemoryMutations,
+} from '../lib/memoryRepository';
+import {
+  applyMemoryMutationsToSnapshot,
+  compactMemoryMutations,
+  diffMemoryState,
+  MAX_MEMORY_MUTATIONS_PER_COMMIT,
+  mutationsAreDisjointFromRemote,
+  preserveMutationConflicts,
+  reconcileMemoryMutationsAfterRemoteAdvance,
+  rebaseMemoryMutationBases,
+} from '../lib/normalizedMemory';
 import {
   registerCloudConflictResolver,
   setCloudSyncStatus,
   type CloudConflictStrategy,
 } from '../lib/cloudSyncStatus';
 import { normalizePersistedAppState } from '../lib/appStateNormalize';
-import { mergeCloudConflictState } from '../lib/cloudConflictMerge';
-import { compareCloudSnapshots } from '../lib/cloudSnapshotCompare';
 import { normalizeAccountId } from '../lib/accountUtils';
 import {
   getPersistableAvatarUrl,
@@ -62,12 +73,24 @@ import type {
 type HomeCopy = typeof HOME_COPY.en;
 
 const CLOUD_SAVE_DEBOUNCE_MS = 650;
+type CloudRevisionInfo = { revision: number; supported: boolean };
+
+const newestMemoryOutbox = (
+  first: MemoryMutationOutbox | null,
+  second: MemoryMutationOutbox | null
+) => {
+  if (!first) return second;
+  if (!second) return first;
+  if (first.sequence !== second.sequence) return first.sequence > second.sequence ? first : second;
+  return first.savedAt >= second.savedAt ? first : second;
+};
 
 export const useCloudAuthSync = ({
   canUseLocalAuthFallback,
   cloudConfigError,
   homeCopy,
   language,
+  setLanguage,
   mapStyle,
   setMapStyle,
   systemTheme,
@@ -91,6 +114,7 @@ export const useCloudAuthSync = ({
   cloudConfigError: string;
   homeCopy: HomeCopy;
   language: string;
+  setLanguage: React.Dispatch<React.SetStateAction<string>>;
   mapStyle: MapStyle;
   setMapStyle: React.Dispatch<React.SetStateAction<MapStyle>>;
   systemTheme: SystemTheme;
@@ -128,10 +152,10 @@ export const useCloudAuthSync = ({
   const cloudSaveTimerRef = React.useRef<number | null>(null);
   const cloudUserIdRef = React.useRef<string | null>(null);
   const cloudRevisionRef = React.useRef(0);
-  const cloudRevisionSupportedRef = React.useRef(false);
   const cloudBaseStateRef = React.useRef<PersistedAppState>({});
+  const cloudBaseProfileRef = React.useRef<CloudProfile>({ account: '', name: '', avatarUrl: '' });
   const cloudConflictRef = React.useRef(false);
-  const pendingCloudSnapshotRef = React.useRef<PendingCloudSnapshot | null>(null);
+  const pendingMemoryOutboxRef = React.useRef<MemoryMutationOutbox | null>(null);
   const cloudSaveSequenceRef = React.useRef(0);
   const cloudSaveInFlightRef = React.useRef(false);
   const cloudFlushRequestedRef = React.useRef(false);
@@ -160,6 +184,14 @@ export const useCloudAuthSync = ({
       savedTracks,
     };
   }, [isSignedIn, language, mapStyle, profile, profileConflicts, savedTracks, stars, systemTheme]);
+  const latestAppStateRef = React.useRef<PersistedAppState>({});
+  const latestProfileSnapshotRef = React.useRef<CloudProfile>({ account: '', name: '', avatarUrl: '' });
+  latestAppStateRef.current = createAppStateSnapshot();
+  latestProfileSnapshotRef.current = {
+    account: normalizeAccountId(profile.account),
+    name: profile.name,
+    avatarUrl: getPersistableAvatarUrl(profile),
+  };
 
   const createCleanCloudInitialState = React.useCallback((account: string): PersistedAppState => ({
     mapStyle: DEFAULT_MAP_STYLE,
@@ -185,7 +217,8 @@ export const useCloudAuthSync = ({
     isApplyingCloudStateRef.current = true;
     cloudReadyToSaveRef.current = false;
 
-    setMapStyle(DEFAULT_MAP_STYLE);
+    setMapStyle(remoteState.mapStyle || DEFAULT_MAP_STYLE);
+    if (remoteState.language) setLanguage(remoteState.language);
     setSystemTheme({
       ...DEFAULT_SYSTEM_THEME,
       ...(remoteState.systemTheme || {}),
@@ -216,7 +249,7 @@ export const useCloudAuthSync = ({
     window.setTimeout(() => {
       isApplyingCloudStateRef.current = false;
       cloudReadyToSaveRef.current = true;
-      if (pendingCloudSnapshotRef.current && !cloudConflictRef.current) {
+      if (pendingMemoryOutboxRef.current && !cloudConflictRef.current) {
         void flushCloudSaveRef.current();
       }
     }, 0);
@@ -226,6 +259,7 @@ export const useCloudAuthSync = ({
     setActiveHomePanel,
     setActiveView,
     setIsSignedIn,
+    setLanguage,
     setMapStyle,
     setProfile,
     setSavedTracks,
@@ -240,59 +274,92 @@ export const useCloudAuthSync = ({
     cloudState: CloudAppState | null,
     loadedRevisionInfo?: CloudRevisionInfo
   ) => {
-    const revisionInfo = loadedRevisionInfo || await readCloudStateRevision(userId);
-    const pendingSnapshot = await readPendingCloudSnapshot(userId).catch(error => {
-      console.warn('Could not read pending cloud snapshot:', error);
+    const revisionInfo = loadedRevisionInfo || { revision: 0, supported: true };
+    const remotePersistedState = normalizePersistedAppState((cloudState || {}) as PersistedAppState) || {};
+    const legacyUpgrade = await upgradeLegacyPendingSnapshot({
+      userId,
+      remoteState: remotePersistedState,
+      remoteProfile: cloudProfile,
+      remoteRevision: revisionInfo.revision,
+    }).catch(error => {
+      console.warn('Could not inspect legacy pending cloud data:', error);
+      return { outbox: null, blocked: true };
+    });
+    let pendingOutbox = legacyUpgrade.outbox || await readMemoryMutationOutbox(userId).catch(error => {
+      console.warn('Could not read the local memory outbox:', error);
       return null;
     });
 
     cloudUserIdRef.current = userId;
     cloudRevisionRef.current = revisionInfo.revision;
-    cloudRevisionSupportedRef.current = revisionInfo.supported;
-    cloudBaseStateRef.current = normalizePersistedAppState((cloudState || {}) as PersistedAppState) || {};
-    pendingCloudSnapshotRef.current = pendingSnapshot;
+    cloudBaseStateRef.current = remotePersistedState;
+    cloudBaseProfileRef.current = cloudProfile;
+    pendingMemoryOutboxRef.current = pendingOutbox;
 
-    if (pendingSnapshot) {
-      const hasConflict = revisionInfo.supported && pendingSnapshot.baseRevision !== revisionInfo.revision;
-      if (hasConflict) {
-        const remotePersistedState = normalizePersistedAppState((cloudState || {}) as PersistedAppState) || {};
-        const comparison = compareCloudSnapshots(
-          pendingSnapshot.state,
-          pendingSnapshot.profile,
-          remotePersistedState,
-          cloudProfile
-        );
-        if (comparison.stateEqual) {
-          cloudConflictRef.current = false;
-          cloudBaseStateRef.current = remotePersistedState;
-          if (comparison.profileEqual) {
-            pendingCloudSnapshotRef.current = null;
-            await clearPendingCloudSnapshot(userId);
-            setCloudSyncStatus('idle', pendingSnapshot.language || language);
-            applyCloudSnapshot(cloudProfile, cloudState);
-          } else {
-            const rebasedSnapshot: PendingCloudSnapshot = {
-              ...pendingSnapshot,
-              baseRevision: revisionInfo.revision,
-              baseState: remotePersistedState,
-            };
-            pendingCloudSnapshotRef.current = rebasedSnapshot;
-            await writePendingCloudSnapshot(rebasedSnapshot);
-            setCloudSyncStatus('local', rebasedSnapshot.language || language);
-            applyCloudSnapshot(rebasedSnapshot.profile, rebasedSnapshot.state as CloudAppState);
-          }
-          return;
-        }
-      }
-      cloudConflictRef.current = hasConflict;
-      setCloudSyncStatus(hasConflict ? 'conflict' : 'local', pendingSnapshot.language || language);
-      applyCloudSnapshot(pendingSnapshot.profile, pendingSnapshot.state as CloudAppState);
+    if (pendingOutbox && pendingOutbox.mutations.length === 0 && !pendingOutbox.legacySnapshotBlocked) {
+      await clearMemoryMutationOutbox(userId);
+      pendingOutbox = null;
+      pendingMemoryOutboxRef.current = null;
+    }
+
+    if (!pendingOutbox) {
+      cloudConflictRef.current = false;
+      setCloudSyncStatus('idle', language);
+      applyCloudSnapshot(cloudProfile, cloudState);
       return;
     }
 
-    cloudConflictRef.current = false;
-    setCloudSyncStatus('idle', language);
-    applyCloudSnapshot(cloudProfile, cloudState);
+    if (legacyUpgrade.blocked || pendingOutbox.legacySnapshotBlocked) {
+      cloudConflictRef.current = true;
+      setCloudSyncStatus('conflict', pendingOutbox.language || language);
+      applyCloudSnapshot(cloudProfile, cloudState);
+      return;
+    }
+
+    let effectiveOutbox = pendingOutbox;
+    if (pendingOutbox.expectedRevision !== revisionInfo.revision) {
+      const unresolvedMutations = reconcileMemoryMutationsAfterRemoteAdvance({
+        pendingMutations: pendingOutbox.mutations,
+        inFlightMutations: pendingOutbox.inFlightBatch?.mutations || [],
+        remoteState: remotePersistedState,
+        remoteProfile: cloudProfile,
+      });
+      if (unresolvedMutations.length === 0) {
+        pendingMemoryOutboxRef.current = null;
+        await clearMemoryMutationOutbox(userId);
+        cloudConflictRef.current = false;
+        setCloudSyncStatus('synced', pendingOutbox.language || language);
+        applyCloudSnapshot(cloudProfile, cloudState);
+        return;
+      }
+      if (mutationsAreDisjointFromRemote(unresolvedMutations, remotePersistedState, cloudProfile)) {
+        const rebasedMutations = rebaseMemoryMutationBases(
+          unresolvedMutations,
+          remotePersistedState,
+          cloudProfile
+        );
+        effectiveOutbox = {
+          ...pendingOutbox,
+          expectedRevision: revisionInfo.revision,
+          mutations: rebasedMutations,
+          inFlightBatch: undefined,
+        };
+        pendingMemoryOutboxRef.current = effectiveOutbox;
+        await writeMemoryMutationOutbox(effectiveOutbox);
+      } else {
+        cloudConflictRef.current = true;
+      }
+    } else {
+      cloudConflictRef.current = false;
+    }
+
+    const localPreview = applyMemoryMutationsToSnapshot({
+      state: remotePersistedState,
+      profile: cloudProfile,
+      mutations: effectiveOutbox.mutations,
+    });
+    setCloudSyncStatus(cloudConflictRef.current ? 'conflict' : 'local', effectiveOutbox.language || language);
+    applyCloudSnapshot(localPreview.profile, localPreview.state as CloudAppState);
   }, [applyCloudSnapshot, language]);
 
   const getCloudAuthErrorMessage = React.useCallback((error: unknown, action: CloudAuthAction) => {
@@ -326,12 +393,7 @@ export const useCloudAuthSync = ({
   }, [homeCopy]);
 
   const flushCloudSave = React.useCallback(async () => {
-    if (
-      !isCloudBackendEnabled ||
-      !cloudReadyToSaveRef.current ||
-      cloudConflictRef.current
-    ) return;
-
+    if (!isCloudBackendEnabled || !cloudReadyToSaveRef.current || cloudConflictRef.current) return;
     if (cloudSaveInFlightRef.current) {
       cloudFlushRequestedRef.current = true;
       return;
@@ -339,112 +401,205 @@ export const useCloudAuthSync = ({
 
     const userId = cloudUserIdRef.current;
     if (!userId) return;
-
-    let pendingSnapshot = pendingCloudSnapshotRef.current;
-    if (!pendingSnapshot) {
-      pendingSnapshot = await readPendingCloudSnapshot(userId).catch(() => null);
-      pendingCloudSnapshotRef.current = pendingSnapshot;
+    let pendingOutbox = pendingMemoryOutboxRef.current;
+    const storedOutbox = await readMemoryMutationOutbox(userId).catch(() => null);
+    pendingOutbox = newestMemoryOutbox(pendingOutbox, storedOutbox);
+    pendingMemoryOutboxRef.current = pendingOutbox;
+    if (!pendingOutbox || pendingOutbox.mutations.length === 0) return;
+    if (pendingOutbox.legacySnapshotBlocked) {
+      cloudConflictRef.current = true;
+      setCloudSyncStatus('conflict', pendingOutbox.language);
+      return;
     }
-    if (!pendingSnapshot) return;
 
     cloudSaveInFlightRef.current = true;
     cloudFlushRequestedRef.current = false;
-    setCloudSyncStatus('syncing', pendingSnapshot.language);
+    setCloudSyncStatus('syncing', pendingOutbox.language);
+    const pendingBatch = pendingOutbox.mutations.slice(0, MAX_MEMORY_MUTATIONS_PER_COMMIT);
+    const baseStateAtSend = cloudBaseStateRef.current;
+    const baseProfileAtSend = cloudBaseProfileRef.current;
 
     try {
-      const revisionInfo = await saveCloudSnapshotVersioned(
-        pendingSnapshot.state,
-        pendingSnapshot.profile,
-        pendingSnapshot.baseRevision,
-        cloudRevisionSupportedRef.current
-      );
-      cloudRevisionRef.current = revisionInfo.revision;
-      cloudRevisionSupportedRef.current = revisionInfo.supported;
-      cloudBaseStateRef.current = pendingSnapshot.state;
+      pendingOutbox = {
+        ...pendingOutbox,
+        inFlightBatch: {
+          expectedRevision: pendingOutbox.expectedRevision,
+          mutations: pendingBatch,
+          startedAt: Date.now(),
+        },
+      };
+      pendingMemoryOutboxRef.current = pendingOutbox;
+      await writeMemoryMutationOutbox(pendingOutbox);
+      const result = await applyMemoryMutations(pendingOutbox.expectedRevision, pendingBatch);
+      const confirmed = applyMemoryMutationsToSnapshot({
+        state: baseStateAtSend,
+        profile: baseProfileAtSend,
+        mutations: pendingBatch,
+      });
 
-      const latestSnapshot = pendingCloudSnapshotRef.current;
-      if (!latestSnapshot || latestSnapshot.sequence === pendingSnapshot.sequence) {
-        pendingCloudSnapshotRef.current = null;
-        try {
-          await clearPendingCloudSnapshot(userId);
-        } catch (error) {
-          console.warn('Cloud state synced but pending snapshot cleanup failed:', error);
+      if (cloudUserIdRef.current !== userId) {
+        const storedLatestOutbox = await readMemoryMutationOutbox(userId).catch(() => null);
+        const latestOldUserOutbox = newestMemoryOutbox(pendingOutbox, storedLatestOutbox) || pendingOutbox;
+        const confirmedIds = new Set(pendingBatch.map(item => item.mutationId));
+        const remainingOldUserMutations = rebaseMemoryMutationBases(
+          latestOldUserOutbox.mutations.filter(item => !confirmedIds.has(item.mutationId)),
+          confirmed.state,
+          confirmed.profile
+        );
+        if (remainingOldUserMutations.length === 0) {
+          await clearMemoryMutationOutbox(userId);
+        } else {
+          await writeMemoryMutationOutbox({
+            ...latestOldUserOutbox,
+            expectedRevision: result.revision,
+            mutations: remainingOldUserMutations,
+            inFlightBatch: undefined,
+            sequence: latestOldUserOutbox.sequence + 1,
+          });
         }
-        setCloudSyncStatus('synced', pendingSnapshot.language);
+        return;
+      }
+
+      cloudRevisionRef.current = result.revision;
+      cloudBaseStateRef.current = confirmed.state;
+      cloudBaseProfileRef.current = confirmed.profile;
+
+      await cloudPersistenceChainRef.current.catch(() => {});
+      const storedLatestOutbox = await readMemoryMutationOutbox(userId).catch(() => null);
+      const latestOutbox = newestMemoryOutbox(pendingMemoryOutboxRef.current, storedLatestOutbox);
+      pendingMemoryOutboxRef.current = latestOutbox;
+      const confirmedIds = new Set(pendingBatch.map(item => item.mutationId));
+      const remaining = rebaseMemoryMutationBases(
+        latestOutbox?.mutations.filter(item => !confirmedIds.has(item.mutationId)) || [],
+        confirmed.state,
+        confirmed.profile
+      );
+      const remainingPreview = applyMemoryMutationsToSnapshot({
+        state: confirmed.state,
+        profile: confirmed.profile,
+        mutations: remaining,
+      });
+      const supplemental = diffMemoryState({
+        baseState: remainingPreview.state,
+        nextState: latestAppStateRef.current,
+        baseProfile: remainingPreview.profile,
+        nextProfile: latestProfileSnapshotRef.current,
+      });
+      const nextMutations = compactMemoryMutations([...remaining, ...supplemental]);
+      if (nextMutations.length === 0) {
+        pendingMemoryOutboxRef.current = null;
+        await clearMemoryMutationOutbox(userId).catch(error => {
+          console.warn('Memory changes synced but local outbox cleanup failed:', error);
+        });
+        setCloudSyncStatus('synced', pendingOutbox.language);
       } else {
-        const rebasedSnapshot: PendingCloudSnapshot = {
-          ...latestSnapshot,
-          baseRevision: revisionInfo.revision,
-          baseState: pendingSnapshot.state,
+        const rebasedOutbox: MemoryMutationOutbox = {
+          ...(latestOutbox || pendingOutbox),
+          expectedRevision: result.revision,
+          mutations: nextMutations,
+          inFlightBatch: undefined,
+          sequence: Math.max(latestOutbox?.sequence || 0, pendingOutbox.sequence) + 1,
         };
-        pendingCloudSnapshotRef.current = rebasedSnapshot;
-        try {
-          await writePendingCloudSnapshot(rebasedSnapshot);
-        } catch (error) {
-          console.warn('Could not rebase pending cloud snapshot:', error);
-          setCloudSyncStatus('error', rebasedSnapshot.language);
-        }
+        pendingMemoryOutboxRef.current = rebasedOutbox;
+        await writeMemoryMutationOutbox(rebasedOutbox);
+        setCloudSyncStatus('local', rebasedOutbox.language);
         cloudFlushRequestedRef.current = true;
       }
     } catch (error) {
-      if (error instanceof CloudStateConflictError) {
-        let resolvedAsEquivalent = false;
+      if (error instanceof NormalizedMemoryConflictError) {
+        if (cloudUserIdRef.current !== userId) return;
         try {
           const session = await getCloudSession();
-          if (session?.user?.id === userId) {
-            const remote = await loadCloudAccountData(session.user);
-            const remotePersistedState = normalizePersistedAppState((remote.state || {}) as PersistedAppState) || {};
-            const comparison = compareCloudSnapshots(
-              pendingSnapshot.state,
-              pendingSnapshot.profile,
-              remotePersistedState,
-              remote.profile
-            );
-            if (comparison.stateEqual) {
-              cloudRevisionRef.current = remote.revision;
-              cloudRevisionSupportedRef.current = remote.revisionSupported;
-              cloudBaseStateRef.current = remotePersistedState;
+          if (!session?.user || session.user.id !== userId) throw new Error('No active cloud session.');
+          const remote = await loadCloudAccountData(session.user);
+          const remoteState = normalizePersistedAppState((remote.state || {}) as PersistedAppState) || {};
+          await cloudPersistenceChainRef.current.catch(() => {});
+          const storedLatestOutbox = await readMemoryMutationOutbox(userId).catch(() => null);
+          const latestOutbox = newestMemoryOutbox(
+            pendingMemoryOutboxRef.current || pendingOutbox,
+            storedLatestOutbox
+          ) || pendingOutbox;
+          cloudRevisionRef.current = remote.revision;
+          cloudBaseStateRef.current = remoteState;
+          cloudBaseProfileRef.current = remote.profile;
+
+          const unresolvedMutations = reconcileMemoryMutationsAfterRemoteAdvance({
+            pendingMutations: latestOutbox.mutations,
+            inFlightMutations: latestOutbox.inFlightBatch?.mutations || pendingBatch,
+            remoteState,
+            remoteProfile: remote.profile,
+          });
+          if (unresolvedMutations.length > 0
+            && !mutationsAreDisjointFromRemote(unresolvedMutations, remoteState, remote.profile)) {
+            cloudConflictRef.current = true;
+            setCloudSyncStatus('conflict', latestOutbox.language);
+          } else {
+            const unresolvedPreview = applyMemoryMutationsToSnapshot({
+              state: remoteState,
+              profile: remote.profile,
+              mutations: unresolvedMutations,
+            });
+            const supplemental = diffMemoryState({
+              baseState: unresolvedPreview.state,
+              nextState: latestAppStateRef.current,
+              baseProfile: unresolvedPreview.profile,
+              nextProfile: latestProfileSnapshotRef.current,
+            });
+            const rebasedMutations = compactMemoryMutations([...unresolvedMutations, ...supplemental]);
+            if (rebasedMutations.length === 0) {
+              pendingMemoryOutboxRef.current = null;
+              await clearMemoryMutationOutbox(userId);
               cloudConflictRef.current = false;
-              if (comparison.profileEqual) {
-                pendingCloudSnapshotRef.current = null;
-                await clearPendingCloudSnapshot(userId);
-                setCloudSyncStatus('synced', pendingSnapshot.language);
-                resolvedAsEquivalent = true;
-              } else {
-                const rebasedSnapshot: PendingCloudSnapshot = {
-                  ...pendingSnapshot,
-                  baseRevision: remote.revision,
-                  baseState: remotePersistedState,
-                };
-                pendingCloudSnapshotRef.current = rebasedSnapshot;
-                await writePendingCloudSnapshot(rebasedSnapshot);
-                setCloudSyncStatus('local', rebasedSnapshot.language);
-                cloudFlushRequestedRef.current = true;
-                resolvedAsEquivalent = true;
-              }
+              setCloudSyncStatus('synced', latestOutbox.language);
+              applyCloudSnapshot(remote.profile, remote.state);
+            } else {
+              const rebasedOutbox = {
+                ...latestOutbox,
+                expectedRevision: remote.revision,
+                mutations: rebasedMutations,
+                inFlightBatch: undefined,
+                sequence: latestOutbox.sequence + 1,
+              };
+              pendingMemoryOutboxRef.current = rebasedOutbox;
+              await writeMemoryMutationOutbox(rebasedOutbox);
+              const preview = applyMemoryMutationsToSnapshot({
+                state: remoteState,
+                profile: remote.profile,
+                mutations: rebasedOutbox.mutations,
+              });
+              cloudConflictRef.current = false;
+              setCloudSyncStatus('local', rebasedOutbox.language);
+              applyCloudSnapshot(preview.profile, preview.state as CloudAppState);
+              cloudFlushRequestedRef.current = true;
             }
           }
         } catch (comparisonError) {
-          console.warn('Could not compare the conflicting cloud snapshot:', comparisonError);
-        }
-        if (!resolvedAsEquivalent) {
+          console.warn('Could not inspect normalized memory conflict:', comparisonError);
           cloudConflictRef.current = true;
-          setCloudSyncStatus('conflict', pendingSnapshot.language);
+          setCloudSyncStatus('conflict', pendingOutbox.language);
         }
       } else {
-        console.error('Could not save cloud app state:', error);
-        setCloudSyncStatus('error', pendingSnapshot.language);
+        console.error('Could not save normalized memory changes:', error);
+        const storedFailedOutbox = await readMemoryMutationOutbox(userId).catch(() => null);
+        const failedOutbox = {
+          ...(newestMemoryOutbox(
+            cloudUserIdRef.current === userId ? pendingMemoryOutboxRef.current : null,
+            storedFailedOutbox
+          ) || pendingOutbox),
+          lastError: error instanceof Error ? error.message : 'Normalized memory save failed.',
+        };
+        if (cloudUserIdRef.current === userId) pendingMemoryOutboxRef.current = failedOutbox;
+        await writeMemoryMutationOutbox(failedOutbox).catch(() => {});
+        if (cloudUserIdRef.current === userId) setCloudSyncStatus('error', pendingOutbox.language);
       }
     } finally {
       cloudSaveInFlightRef.current = false;
       if (cloudFlushRequestedRef.current && !cloudConflictRef.current) {
         cloudFlushRequestedRef.current = false;
-        queueMicrotask(() => {
-          void flushCloudSaveRef.current();
-        });
+        queueMicrotask(() => void flushCloudSaveRef.current());
       }
     }
-  }, []);
+  }, [applyCloudSnapshot]);
 
   React.useEffect(() => {
     flushCloudSaveRef.current = flushCloudSave;
@@ -457,62 +612,61 @@ export const useCloudAuthSync = ({
     setCloudSyncStatus('syncing', language);
     const session = await getCloudSession();
     if (!session?.user || session.user.id !== userId) throw new Error('No active cloud session.');
-    const {
-      profile: cloudProfile,
-      state: remoteState,
-      revision,
-      revisionSupported,
-    } = await loadCloudAccountData(session.user);
-    const revisionInfo = { revision, supported: revisionSupported };
+    const { profile: cloudProfile, state: remoteState, revision } = await loadCloudAccountData(session.user);
     const normalizedRemoteState = normalizePersistedAppState((remoteState || {}) as PersistedAppState) || {};
+    const pendingOutbox = pendingMemoryOutboxRef.current || await readMemoryMutationOutbox(userId);
 
-    if (strategy === 'local' || strategy === 'merge') {
-      const pendingSnapshot = pendingCloudSnapshotRef.current || await readPendingCloudSnapshot(userId);
-      if (!pendingSnapshot) {
-        cloudConflictRef.current = false;
-        setCloudSyncStatus('idle', language);
-        return;
-      }
-      const nextState = strategy === 'merge'
-        ? mergeCloudConflictState(
-            pendingSnapshot.baseState,
-            pendingSnapshot.state,
-            normalizedRemoteState,
-            pendingSnapshot.language
-          )
-        : pendingSnapshot.state;
-      const mergedProfileState = nextState.profile || {};
-      const rebasedSnapshot = {
-        ...pendingSnapshot,
-        state: nextState,
-        profile: {
-          account: pendingSnapshot.profile.account || cloudProfile.account,
-          name: mergedProfileState.name || pendingSnapshot.profile.name || cloudProfile.name,
-          avatarUrl: mergedProfileState.avatarUrl || pendingSnapshot.profile.avatarUrl || cloudProfile.avatarUrl,
-        },
-        baseRevision: revisionInfo.revision,
-        baseState: normalizedRemoteState,
-      };
-      cloudRevisionRef.current = revisionInfo.revision;
-      cloudRevisionSupportedRef.current = revisionInfo.supported;
-      cloudBaseStateRef.current = normalizedRemoteState;
-      pendingCloudSnapshotRef.current = rebasedSnapshot;
-      await writePendingCloudSnapshot(rebasedSnapshot);
+    cloudRevisionRef.current = revision;
+    cloudBaseStateRef.current = normalizedRemoteState;
+    cloudBaseProfileRef.current = cloudProfile;
+
+    if (strategy === 'cloud') {
+      if (pendingOutbox?.legacySnapshotBlocked) await markLegacyPendingSnapshotResolved(userId);
+      await clearMemoryMutationOutbox(userId);
+      pendingMemoryOutboxRef.current = null;
       cloudConflictRef.current = false;
-      setCloudSyncStatus('local', rebasedSnapshot.language);
-      if (strategy === 'merge') {
-        applyCloudSnapshot(rebasedSnapshot.profile, rebasedSnapshot.state as CloudAppState);
-      } else {
-        await flushCloudSaveRef.current();
-      }
+      setCloudSyncStatus('idle', language);
+      applyCloudSnapshot(cloudProfile, remoteState);
       return;
     }
 
-    await clearPendingCloudSnapshot(userId);
-    pendingCloudSnapshotRef.current = null;
+    if (!pendingOutbox || pendingOutbox.legacySnapshotBlocked) {
+      setCloudSyncStatus('conflict', pendingOutbox?.language || language);
+      return;
+    }
+
+    const mutations = strategy === 'merge'
+      ? preserveMutationConflicts(
+          pendingOutbox.mutations,
+          normalizedRemoteState,
+          cloudProfile,
+          pendingOutbox.language,
+          latestAppStateRef.current
+        )
+      : pendingOutbox.mutations;
+    const rebasedOutbox: MemoryMutationOutbox = {
+      ...pendingOutbox,
+      expectedRevision: revision,
+      mutations,
+      inFlightBatch: undefined,
+      sequence: pendingOutbox.sequence + 1,
+    };
+    pendingMemoryOutboxRef.current = rebasedOutbox;
+    await writeMemoryMutationOutbox(rebasedOutbox);
     cloudConflictRef.current = false;
-    await resolveCloudSnapshot(userId, cloudProfile, remoteState, revisionInfo);
-  }, [applyCloudSnapshot, language, resolveCloudSnapshot]);
+    setCloudSyncStatus('local', rebasedOutbox.language);
+
+    if (strategy === 'merge') {
+      const preview = applyMemoryMutationsToSnapshot({
+        state: normalizedRemoteState,
+        profile: cloudProfile,
+        mutations,
+      });
+      applyCloudSnapshot(preview.profile, preview.state as CloudAppState);
+    } else {
+      await flushCloudSaveRef.current();
+    }
+  }, [applyCloudSnapshot, language]);
 
   React.useEffect(() => {
     registerCloudConflictResolver(resolveCloudConflict);
@@ -630,14 +784,10 @@ export const useCloudAuthSync = ({
       try {
         const {
           normalizedAccount,
-          initialProfileForCloud,
-          initialState,
         } = buildCloudAuthPayload(enteredAccount);
         const result = await loginCloudAccount({
           account: normalizedAccount,
           password: loginPassword,
-          initialProfile: initialProfileForCloud,
-          initialState,
         });
         const session = await getCloudSession();
 
@@ -795,7 +945,7 @@ export const useCloudAuthSync = ({
       hydratingCloudSessionRef.current = null;
       hydratedCloudUserIdRef.current = null;
       cloudUserIdRef.current = null;
-      pendingCloudSnapshotRef.current = null;
+      pendingMemoryOutboxRef.current = null;
       cloudConflictRef.current = false;
       setCloudAuthHydrating(false);
       void signOutCloudAccount();
@@ -849,31 +999,41 @@ export const useCloudAuthSync = ({
       window.clearTimeout(cloudSaveTimerRef.current);
     }
 
+    const nextState = createAppStateSnapshot();
+    const nextProfile: CloudProfile = {
+      account: normalizeAccountId(profile.account),
+      name: profile.name,
+      avatarUrl: getPersistableAvatarUrl(profile),
+    };
     const sequence = cloudSaveSequenceRef.current + 1;
     cloudSaveSequenceRef.current = sequence;
-    const pendingSnapshot: PendingCloudSnapshot = {
-      userId,
-      state: createAppStateSnapshot(),
-      profile: {
-        account: normalizeAccountId(profile.account),
-        name: profile.name,
-        avatarUrl: getPersistableAvatarUrl(profile),
-      },
-      baseRevision: cloudConflictRef.current
-        ? pendingCloudSnapshotRef.current?.baseRevision ?? cloudRevisionRef.current
-        : cloudRevisionRef.current,
-      sequence,
-      savedAt: Date.now(),
-      language,
-      baseState: pendingCloudSnapshotRef.current?.baseState || cloudBaseStateRef.current,
-    };
-    pendingCloudSnapshotRef.current = pendingSnapshot;
 
     cloudPersistenceChainRef.current = cloudPersistenceChainRef.current
       .catch(() => {})
       .then(async () => {
-        await writePendingCloudSnapshot(pendingSnapshot);
-        if (pendingCloudSnapshotRef.current?.sequence !== sequence) return;
+        const pendingOutbox = pendingMemoryOutboxRef.current || await readMemoryMutationOutbox(userId);
+        const reference = pendingOutbox
+          ? applyMemoryMutationsToSnapshot({
+              state: cloudBaseStateRef.current,
+              profile: cloudBaseProfileRef.current,
+              mutations: pendingOutbox.mutations,
+            })
+          : { state: cloudBaseStateRef.current, profile: cloudBaseProfileRef.current };
+        const mutations = diffMemoryState({
+          baseState: reference.state,
+          nextState,
+          baseProfile: reference.profile,
+          nextProfile,
+        });
+        if (mutations.length === 0) return;
+        const savedOutbox = await enqueueMemoryMutations({
+          userId,
+          expectedRevision: pendingOutbox?.expectedRevision ?? cloudRevisionRef.current,
+          mutations,
+          language,
+        });
+        pendingMemoryOutboxRef.current = savedOutbox;
+        if (!savedOutbox || cloudSaveSequenceRef.current !== sequence) return;
         setCloudSyncStatus(cloudConflictRef.current ? 'conflict' : 'local', language);
         if (cloudConflictRef.current) return;
         cloudSaveTimerRef.current = window.setTimeout(() => {
@@ -882,7 +1042,7 @@ export const useCloudAuthSync = ({
         }, CLOUD_SAVE_DEBOUNCE_MS);
       })
       .catch(error => {
-        console.error('Could not persist pending cloud snapshot:', error);
+        console.error('Could not persist normalized memory changes:', error);
         setCloudSyncStatus('error', language);
       });
 

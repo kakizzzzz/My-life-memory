@@ -1,53 +1,101 @@
+-- Read-only project verification for normalized memory storage v2.
+
 -- 1) Confirm this session is hitting the expected project/schema.
 select current_setting('server_version') as postgres_version;
 select current_database() as db_name;
 
--- 2) Confirm tables exist.
+-- 2) Every required table must exist.
 select table_schema, table_name
 from information_schema.tables
 where table_schema = 'public'
-  and table_name in ('profiles', 'app_states', 'mcp_tokens')
+  and table_name in (
+    'profiles', 'app_states', 'mcp_tokens',
+    'memory_settings', 'memory_stars', 'memory_notes',
+    'memory_tracks', 'memory_entity_history'
+  )
 order by table_name;
 
--- 3) Confirm private storage bucket exists.
+-- 3) The private media bucket must exist.
 select id, name, public, file_size_limit, allowed_mime_types
 from storage.buckets
 where id = 'life-media';
 
--- 4) Confirm anonymous/authenticated grants on both tables.
+-- 4) Authenticated users should have SELECT only on profiles and normalized
+-- rows. app_states should have no authenticated privileges at all. Writes go
+-- through apply_memory_mutations.
 select
-  grantor::regrole as grantor,
   grantee::regrole as grantee,
-  table_schema,
   table_name,
   privilege_type
 from information_schema.table_privileges
 where table_schema = 'public'
-  and table_name in ('profiles', 'app_states', 'mcp_tokens')
+  and table_name in (
+    'profiles', 'app_states',
+    'memory_settings', 'memory_stars', 'memory_notes',
+    'memory_tracks', 'memory_entity_history'
+  )
   and grantee = 'authenticated'
 order by table_name, privilege_type;
 
--- 5) Confirm RLS policies exist and apply to authenticated users.
+-- This query must return zero rows.
+select table_name, privilege_type
+from information_schema.table_privileges
+where table_schema = 'public'
+  and table_name in (
+    'profiles', 'app_states',
+    'memory_settings', 'memory_stars', 'memory_notes',
+    'memory_tracks', 'memory_entity_history'
+  )
+  and grantee = 'authenticated'
+  and privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE');
+
+-- 5) RLS must be enabled and own-user SELECT policies must exist.
+select relname as table_name, relrowsecurity as rls_enabled
+from pg_class
+where relnamespace = 'public'::regnamespace
+  and relname in (
+    'profiles',
+    'memory_settings', 'memory_stars', 'memory_notes',
+    'memory_tracks', 'memory_entity_history'
+  )
+order by relname;
+
 select
-  schemaname,
   tablename,
   policyname,
-  permissive,
   roles,
   cmd,
   qual,
   with_check
 from pg_policies
 where schemaname = 'public'
-  and tablename in ('profiles', 'app_states', 'mcp_tokens')
+  and tablename in (
+    'profiles',
+    'memory_settings', 'memory_stars', 'memory_notes',
+    'memory_tracks', 'memory_entity_history'
+  )
 order by tablename, cmd, policyname;
 
--- 6) Confirm storage object policies.
+-- 6) Required RPCs must exist with their expected privilege boundary.
 select
-  schemaname,
-  tablename,
+  routine_name,
+  specific_name,
+  security_type
+from information_schema.routines
+where routine_schema = 'public'
+  and routine_name in (
+    'apply_memory_mutations',
+    'initialize_normalized_memory_account',
+    'list_protected_memory_media_paths',
+    'summarize_normalized_memory_range',
+    'save_app_snapshot',
+    'load_app_snapshot'
+  )
+order by routine_name;
+
+-- 7) Confirm Storage object policies remain user-scoped.
+select
   policyname,
-  permissive,
   roles,
   cmd,
   qual,
@@ -58,15 +106,20 @@ where schemaname = 'storage'
   and policyname like '%life media%'
 order by cmd, policyname;
 
--- 7) Confirm current auth role (run only in a signed-in browser session via app query endpoints).
-select current_setting('role') as current_role;
+-- 8) Legacy archives should remain present and v2 accounts must be verified.
+select
+  count(*) as legacy_archive_rows,
+  count(*) filter (where state #> '{profile,password}' is not null) as archives_with_legacy_profile_password
+from public.app_states;
 
--- 8) Confirm no legacy password field remains in app state.
-select count(*) as app_states_with_profile_password
-from public.app_states
-where state #> '{profile,password}' is not null;
+select
+  count(*) as normalized_accounts,
+  count(*) filter (where migration_verified_at is null) as unverified_accounts,
+  min(dataset_revision) as minimum_revision,
+  max(dataset_revision) as maximum_revision
+from public.memory_settings;
 
--- 9) Confirm MCP tokens store hashes only.
+-- 9) MCP tokens must store hashes, never plaintext token values.
 select
   count(*) as active_mcp_tokens,
   count(*) filter (where token_hash like 'mlm_%') as suspicious_plaintext_tokens

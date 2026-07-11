@@ -17,13 +17,8 @@ const DEFAULT_CORS_HEADERS = {
 };
 
 const sensitiveStateKeys = new Set([
-  'password',
-  'loginpassword',
-  'registerpassword',
-  'currentpassword',
-  'newpassword',
-  'confirmpassword',
-  'invitecode',
+  'password', 'loginpassword', 'registerpassword', 'currentpassword',
+  'newpassword', 'confirmpassword', 'invitecode',
 ]);
 
 const jsonResponse = (
@@ -51,13 +46,11 @@ const accountIdToAuthEmail = (accountId: string) => {
 };
 
 const sanitizeCloudValue = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(item => sanitizeCloudValue(item));
+  if (Array.isArray(value)) return value.map(sanitizeCloudValue);
   if (!value || typeof value !== 'object') return value;
-
   const sanitized: Record<string, unknown> = {};
   Object.entries(value as Record<string, unknown>).forEach(([key, entry]) => {
-    if (sensitiveStateKeys.has(key.toLowerCase())) return;
-    sanitized[key] = sanitizeCloudValue(entry);
+    if (!sensitiveStateKeys.has(key.toLowerCase())) sanitized[key] = sanitizeCloudValue(entry);
   });
   return sanitizeHtmlFields(sanitized);
 };
@@ -177,35 +170,41 @@ serve(async request => {
   }
 
   const userId = createdUser.user.id;
-  const sanitizedState = sanitizeCloudValue(initialState) as Record<string, unknown>;
-  const { error: profileError } = await admin
-    .from('profiles')
-    .insert({
-      id: userId,
-      account_id: normalizedAccount,
-      name,
-      avatar_url: avatarUrl,
-    });
-
-  if (profileError) {
+  const initialStars = Array.isArray(initialState.stars)
+    ? initialState.stars.filter(star => star && typeof star === 'object') as Record<string, unknown>[]
+    : [];
+  const defaultStar = initialStars[0];
+  if (!defaultStar) {
     await admin.auth.admin.deleteUser(userId).catch(() => {});
-    const message = profileError.message.toLowerCase();
+    return json({ error: { code: 'setup_required', message: 'Could not create the default memory location.' } }, 500);
+  }
+
+  const { error: initializeError } = await admin.rpc('initialize_normalized_memory_account', {
+    p_user_id: userId,
+    p_account_id: normalizedAccount,
+    p_name: name,
+    p_avatar_url: avatarUrl,
+    p_settings: {
+      mapStyle: getString(initialState.mapStyle) || 'light',
+      systemTheme: initialState.systemTheme && typeof initialState.systemTheme === 'object'
+        ? sanitizeCloudValue(initialState.systemTheme)
+        : {},
+      language: getString(initialState.language) || 'en',
+      profileConflicts: Array.isArray(initialState.profileConflicts)
+        ? sanitizeCloudValue(initialState.profileConflicts)
+        : [],
+      profileMetadata: {},
+    },
+    p_default_star: defaultStar,
+  });
+
+  if (initializeError) {
+    await admin.auth.admin.deleteUser(userId).catch(() => {});
+    const message = initializeError.message.toLowerCase();
     if (message.includes('duplicate') || message.includes('unique')) {
       return json({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
     }
-    return json({ error: { code: 'setup_required', message: 'Could not create profile.' } }, 500);
-  }
-
-  const { error: stateError } = await admin
-    .from('app_states')
-    .insert({
-      user_id: userId,
-      state: sanitizedState,
-    });
-
-  if (stateError) {
-    await admin.auth.admin.deleteUser(userId).catch(() => {});
-    return json({ error: { code: 'setup_required', message: 'Could not create app state.' } }, 500);
+    return json({ error: { code: 'setup_required', message: 'Could not initialize normalized memory storage.' } }, 500);
   }
 
   return json({

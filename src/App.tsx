@@ -317,7 +317,7 @@ export default function App() {
   }, [stars, mapStyle, systemTheme.icon]);
 
   const onUpdateTrack = (id: string, updates: Partial<TrackData>) => {
-    setSavedTracks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    setSavedTracks(prev => prev.map(t => t.id === id ? { ...t, ...updates, updatedAt: Date.now() } : t));
   };
 
   const onDeleteTrack = (id: string) => {
@@ -357,6 +357,7 @@ export default function App() {
     cloudConfigError,
     homeCopy,
     language,
+    setLanguage,
     mapStyle,
     setMapStyle,
     systemTheme,

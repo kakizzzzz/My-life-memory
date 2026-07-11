@@ -33,11 +33,14 @@ export type TrackData = {
   color?: string;
   time?: number;
   distance?: number;
+  createdAt?: number;
+  updatedAt?: number;
 };
 
 export type TrackDraftData = {
   paths: [number, number][][];
   time: number;
+  createdAt?: number;
   savedAt: number;
 };
 

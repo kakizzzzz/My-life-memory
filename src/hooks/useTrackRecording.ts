@@ -65,6 +65,7 @@ export const useTrackRecording = ({
   const checkedTrackDraftAccountRef = React.useRef<string | null>(null);
   const lastTrackPointRef = React.useRef<TrackPoint | null>(null);
   const trackingStartedAtRef = React.useRef(0);
+  const routeCreatedAtRef = React.useRef<number | null>(null);
   const trackDraftStateRef = React.useRef({ paths: trackPaths, time: trackTime });
   const accumulatedActiveMsRef = React.useRef(0);
   const activeClockStartedAtRef = React.useRef<number | null>(null);
@@ -203,6 +204,7 @@ export const useTrackRecording = ({
     void startHeadingWatch();
     const startedAt = Date.now();
     trackingStartedAtRef.current = startedAt;
+    routeCreatedAtRef.current = startedAt;
     accumulatedActiveMsRef.current = 0;
     activeClockStartedAtRef.current = startedAt;
     weakGpsStartedAtRef.current = null;
@@ -245,6 +247,7 @@ export const useTrackRecording = ({
     pauseActiveClock();
     lastTrackPointRef.current = null;
     trackingStartedAtRef.current = 0;
+    routeCreatedAtRef.current = null;
     accumulatedActiveMsRef.current = 0;
     activeClockStartedAtRef.current = null;
     weakGpsStartedAtRef.current = null;
@@ -262,12 +265,16 @@ export const useTrackRecording = ({
   const saveTrackingRoute = React.useCallback(() => {
     const finalTrackTime = getElapsedTrackSeconds();
     if (trackPaths.some(path => path.length > 1)) {
+      const savedAt = Date.now();
+      const createdAt = routeCreatedAtRef.current || savedAt;
       setSavedTracks(prev => [...prev, {
         id: createClientId(),
         paths: trackPaths.filter(path => path.length > 1),
         color: '#EDC727',
         time: finalTrackTime,
         distance: trackDistanceKm,
+        createdAt,
+        updatedAt: savedAt,
       }]);
     }
     stopTrackingRoute();
@@ -308,6 +315,7 @@ export const useTrackRecording = ({
       onTrackingStateChange?.(nextTrackingState);
       lastTrackPointRef.current = null;
       trackingStartedAtRef.current = Date.now();
+      routeCreatedAtRef.current = draft.createdAt || Math.max(0, draft.savedAt - draft.time * 1000);
       setActiveView('map');
       setActiveHomePanel(null);
     } else {
@@ -327,6 +335,7 @@ export const useTrackRecording = ({
       writeTrackDraft(account, {
         paths,
         time,
+        createdAt: routeCreatedAtRef.current || Math.max(0, Date.now() - time * 1000),
         savedAt: Date.now(),
       });
     };

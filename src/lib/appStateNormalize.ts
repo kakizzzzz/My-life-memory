@@ -3,15 +3,6 @@ import type { StoredImageMetadata } from './mediaStorage';
 
 type LooseRecord = Record<string, unknown>;
 
-const MAX_HTML_LENGTH = 240_000;
-const MAX_TEXT_LENGTH = 40_000;
-const MAX_LEGACY_IMAGE_URL_LENGTH = 140_000;
-const MAX_LEGACY_IMAGE_URLS = 80;
-const MAX_NOTES_PER_STAR = 300;
-const MAX_STARS = 5000;
-const MAX_TRACKS = 1000;
-const MAX_TRACK_SEGMENTS = 200;
-const MAX_TRACK_POINTS = 20_000;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
 const getString = (value: unknown, fallback = '') => (
@@ -24,13 +15,12 @@ const getFiniteNumber = (value: unknown, fallback = 0) => {
 };
 
 const getOptionalNumber = (value: unknown) => {
+  if (value === null || value === undefined || value === '') return undefined;
   const number = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(number) ? number : undefined;
 };
 
-const clampString = (value: unknown, maxLength: number) => (
-  getString(value).slice(0, maxLength)
-);
+const preserveString = (value: unknown) => getString(value);
 
 const isRecord = (value: unknown): value is LooseRecord => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -56,26 +46,27 @@ const normalizeColor = (value: unknown) => {
 
 const normalizeHtml = (value: unknown) => {
   const html = getString(value);
-  if (!html || html.length > MAX_HTML_LENGTH) return '';
+  if (!html) return '';
+  // Existing data is never blanked or truncated while loading. Per-record
+  // write limits are enforced after the mutation is durable and before upload.
   return sanitizeRichHtml(html);
 };
 
 const normalizeLegacyImageUrl = (value: unknown) => {
   const url = getString(value).trim();
-  if (!url || url.length > MAX_LEGACY_IMAGE_URL_LENGTH) return '';
+  if (!url) return '';
   const lowered = url.toLowerCase();
   if (lowered.startsWith('data:')) {
     return /^data:image\/(?:jpeg|jpg|png|webp|gif);/i.test(lowered) ? url : '';
   }
   if (lowered.startsWith('storage://')) return url;
-  if ((lowered.startsWith('http://') || lowered.startsWith('https://')) && url.length <= 2000) return url;
+  if (lowered.startsWith('http://') || lowered.startsWith('https://')) return url;
   return '';
 };
 
 const normalizeLegacyImageUrls = (value: unknown) => (
   Array.isArray(value)
     ? value
-        .slice(0, MAX_LEGACY_IMAGE_URLS)
         .map(normalizeLegacyImageUrl)
         .filter(Boolean)
     : []
@@ -86,16 +77,16 @@ const normalizeStoredImage = (value: unknown): StoredImageMetadata | null => {
   const provider = value.provider === 'supabase' ? 'supabase' : null;
   const bucket = getString(value.bucket);
   const path = getString(value.path || value.key);
-  if (!provider || !bucket || !path || path.length > 512) return null;
+  if (!provider || !bucket || !path) return null;
 
   return {
     provider,
     bucket,
     key: path,
     path,
-    mimeType: clampString(value.mimeType, 120) || 'image/jpeg',
-    size: Math.max(0, getFiniteNumber(value.size, 0)),
-    createdAt: Math.max(0, getFiniteNumber(value.createdAt, Date.now())),
+    mimeType: preserveString(value.mimeType) || 'image/jpeg',
+    size: getFiniteNumber(value.size, 0),
+    createdAt: getFiniteNumber(value.createdAt, 0),
   };
 };
 
@@ -111,10 +102,10 @@ const normalizeNote = (value: unknown, fallbackIndex: number) => {
   const createdAt = getOptionalNumber(value.createdAt);
   const updatedAt = getOptionalNumber(value.updatedAt);
   return {
-    id: clampString(value.id, 96) || `note-${fallbackIndex}-${createdAt || Date.now()}`,
-    title: clampString(value.title, MAX_TEXT_LENGTH),
+    id: preserveString(value.id) || `note-${fallbackIndex}-${createdAt || Date.now()}`,
+    title: preserveString(value.title),
     titleHtml: normalizeHtml(value.titleHtml),
-    content: clampString(value.content, MAX_TEXT_LENGTH),
+    content: preserveString(value.content),
     contentHtml: normalizeHtml(value.contentHtml),
     imageUrl: normalizeLegacyImageUrl(value.imageUrl) || undefined,
     imageUrls: normalizeLegacyImageUrls(value.imageUrls),
@@ -131,7 +122,7 @@ const normalizeStar = (value: unknown, fallbackIndex: number) => {
   if (!isRecord(value) || !isCoordinate(value.lat, value.lng)) return null;
 
   return {
-    id: clampString(value.id, 96) || `star-${fallbackIndex}`,
+    id: preserveString(value.id) || `star-${fallbackIndex}`,
     lat: getFiniteNumber(value.lat),
     lng: getFiniteNumber(value.lng),
     createdAt: getOptionalNumber(value.createdAt),
@@ -139,7 +130,7 @@ const normalizeStar = (value: unknown, fallbackIndex: number) => {
     tagGroupId: getOptionalNumber(value.tagGroupId),
     color: normalizeColor(value.color),
     notes: Array.isArray(value.notes)
-      ? value.notes.slice(0, MAX_NOTES_PER_STAR).map(normalizeNote).filter(Boolean)
+      ? value.notes.map(normalizeNote).filter(Boolean)
       : [],
   };
 };
@@ -151,16 +142,13 @@ const normalizePathPoint = (value: unknown): [number, number] | null => {
 
 const normalizeTrackPaths = (value: unknown): [number, number][][] => {
   if (!Array.isArray(value)) return [];
-  let remainingPoints = MAX_TRACK_POINTS;
   const paths: [number, number][][] = [];
 
-  for (const segment of value.slice(0, MAX_TRACK_SEGMENTS)) {
-    if (!Array.isArray(segment) || remainingPoints <= 0) continue;
+  for (const segment of value) {
+    if (!Array.isArray(segment)) continue;
     const points = segment
-      .slice(0, remainingPoints)
       .map(normalizePathPoint)
       .filter((point): point is [number, number] => Boolean(point));
-    remainingPoints -= points.length;
     if (points.length > 1) paths.push(points);
   }
 
@@ -173,30 +161,32 @@ const normalizeTrack = (value: unknown, fallbackIndex: number) => {
   if (paths.length === 0) return null;
 
   return {
-    id: clampString(value.id, 96) || `track-${fallbackIndex}`,
+    id: preserveString(value.id) || `track-${fallbackIndex}`,
     paths,
     color: normalizeColor(value.color),
     time: getOptionalNumber(value.time),
     distance: Math.max(0, getFiniteNumber(value.distance, 0)),
+    createdAt: getOptionalNumber(value.createdAt),
+    updatedAt: getOptionalNumber(value.updatedAt),
   };
 };
 
 const normalizeProfile = (value: unknown) => {
   if (!isRecord(value)) return {};
   return {
-    name: clampString(value.name, 120),
-    account: clampString(value.account, 120).trim().toLowerCase(),
-    avatarUrl: clampString(value.avatarUrl, 2000),
+    name: preserveString(value.name),
+    account: preserveString(value.account).trim().toLowerCase(),
+    avatarUrl: preserveString(value.avatarUrl),
     avatarImage: normalizeStoredImage(value.avatarImage) || undefined,
   };
 };
 
 const normalizeProfileConflicts = (value: unknown) => (
   Array.isArray(value)
-    ? value.slice(0, 20).map(entry => {
+    ? value.map(entry => {
         if (!isRecord(entry)) return null;
-        const name = clampString(entry.name, 120);
-        const avatarUrl = clampString(entry.avatarUrl, 2000);
+        const name = preserveString(entry.name);
+        const avatarUrl = preserveString(entry.avatarUrl);
         const avatarImage = normalizeStoredImage(entry.avatarImage) || undefined;
         if (!name && !avatarUrl && !avatarImage) return null;
         return {
@@ -218,10 +208,10 @@ export const normalizePersistedAppState = <T extends LooseRecord | null | undefi
     profile: normalizeProfile(state.profile),
     profileConflicts: normalizeProfileConflicts(state.profileConflicts),
     stars: Array.isArray(state.stars)
-      ? state.stars.slice(0, MAX_STARS).map(normalizeStar).filter(Boolean)
+      ? state.stars.map(normalizeStar).filter(Boolean)
       : [],
     savedTracks: Array.isArray(state.savedTracks)
-      ? state.savedTracks.slice(0, MAX_TRACKS).map(normalizeTrack).filter(Boolean)
+      ? state.savedTracks.map(normalizeTrack).filter(Boolean)
       : [],
   };
 

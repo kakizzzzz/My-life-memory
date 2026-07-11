@@ -2,10 +2,14 @@ import React from 'react';
 import {
   cleanupUnreferencedStorageImages,
   isSupabaseMediaEnabled,
+  MEDIA_BUCKET,
   retryPendingImageDeletions,
   warmStorageImageUrls,
   type StoredImageMetadata,
 } from '../lib/mediaStorage';
+import { loadProtectedMemoryMediaPaths } from '../lib/memoryRepository';
+import { readPendingMemoryMediaPaths } from '../lib/memoryOutbox';
+import { getCloudSession } from '../lib/cloudBackend';
 import {
   getStoredImagesFromNote,
   uniqueStoredImages,
@@ -67,6 +71,23 @@ export const useCloudMediaMaintenance = ({
       )),
     ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata)))
   ), [profile.avatarImage, profileConflicts, stars]);
+  const getProtectedStoredMedia = React.useCallback(async () => {
+    const session = await getCloudSession();
+    const [cloudPaths, pendingPaths] = await Promise.all([
+      loadProtectedMemoryMediaPaths(),
+      session?.user ? readPendingMemoryMediaPaths(session.user.id) : Promise.resolve([]),
+    ]);
+    const paths = [...new Set([...cloudPaths, ...pendingPaths])];
+    return paths.map(path => ({
+      provider: 'supabase' as const,
+      bucket: MEDIA_BUCKET,
+      key: path,
+      path,
+      mimeType: 'image/jpeg',
+      size: 0,
+      createdAt: 0,
+    }));
+  }, []);
 
   React.useEffect(() => {
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
@@ -87,7 +108,12 @@ export const useCloudMediaMaintenance = ({
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
 
     const retryDeletes = () => {
-      void retryPendingImageDeletions(getReferencedStoredMedia());
+      void getProtectedStoredMedia()
+        .then(protectedMedia => retryPendingImageDeletions(uniqueStoredImages([
+          ...getReferencedStoredMedia(),
+          ...protectedMedia,
+        ])))
+        .catch(error => console.warn('Protected media references could not be loaded:', error));
     };
 
     retryDeletes();
@@ -98,7 +124,7 @@ export const useCloudMediaMaintenance = ({
       window.removeEventListener('online', retryDeletes);
       window.removeEventListener('focus', retryDeletes);
     };
-  }, [getReferencedStoredMedia, isSignedIn, profile.account]);
+  }, [getProtectedStoredMedia, getReferencedStoredMedia, isSignedIn, profile.account]);
 
   React.useEffect(() => {
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
@@ -135,6 +161,7 @@ export const useCloudMediaMaintenance = ({
 
         const latestProfile = latestProfileRef.current;
         const latestStars = latestStarsRef.current;
+        const protectedMedia = await getProtectedStoredMedia();
         const referencedMedia = uniqueStoredImages([
           migrated.profile.avatarImage,
           latestProfile.avatarImage,
@@ -145,6 +172,7 @@ export const useCloudMediaMaintenance = ({
           ...latestStars.flatMap(star => (
             (star.notes || []).flatMap(note => getStoredImagesFromNote(note))
           )),
+          ...protectedMedia,
         ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata)));
         const canCleanCloudMedia = !migrated.changed && getCloudSyncStatus().phase === 'synced';
         if (canCleanCloudMedia) {
@@ -175,5 +203,5 @@ export const useCloudMediaMaintenance = ({
       window.removeEventListener('mlm:media-maintenance', requestMaintenance);
       unsubscribeCloudSync();
     };
-  }, [isSignedIn, profile.account, profileConflicts, setProfile, setStars]);
+  }, [getProtectedStoredMedia, isSignedIn, profile.account, profileConflicts, setProfile, setStars]);
 };

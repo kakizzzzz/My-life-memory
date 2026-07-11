@@ -1,80 +1,86 @@
 # Backend Setup
 
-My Life Memory can run in two modes:
+Production My Life Memory requires Supabase. A local account/password fallback exists only in Vite development mode; a production build with missing Supabase configuration must stop with a setup error instead of storing a password in browser storage.
 
-- Without Supabase env vars: local-only fallback using browser storage.
-- With Supabase env vars: Supabase Auth, per-user app state sync, and private Storage images.
+## Data Model
 
-## Supabase Steps
+- Supabase Auth owns passwords and sessions.
+- `profiles` stores the public account profile row.
+- `memory_settings` stores map/theme/language settings and the account-wide `dataset_revision`.
+- `memory_stars`, `memory_notes`, and `memory_tracks` store ordered entities independently.
+- `memory_entity_history` stores the latest 20 pre-update or pre-delete versions per entity.
+- `app_states` is the immutable v1 operator archive after a verified migration. Authenticated clients have no direct access, and normal v2 reads and writes never use it.
+- `life-media` is a private Storage bucket. Database rows contain paths and metadata, not public URLs.
+
+Authenticated clients have SELECT-only access to their own normalized rows through RLS. All profile and memory writes go through `apply_memory_mutations(expected_revision, mutations)`, which derives the user from `auth.uid()`, locks the user's revision row, validates the whole batch, writes history, and increments the dataset revision once.
+
+## Initial Supabase Setup
 
 1. Create a Supabase project.
-2. Deploy the Supabase Edge Functions:
-   - `register-with-invite`
-   - `memory-api`
-   - `mcp-token`
-   - `mcp`
-3. Store the invite code only in Supabase Function Secrets as `INVITE_CODE`.
-4. Store a long random `MEMORY_API_INTERNAL_TOKEN` in Supabase Function Secrets. It is used only between the cloud MCP function and `memory-api`.
-5. Keep `SUPABASE_SERVICE_ROLE_KEY` only in the Edge Function/server environment.
-6. After the invite function is deployed, disable public Email signup in Authentication settings so new accounts cannot bypass the invite flow.
-7. Open SQL Editor and run `supabase/schema.sql`.
-   This creates:
-   - `profiles`
-   - `app_states`
-   - `mcp_tokens`
-   - private Storage bucket `life-media`
-   - RLS policies for per-user rows
-   - Storage policies for per-user image paths
-8. Run every SQL file in `supabase/migrations/`, including `20260710_add_app_state_revision.sql` and `20260711_add_edge_rate_limits.sql`.
-9. Copy `.env.example` to `.env.local`.
-10. Fill:
+2. Run `supabase/schema.sql` in SQL Editor.
+3. Run every file in `supabase/migrations/` in filename order, ending with `20260713_normalized_memory_storage_v2.sql`.
+4. Immediately after that migration, run `supabase/verify-normalized-memory.sql`. Do this before users begin normal v2 editing, because it compares the normalized rows with the unchanged v1 archive.
+5. Run `supabase/verify-cloud-backend.sql` and confirm:
+   - every normalized table exists and has RLS enabled;
+   - authenticated table privileges are SELECT only;
+   - `app_states` has no authenticated privilege, while `profiles` has no direct authenticated write grant;
+   - required RPCs exist;
+   - the `life-media` bucket and user-folder Storage policies exist.
+6. Deploy `register-with-invite`, `memory-api`, `mcp-token`, and `mcp` from the same release commit.
+7. Disable public Email signup after invite registration is deployed.
+
+Never deploy the v2 frontend before the v2 migration and checksum verification succeed. The exact maintenance-window, backup, verification, rollback, and recovery order is in the README under **Normalized v2 production checklist**.
+
+## Environment And Secrets
+
+Frontend `.env.local`:
 
 ```bash
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 ```
 
-10. Restart the dev server.
+Edge Function secrets:
+
+```text
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+INVITE_CODE
+MEMORY_API_INTERNAL_TOKEN
+ALLOWED_ORIGINS
+```
+
+Keep `ENABLE_MEMORY_API_WRITES` unset in production unless write/delete API actions are being intentionally tested. Never put an invite code, service-role key, database URL/password, real user session, or MCP token in frontend environment variables, source files, documentation examples, screenshots, or exports.
 
 ## Memory API
 
-`memory-api` is a Supabase Edge Function for user-scoped memory data. Clients must send a normal Supabase user session token:
+`memory-api` authenticates either a normal Supabase user bearer token or the private MCP-to-API internal token. A user-token request resolves the user from Supabase Auth; an internal request receives the user UUID only from the already authenticated MCP token mapping.
 
-```http
-Authorization: Bearer <user-access-token>
-```
+Read actions:
 
-The function validates the token, loads only that user's `profiles` and `app_states` rows, then returns organized memory data. It supports read actions for search, locations, day records, routes, range summaries, and readable report export.
+- `search_memories`
+- `list_locations`
+- `get_location_memory`
+- `get_day_memory`
+- `get_routes`
+- `summarize_memory_range`
+- `export_memory_report`
 
-Write actions exist for future integrations, but they require:
+The API queries normalized tables with explicit user filters and pagination. Action-specific reads skip unrelated tables, date ranges are pushed into database queries, and `summarize_memory_range` uses the service-only SQL aggregate `summarize_normalized_memory_range`. Route date filtering uses `created_at_ms`; `duration_seconds` is never treated as a timestamp.
 
-```json
-{
-  "confirmWrite": true
-}
-```
+Write actions are disabled unless `ENABLE_MEMORY_API_WRITES=true`. When enabled they still require `confirmWrite: true`; deletes additionally require `confirm: "DELETE"`. Every write becomes a target-entity mutation and uses the same optimistic revision RPC. Deletes are soft deletes and do not immediately remove Storage objects.
 
-Delete actions additionally require:
+## MCP
 
-```json
-{
-  "confirm": "DELETE"
-}
-```
+Both local and cloud MCP expose read-only memory tools. They cannot create, edit, or delete memories.
 
-When deleting notes or stars, the function removes referenced `life-media` Storage objects only if the path starts with the authenticated user's UUID.
-
-## MCP Server
-
-The local stdio MCP server lives at `mcp/my-life-memory.mjs` and calls `memory-api`.
-
-Run it directly:
+Local stdio server:
 
 ```bash
 npm run mcp:memory
 ```
 
-Typical MCP client configuration:
+Typical desktop configuration:
 
 ```json
 {
@@ -93,85 +99,41 @@ Typical MCP client configuration:
 }
 ```
 
-For read-only AI access, do not set write flags. To intentionally expose write tools on a local trusted machine:
+Use `MLM_SUPABASE_ACCESS_TOKEN` instead of account/password only when a trusted local client already manages a normal user session. Never use a service-role key.
 
-```bash
-MLM_MCP_ENABLE_WRITES=true
-```
-
-To also expose destructive delete tools:
-
-```bash
-MLM_MCP_ENABLE_WRITES=true
-MLM_MCP_ENABLE_DELETES=true
-```
-
-For mobile MCP clients, deploy the cloud MCP Edge Functions and use them directly:
-
-```bash
-supabase functions secrets set MEMORY_API_INTERNAL_TOKEN=choose-a-long-random-server-token
-supabase functions deploy mcp-token
-supabase functions deploy mcp
-```
-
-Mobile MCP client settings:
+Cloud/mobile MCP:
 
 - Transport: Streamable HTTP
 - URL: `https://your-project-ref.supabase.co/functions/v1/mcp`
-- Authorization: `Bearer <user-mcp-token-generated-in-the-app>`
+- Header: `Authorization: Bearer <user-mcp-token-generated-in-the-app>`
 
-GitHub Pages is a static web host and cannot serve MCP directly. The mobile MCP server address should be the Supabase Edge Function URL, not the Pages URL.
+The full user MCP token is shown once. Supabase stores only one active SHA-256 token hash per user; generating a replacement invalidates the old token. The MCP function resolves that hash to one `user_id`, then calls the Memory API with `MEMORY_API_INTERNAL_TOKEN`. GitHub Pages is static hosting and cannot serve this MCP endpoint.
 
-Each user generates their own MCP token in the app Settings screen. The full token is shown once; Supabase stores only its SHA-256 hash in `public.mcp_tokens`. Each user can have only one active MCP token; generating a new one replaces the old row, and revoking deletes it. The cloud MCP function resolves the token to one `user_id`, then calls `memory-api` with `MEMORY_API_INTERNAL_TOKEN`. The mobile client should not receive Supabase credentials, service role keys, app account IDs, or app passwords. The deployed function supports Streamable HTTP; SSE fallback is not needed for this project version.
+## Media
 
-## Storage Rules
-
-The app uploads avatars and note images to the private `life-media` bucket. Object paths always start with the authenticated user ID:
+Storage object paths are generated under the authenticated UUID:
 
 ```text
 authUserId/avatars/profile/imageId.jpg
 authUserId/notes/noteId/imageId.jpg
 ```
 
-The app state stores only image metadata:
+Stored metadata contains `provider`, `bucket`, `path`/`key`, MIME type, size, and creation time. Private images render with short-lived signed URLs that are kept only in memory.
 
-```json
-{
-  "provider": "supabase",
-  "bucket": "life-media",
-  "path": "authUserId/notes/noteId/imageId.jpg",
-  "mimeType": "image/jpeg",
-  "size": 102400,
-  "createdAt": 1783430000000
-}
+Soft-deleted rows, conflict copies, entity history, the local entity outbox, and unresolved legacy pending snapshots protect their referenced media. The outbox also persists the exact in-flight mutation batch before network I/O so a lost response can be reconciled after restart. Cleanup scans only the current user's folder and applies the existing 30-day grace period. It must never use `app_states` as the live reference source.
+
+## Recovery
+
+`supabase/recover-normalized-memory-for-user.sql` is an operator-only same-account template. It cannot import between accounts. Before using it, stop writes and sign out all devices for the target account. It preserves the current normalized rows in history, rebuilds from that same user's untouched archive, and deliberately leaves the account unverified. Rerun the full migration checksum gate and verification before allowing the account to resume.
+
+## Verification Commands
+
+```bash
+npm ci
+npm run lint
+npm run lint:edge
+npm test
+npm run build
 ```
 
-Private images render through short-lived Supabase signed URLs. Signed URLs are cached in memory and are not saved to `app_states.state`.
-
-## Verification
-
-Run `supabase/verify-cloud-backend.sql` in SQL Editor to inspect:
-
-- tables
-- grants
-- RLS policies
-- `life-media` bucket
-- Storage object policies
-- legacy password leakage in `app_states`
-
-If the app says cloud setup is blocked, run `supabase/fix-permissions.sql` once, then run the verification SQL again.
-
-## Security Checklist
-
-- Never commit `.env.local`.
-- Never put `service_role`, `DATABASE_URL`, or database password in frontend code.
-- The frontend should use only the Supabase publishable/anon key.
-- Never put the invite code in frontend code, Vite env vars, localStorage, app state, README examples, or exported files.
-- Existing accounts log in normally; only new registration goes through `register-with-invite`.
-- `memory-api` requires a user bearer token and must never accept service-role credentials from clients.
-- Cloud MCP tokens are per-user and stored only as one active hash per user in `mcp_tokens`.
-- MCP should run locally with a normal user account or user access token, not a service-role key.
-- MCP write/delete tools are disabled by default.
-- Keep `life-media` private.
-- Keep Storage object policies scoped to `auth.uid()` path prefixes.
-- Do not store image data URLs in cloud state except as a temporary legacy fallback.
+The test suite executes the migration against a local PostgreSQL-compatible PGlite database, reruns it for idempotency, verifies checksums, tests RLS isolation and atomic mutations, confirms the archive remains unchanged, and proves a malformed migration rolls back.
