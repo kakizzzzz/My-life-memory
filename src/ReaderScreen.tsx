@@ -40,7 +40,7 @@ type ReaderScreenProps = {
   onReaderPaste: (target: 'title' | 'content', event: React.ClipboardEvent<HTMLElement>) => void | Promise<void>;
   onSaveReaderSelection: () => void;
   onReaderContentClick: (event: React.MouseEvent<HTMLDivElement>) => void;
-  onSaveReaderDraft: () => void;
+  onSaveReaderDraft: () => boolean;
   onKeepReaderSelectionPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
   onReaderPanelToggle: (panel: 'font' | 'color') => void;
   onReaderFontSize: (size: number) => void;
@@ -187,7 +187,11 @@ export function ReaderScreen({
   }, []);
 
   const handleSaveReaderDraft = React.useCallback(() => {
-    onSaveReaderDraft();
+    const didSave = onSaveReaderDraft();
+    if (!didSave) {
+      setIsExitConfirmOpen(false);
+      return;
+    }
     updateReaderBaselineFromDom();
     setIsExitConfirmOpen(false);
     showSaveFeedback();

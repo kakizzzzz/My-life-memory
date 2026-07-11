@@ -13,21 +13,21 @@ const COPY: Record<string, Record<Exclude<CloudSyncPhase, 'idle'>, string>> = {
     syncing: 'Syncing to cloud…',
     synced: 'Synced',
     error: 'Cloud sync failed. A local copy was kept.',
-    conflict: 'Another device changed this archive. This device copy was kept without overwriting cloud data.',
+    conflict: 'Cloud content changed in another page or device. This copy was kept without overwriting it.',
   },
   zh: {
     local: '已在本机保存',
     syncing: '正在同步云端…',
     synced: '已同步',
     error: '云端同步失败，本机副本已保留',
-    conflict: '检测到其他设备更新，本机修改已保留，暂未覆盖云端',
+    conflict: '检测到其他页面或设备更新，本机修改已保留，暂未覆盖云端',
   },
   ko: {
     local: '이 기기에 저장됨',
     syncing: '클라우드에 동기화 중…',
     synced: '동기화됨',
     error: '클라우드 동기화에 실패했습니다. 기기 사본은 보관되었습니다.',
-    conflict: '다른 기기의 변경이 감지되어 이 기기 사본을 보관하고 클라우드는 덮어쓰지 않았습니다.',
+    conflict: '다른 페이지 또는 기기의 변경이 감지되어 이 사본을 보관하고 클라우드는 덮어쓰지 않았습니다.',
   },
 };
 

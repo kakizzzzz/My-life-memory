@@ -30,6 +30,7 @@ import {
 } from '../lib/cloudSyncStatus';
 import { normalizePersistedAppState } from '../lib/appStateNormalize';
 import { mergeCloudConflictState } from '../lib/cloudConflictMerge';
+import { compareCloudSnapshots } from '../lib/cloudSnapshotCompare';
 import { normalizeAccountId } from '../lib/accountUtils';
 import {
   getPersistableAvatarUrl,
@@ -253,6 +254,36 @@ export const useCloudAuthSync = ({
 
     if (pendingSnapshot) {
       const hasConflict = revisionInfo.supported && pendingSnapshot.baseRevision !== revisionInfo.revision;
+      if (hasConflict) {
+        const remotePersistedState = normalizePersistedAppState((cloudState || {}) as PersistedAppState) || {};
+        const comparison = compareCloudSnapshots(
+          pendingSnapshot.state,
+          pendingSnapshot.profile,
+          remotePersistedState,
+          cloudProfile
+        );
+        if (comparison.stateEqual) {
+          cloudConflictRef.current = false;
+          cloudBaseStateRef.current = remotePersistedState;
+          if (comparison.profileEqual) {
+            pendingCloudSnapshotRef.current = null;
+            await clearPendingCloudSnapshot(userId);
+            setCloudSyncStatus('idle', pendingSnapshot.language || language);
+            applyCloudSnapshot(cloudProfile, cloudState);
+          } else {
+            const rebasedSnapshot: PendingCloudSnapshot = {
+              ...pendingSnapshot,
+              baseRevision: revisionInfo.revision,
+              baseState: remotePersistedState,
+            };
+            pendingCloudSnapshotRef.current = rebasedSnapshot;
+            await writePendingCloudSnapshot(rebasedSnapshot);
+            setCloudSyncStatus('local', rebasedSnapshot.language || language);
+            applyCloudSnapshot(rebasedSnapshot.profile, rebasedSnapshot.state as CloudAppState);
+          }
+          return;
+        }
+      }
       cloudConflictRef.current = hasConflict;
       setCloudSyncStatus(hasConflict ? 'conflict' : 'local', pendingSnapshot.language || language);
       applyCloudSnapshot(pendingSnapshot.profile, pendingSnapshot.state as CloudAppState);
@@ -357,8 +388,49 @@ export const useCloudAuthSync = ({
       }
     } catch (error) {
       if (error instanceof CloudStateConflictError) {
-        cloudConflictRef.current = true;
-        setCloudSyncStatus('conflict', pendingSnapshot.language);
+        let resolvedAsEquivalent = false;
+        try {
+          const session = await getCloudSession();
+          if (session?.user?.id === userId) {
+            const remote = await loadCloudAccountData(session.user);
+            const remotePersistedState = normalizePersistedAppState((remote.state || {}) as PersistedAppState) || {};
+            const comparison = compareCloudSnapshots(
+              pendingSnapshot.state,
+              pendingSnapshot.profile,
+              remotePersistedState,
+              remote.profile
+            );
+            if (comparison.stateEqual) {
+              cloudRevisionRef.current = remote.revision;
+              cloudRevisionSupportedRef.current = remote.revisionSupported;
+              cloudBaseStateRef.current = remotePersistedState;
+              cloudConflictRef.current = false;
+              if (comparison.profileEqual) {
+                pendingCloudSnapshotRef.current = null;
+                await clearPendingCloudSnapshot(userId);
+                setCloudSyncStatus('synced', pendingSnapshot.language);
+                resolvedAsEquivalent = true;
+              } else {
+                const rebasedSnapshot: PendingCloudSnapshot = {
+                  ...pendingSnapshot,
+                  baseRevision: remote.revision,
+                  baseState: remotePersistedState,
+                };
+                pendingCloudSnapshotRef.current = rebasedSnapshot;
+                await writePendingCloudSnapshot(rebasedSnapshot);
+                setCloudSyncStatus('local', rebasedSnapshot.language);
+                cloudFlushRequestedRef.current = true;
+                resolvedAsEquivalent = true;
+              }
+            }
+          }
+        } catch (comparisonError) {
+          console.warn('Could not compare the conflicting cloud snapshot:', comparisonError);
+        }
+        if (!resolvedAsEquivalent) {
+          cloudConflictRef.current = true;
+          setCloudSyncStatus('conflict', pendingSnapshot.language);
+        }
       } else {
         console.error('Could not save cloud app state:', error);
         setCloudSyncStatus('error', pendingSnapshot.language);

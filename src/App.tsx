@@ -997,8 +997,9 @@ export default function App() {
         onSaveReaderSelection={saveReaderSelection}
         onReaderContentClick={handleReaderContentClick}
         onSaveReaderDraft={() => {
-          saveReaderDraft();
+          const didSave = saveReaderDraft();
           setReaderActivePanel(null);
+          return didSave;
         }}
         onKeepReaderSelectionPointerDown={keepReaderSelectionPointerDown}
         onReaderPanelToggle={handleReaderPanelToggle}
