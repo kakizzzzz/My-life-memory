@@ -808,7 +808,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
               onPointerLeave={stopRankingHold}
               onPointerUp={stopRankingHold}
               onPointerCancel={stopRankingHold}
-              className={`absolute left-2 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
+              className={`absolute left-0 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.previousRanking}
             >
               <ChevronLeft size={28} strokeWidth={2.2} />
@@ -839,7 +839,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
               onPointerLeave={stopRankingHold}
               onPointerUp={stopRankingHold}
               onPointerCancel={stopRankingHold}
-              className={`absolute right-2 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
+              className={`absolute right-0 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.nextRanking}
             >
               <ChevronRight size={28} strokeWidth={2.2} />
