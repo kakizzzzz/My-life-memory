@@ -14,6 +14,7 @@ import { MapCanvas } from './MapCanvas';
 import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingControlsOverlay } from './MapControlsOverlay';
 import { SearchResultsScreen } from './SearchResultsScreen';
 import { RecordsScreen } from './RecordsScreen';
+import { ReaderScreen } from './ReaderScreen';
 import { useMemoryDerivedData } from './hooks/useMemoryDerivedData';
 import { useMcpTokens } from './hooks/useMcpTokens';
 import { usePasswordChange } from './hooks/usePasswordChange';
@@ -89,7 +90,6 @@ import {
 import { HOME_COPY } from './copy/homeCopy';
 
 const NoteEditorModal = React.lazy(() => import('./NoteEditorModal').then(module => ({ default: module.NoteEditorModal })));
-const ReaderScreen = React.lazy(() => import('./ReaderScreen').then(module => ({ default: module.ReaderScreen })));
 const TripStatisticsView = React.lazy(() => import('./TripStatisticsView').then(module => ({ default: module.TripStatisticsView })));
 
 export default function App() {
@@ -966,7 +966,6 @@ export default function App() {
       />
 
       {activeView === 'reader' && (
-      <React.Suspense fallback={null}>
       <ReaderScreen
         isOpen
         isSignedIn={isSignedIn}
@@ -1017,7 +1016,6 @@ export default function App() {
         onLocateReaderRecord={locateReaderRecord}
         formatRecordMonth={formatRecordMonth}
       />
-      </React.Suspense>
       )}
 
       <AnimatePresence>
