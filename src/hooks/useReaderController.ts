@@ -5,6 +5,7 @@ import {
   imageMetadataFromElement,
   isSupabaseMediaEnabled,
   requestCloudMediaMaintenance,
+  scheduleImageDeletion,
   uploadImageToStorage,
   type StoredImageMetadata,
 } from '../lib/mediaStorage';
@@ -47,6 +48,12 @@ type ActiveTag = { order: number; groupId: number } | null;
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
     void deleteImageFromStorageReliably(metadata);
+  });
+};
+
+const scheduleStoredImageDeletions = (metadataList: StoredImageMetadata[]) => {
+  uniqueStoredImages(metadataList).forEach(metadata => {
+    void scheduleImageDeletion(metadata);
   });
 };
 
@@ -174,7 +181,8 @@ export const useReaderController = ({
     const previousImages = getStoredImagesFromNote(readerRecord.note);
     const removedExistingImages = getRemovedStoredImages(previousImages, images);
     const unusedUploadedImages = getRemovedStoredImages(uploadedImages, images);
-    deleteStoredImages([...removedExistingImages, ...unusedUploadedImages]);
+    scheduleStoredImageDeletions(removedExistingImages);
+    deleteStoredImages(unusedUploadedImages);
     readerUploadedImagesRef.current = [];
 
     const title = htmlToText(titleHtml);

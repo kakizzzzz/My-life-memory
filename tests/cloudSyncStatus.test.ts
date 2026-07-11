@@ -31,7 +31,8 @@ test('routes an explicit cloud conflict choice to the registered resolver', asyn
   });
 
   await resolveCloudConflict('local');
+  await resolveCloudConflict('merge');
   await resolveCloudConflict('cloud');
-  assert.deepEqual(choices, ['local', 'cloud']);
+  assert.deepEqual(choices, ['local', 'merge', 'cloud']);
   registerCloudConflictResolver(null);
 });

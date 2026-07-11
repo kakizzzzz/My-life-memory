@@ -54,6 +54,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - `life-media` is a private Supabase Storage bucket for avatar and note image files.
 - The frontend stores only Storage metadata in app state: `provider`, `bucket`, `path`, `mimeType`, `size`, and `createdAt`.
 - Legacy compressed data URL images still render as an offline fallback. After login or network recovery, the app migrates them into private Storage and updates app state with Storage metadata.
+- The production build registers a same-origin app-shell service worker. It caches only public application assets; Supabase responses, private signed media, map tiles, and memory data are excluded. This improves launch reliability without creating a second plaintext cache of private memories, but it is not a promise of full offline cloud editing.
 - Photo-GPS star creation uploads the selected photo through the same Storage flow, then creates a star and a note at the embedded photo coordinates. If the photo has no usable GPS metadata, no star is created.
 - Deleting an avatar, note image, star, or note queues the related Storage object for deletion. Failed deletes are retried after login, focus, or network recovery.
 - Media maintenance scans only the authenticated user's UUID folder. It skips cleanup during a cloud conflict and keeps a 24-hour grace period before deleting unreferenced objects.
@@ -190,6 +191,7 @@ For GitHub Pages:
    ```
 
 3. Publish `dist/` to the Pages branch or use `.github/workflows/deploy-pages.yml`.
+   Backend releases use the separate manual `.github/workflows/deploy-supabase.yml` workflow after configuring `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, and `SUPABASE_DB_PASSWORD` as GitHub Actions secrets. It verifies the app and Edge Functions before applying migrations and deploying all four functions, so frontend and backend releases can be audited from the same commit.
 4. After deploy, open the Pages URL and test:
    - register and log in
    - switch accounts on the same device and confirm each account sees only its own data
@@ -226,7 +228,7 @@ For GitHub Pages:
 - Private images are rendered with short-lived signed URLs; signed URLs are not stored in app state.
 - App state sanitization strips password-like fields before cloud save. Production builds do not allow local account/password fallback when Supabase is not configured.
 - Supabase Auth passwords cannot be viewed by the app. The app supports changing passwords, not revealing saved passwords.
-- Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`.
+- Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`. Previously referenced media enters a 30-day deletion queue and is removed only after cloud sync succeeds and the current account state no longer references it. Full orphan scans run at most once per account per day.
 - Legacy data URL images are kept only as compatibility fallback and are automatically migrated to private Storage after login or network recovery.
 - If GitHub Pages is used as a live demo, configure Supabase environment variables in GitHub Actions secrets before building.
 

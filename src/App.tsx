@@ -9,14 +9,11 @@ import {
   PasswordChangeModal,
   SearchModal,
 } from './AppChrome';
-import { NoteEditorModal } from './NoteEditorModal';
 import { HomeScreen } from './HomeScreen';
 import { MapCanvas } from './MapCanvas';
 import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingControlsOverlay } from './MapControlsOverlay';
 import { SearchResultsScreen } from './SearchResultsScreen';
 import { RecordsScreen } from './RecordsScreen';
-import { ReaderScreen } from './ReaderScreen';
-import { TripStatisticsView } from './TripStatisticsView';
 import { useMemoryDerivedData } from './hooks/useMemoryDerivedData';
 import { useMcpTokens } from './hooks/useMcpTokens';
 import { usePasswordChange } from './hooks/usePasswordChange';
@@ -90,6 +87,10 @@ import {
   UI_ICON_STROKE,
 } from './constants/ui';
 import { HOME_COPY } from './copy/homeCopy';
+
+const NoteEditorModal = React.lazy(() => import('./NoteEditorModal').then(module => ({ default: module.NoteEditorModal })));
+const ReaderScreen = React.lazy(() => import('./ReaderScreen').then(module => ({ default: module.ReaderScreen })));
+const TripStatisticsView = React.lazy(() => import('./TripStatisticsView').then(module => ({ default: module.TripStatisticsView })));
 
 export default function App() {
   const [persistedAppState] = useState<PersistedAppState | null>(() => readPersistedAppState());
@@ -961,8 +962,10 @@ export default function App() {
         onSubmit={() => { void handleChangePassword(); }}
       />
 
+      {activeView === 'reader' && (
+      <React.Suspense fallback={null}>
       <ReaderScreen
-        isOpen={activeView === 'reader'}
+        isOpen
         isSignedIn={isSignedIn}
         readerRecord={readerRecord}
         homeCopy={homeCopy}
@@ -1009,6 +1012,8 @@ export default function App() {
         onLocateReaderRecord={locateReaderRecord}
         formatRecordMonth={formatRecordMonth}
       />
+      </React.Suspense>
+      )}
 
       <AnimatePresence>
         {isSignedIn && activeView === 'stats' && (
@@ -1020,12 +1025,14 @@ export default function App() {
             className="absolute inset-0 z-[900] overflow-y-auto overscroll-contain bg-[var(--app-page)] pointer-events-auto [touch-action:pan-y]"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
-            <TripStatisticsView
-              activityPoints={mapActivity.points}
-              activityCount={markedLocationCount}
-              textRankings={starRecordRankings}
-              language={language}
-            />
+            <React.Suspense fallback={null}>
+              <TripStatisticsView
+                activityPoints={mapActivity.points}
+                activityCount={markedLocationCount}
+                textRankings={starRecordRankings}
+                language={language}
+              />
+            </React.Suspense>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1102,6 +1109,7 @@ export default function App() {
 
       <AnimatePresence>
         {editingNoteTarget && editingStar && (
+          <React.Suspense fallback={null}>
           <NoteEditorModal
              star={editingStar}
              initialNoteId={editingNoteTarget.noteId}
@@ -1112,6 +1120,7 @@ export default function App() {
                setStars(prev => prev.map(s => s.id === editingNoteTarget.starId ? { ...s, notes } : s));
              }}
           />
+          </React.Suspense>
         )}
       </AnimatePresence>
 

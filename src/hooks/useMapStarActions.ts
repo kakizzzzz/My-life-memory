@@ -1,7 +1,7 @@
 import React from 'react';
 import L, { type Map as LeafletMap, type LeafletMouseEvent } from 'leaflet';
 import { createClientId } from '../lib/generalUtils';
-import { deleteImageFromStorageReliably, type StoredImageMetadata } from '../lib/mediaStorage';
+import { scheduleImageDeletion, type StoredImageMetadata } from '../lib/mediaStorage';
 import { getStoredImagesFromNote, uniqueStoredImages } from '../lib/noteHtmlUtils';
 import type { StarData, TagMode } from '../types/app';
 
@@ -9,7 +9,7 @@ type ActiveTag = { order: number; groupId: number } | null;
 
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
-    void deleteImageFromStorageReliably(metadata);
+    void scheduleImageDeletion(metadata);
   });
 };
 

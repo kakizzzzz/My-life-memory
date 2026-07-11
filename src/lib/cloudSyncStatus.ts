@@ -6,7 +6,7 @@ export type CloudSyncStatus = {
   updatedAt: number;
 };
 
-export type CloudConflictStrategy = 'local' | 'cloud';
+export type CloudConflictStrategy = 'merge' | 'local' | 'cloud';
 
 let conflictResolver: ((strategy: CloudConflictStrategy) => Promise<void>) | null = null;
 

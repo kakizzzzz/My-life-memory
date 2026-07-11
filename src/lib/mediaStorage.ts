@@ -1,10 +1,12 @@
 import { isCloudBackendEnabled, supabase } from './supabaseClient';
+import { getCloudSyncStatus } from './cloudSyncStatus';
 
 export const MEDIA_BUCKET = 'life-media';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const PENDING_MEDIA_DELETE_STORAGE_KEY_PREFIX = 'my-life-memory-pending-media-deletes-v1:';
-const ORPHAN_MEDIA_GRACE_MS = 24 * 60 * 60 * 1000;
+const DEFERRED_MEDIA_DELETE_MS = 30 * 24 * 60 * 60 * 1000;
+const ORPHAN_MEDIA_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type StoredImageMetadata = {
   provider: 'supabase';
@@ -19,6 +21,11 @@ export type StoredImageMetadata = {
 export type StoredImageUpload = {
   metadata: StoredImageMetadata | null;
   src: string;
+};
+
+type PendingMediaDelete = StoredImageMetadata & {
+  deleteAfter?: number;
+  immediate?: boolean;
 };
 
 const signedUrlCache = new Map<string, { src: string; expiresAt: number }>();
@@ -41,7 +48,7 @@ const sameStoredImage = (
   cacheKeyForMetadata(a) === cacheKeyForMetadata(b)
 );
 
-const uniqueMetadata = (metadataList: StoredImageMetadata[]) => (
+const uniqueMetadata = <T extends StoredImageMetadata>(metadataList: T[]): T[] => (
   metadataList.filter((metadata, index, list) => (
     list.findIndex(item => sameStoredImage(item, metadata)) === index
   ))
@@ -51,7 +58,7 @@ const getPendingDeleteStorageKey = (userId: string) => (
   `${PENDING_MEDIA_DELETE_STORAGE_KEY_PREFIX}${encodeURIComponent(userId)}`
 );
 
-const readPendingDeletes = (userId: string) => {
+const readPendingDeletes = (userId: string): PendingMediaDelete[] => {
   if (typeof window === 'undefined') return [];
 
   try {
@@ -59,7 +66,7 @@ const readPendingDeletes = (userId: string) => {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((metadata): metadata is StoredImageMetadata => (
+    return parsed.filter((metadata): metadata is PendingMediaDelete => (
       metadata?.provider === 'supabase' &&
       typeof metadata.bucket === 'string' &&
       typeof metadata.path === 'string' &&
@@ -70,7 +77,7 @@ const readPendingDeletes = (userId: string) => {
   }
 };
 
-const writePendingDeletes = (userId: string, metadataList: StoredImageMetadata[]) => {
+const writePendingDeletes = (userId: string, metadataList: PendingMediaDelete[]) => {
   if (typeof window === 'undefined') return;
 
   try {
@@ -87,7 +94,7 @@ const writePendingDeletes = (userId: string, metadataList: StoredImageMetadata[]
   }
 };
 
-const queueImageDeletion = async (metadata: StoredImageMetadata) => {
+const queueImageDeletion = async (metadata: PendingMediaDelete) => {
   const userId = await getCurrentUserId().catch(() => '');
   if (!userId || !metadata.path.startsWith(`${userId}/`)) return;
   writePendingDeletes(userId, [...readPendingDeletes(userId), metadata]);
@@ -240,19 +247,54 @@ export const deleteImageFromStorageReliably = async (metadata: StoredImageMetada
   if (deleted) {
     await removeQueuedImageDeletion(metadata);
   } else {
-    await queueImageDeletion(metadata);
+    await queueImageDeletion({ ...metadata, immediate: true });
   }
   return deleted;
 };
 
-export const retryPendingImageDeletions = async () => {
+export const scheduleImageDeletion = async (
+  metadata: StoredImageMetadata,
+  delayMs = DEFERRED_MEDIA_DELETE_MS
+) => {
+  const userId = await getCurrentUserId().catch(() => '');
+  if (!userId || !metadata.path.startsWith(`${userId}/`)) return false;
+  await queueImageDeletion({
+    ...metadata,
+    deleteAfter: Date.now() + Math.max(0, delayMs),
+  });
+  requestCloudMediaMaintenance();
+  return true;
+};
+
+export const retryPendingImageDeletions = async (
+  referencedMetadata: StoredImageMetadata[] = []
+) => {
   const userId = await getCurrentUserId().catch(() => '');
   if (!userId) return;
   const pendingDeletes = uniqueMetadata(readPendingDeletes(userId));
   if (pendingDeletes.length === 0) return;
 
-  const remainingDeletes: StoredImageMetadata[] = [];
+  const referencedPaths = new Set(
+    uniqueMetadata(referencedMetadata)
+      .filter(metadata => metadata.path.startsWith(`${userId}/`))
+      .map(metadata => metadata.path)
+  );
+
+  const remainingDeletes: PendingMediaDelete[] = [];
   for (const metadata of pendingDeletes) {
+    if (referencedPaths.has(metadata.path)) {
+      remainingDeletes.push(metadata);
+      continue;
+    }
+    if (!metadata.immediate && getCloudSyncStatus().phase !== 'synced') {
+      remainingDeletes.push(metadata);
+      continue;
+    }
+    const deleteAfter = metadata.deleteAfter ?? metadata.createdAt + DEFERRED_MEDIA_DELETE_MS;
+    if (!metadata.immediate && deleteAfter > Date.now()) {
+      remainingDeletes.push(metadata);
+      continue;
+    }
     const deleted = await deleteImageFromStorage(metadata);
     if (!deleted) remainingDeletes.push(metadata);
   }

@@ -29,6 +29,7 @@ import {
   type CloudConflictStrategy,
 } from '../lib/cloudSyncStatus';
 import { normalizePersistedAppState } from '../lib/appStateNormalize';
+import { mergeCloudConflictState } from '../lib/cloudConflictMerge';
 import { normalizeAccountId } from '../lib/accountUtils';
 import {
   getPersistableAvatarUrl,
@@ -125,6 +126,7 @@ export const useCloudAuthSync = ({
   const cloudUserIdRef = React.useRef<string | null>(null);
   const cloudRevisionRef = React.useRef(0);
   const cloudRevisionSupportedRef = React.useRef(false);
+  const cloudBaseStateRef = React.useRef<PersistedAppState>({});
   const cloudConflictRef = React.useRef(false);
   const pendingCloudSnapshotRef = React.useRef<PendingCloudSnapshot | null>(null);
   const cloudSaveSequenceRef = React.useRef(0);
@@ -242,6 +244,7 @@ export const useCloudAuthSync = ({
     cloudUserIdRef.current = userId;
     cloudRevisionRef.current = revisionInfo.revision;
     cloudRevisionSupportedRef.current = revisionInfo.supported;
+    cloudBaseStateRef.current = normalizePersistedAppState((cloudState || {}) as PersistedAppState) || {};
     pendingCloudSnapshotRef.current = pendingSnapshot;
 
     if (pendingSnapshot) {
@@ -322,6 +325,7 @@ export const useCloudAuthSync = ({
       );
       cloudRevisionRef.current = revisionInfo.revision;
       cloudRevisionSupportedRef.current = revisionInfo.supported;
+      cloudBaseStateRef.current = pendingSnapshot.state;
 
       const latestSnapshot = pendingCloudSnapshotRef.current;
       if (!latestSnapshot || latestSnapshot.sequence === pendingSnapshot.sequence) {
@@ -336,6 +340,7 @@ export const useCloudAuthSync = ({
         const rebasedSnapshot: PendingCloudSnapshot = {
           ...latestSnapshot,
           baseRevision: revisionInfo.revision,
+          baseState: pendingSnapshot.state,
         };
         pendingCloudSnapshotRef.current = rebasedSnapshot;
         try {
@@ -374,36 +379,61 @@ export const useCloudAuthSync = ({
     if (!userId || !cloudConflictRef.current) return;
 
     setCloudSyncStatus('syncing', language);
-    if (strategy === 'local') {
-      const revisionInfo = await readCloudStateRevision(userId);
+    const session = await getCloudSession();
+    if (!session?.user || session.user.id !== userId) throw new Error('No active cloud session.');
+    const [{ profile: cloudProfile, state: remoteState }, revisionInfo] = await Promise.all([
+      loadCloudAccountData(session.user),
+      readCloudStateRevision(userId),
+    ]);
+    const normalizedRemoteState = normalizePersistedAppState((remoteState || {}) as PersistedAppState) || {};
+
+    if (strategy === 'local' || strategy === 'merge') {
       const pendingSnapshot = pendingCloudSnapshotRef.current || await readPendingCloudSnapshot(userId);
       if (!pendingSnapshot) {
         cloudConflictRef.current = false;
         setCloudSyncStatus('idle', language);
         return;
       }
+      const nextState = strategy === 'merge'
+        ? mergeCloudConflictState(
+            pendingSnapshot.baseState,
+            pendingSnapshot.state,
+            normalizedRemoteState,
+            pendingSnapshot.language
+          )
+        : pendingSnapshot.state;
+      const mergedProfileState = nextState.profile || {};
       const rebasedSnapshot = {
         ...pendingSnapshot,
+        state: nextState,
+        profile: {
+          account: pendingSnapshot.profile.account || cloudProfile.account,
+          name: mergedProfileState.name || pendingSnapshot.profile.name || cloudProfile.name,
+          avatarUrl: mergedProfileState.avatarUrl || pendingSnapshot.profile.avatarUrl || cloudProfile.avatarUrl,
+        },
         baseRevision: revisionInfo.revision,
+        baseState: normalizedRemoteState,
       };
       cloudRevisionRef.current = revisionInfo.revision;
       cloudRevisionSupportedRef.current = revisionInfo.supported;
+      cloudBaseStateRef.current = normalizedRemoteState;
       pendingCloudSnapshotRef.current = rebasedSnapshot;
       await writePendingCloudSnapshot(rebasedSnapshot);
       cloudConflictRef.current = false;
       setCloudSyncStatus('local', rebasedSnapshot.language);
-      await flushCloudSaveRef.current();
+      if (strategy === 'merge') {
+        applyCloudSnapshot(rebasedSnapshot.profile, rebasedSnapshot.state as CloudAppState);
+      } else {
+        await flushCloudSaveRef.current();
+      }
       return;
     }
 
-    const session = await getCloudSession();
-    if (!session?.user || session.user.id !== userId) throw new Error('No active cloud session.');
-    const { profile: cloudProfile, state } = await loadCloudAccountData(session.user);
     await clearPendingCloudSnapshot(userId);
     pendingCloudSnapshotRef.current = null;
     cloudConflictRef.current = false;
-    await resolveCloudSnapshot(userId, cloudProfile, state);
-  }, [language, resolveCloudSnapshot]);
+    await resolveCloudSnapshot(userId, cloudProfile, remoteState);
+  }, [applyCloudSnapshot, language, resolveCloudSnapshot]);
 
   React.useEffect(() => {
     registerCloudConflictResolver(resolveCloudConflict);
@@ -749,6 +779,7 @@ export const useCloudAuthSync = ({
       sequence,
       savedAt: Date.now(),
       language,
+      baseState: pendingCloudSnapshotRef.current?.baseState || cloudBaseStateRef.current,
     };
     pendingCloudSnapshotRef.current = pendingSnapshot;
 

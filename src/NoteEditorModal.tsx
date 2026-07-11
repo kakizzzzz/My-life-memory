@@ -5,6 +5,7 @@ import { HexColorInput, HexColorPicker } from 'react-colorful';
 import {
   dehydrateStorageMediaHtml,
   deleteImageFromStorageReliably,
+  scheduleImageDeletion,
   hydrateStorageMediaHtml,
   imageMetadataFromElement,
   isSupabaseMediaEnabled,
@@ -476,6 +477,12 @@ const getStoredImagesFromNote = (note?: NoteData) => (
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
     void deleteImageFromStorageReliably(metadata);
+  });
+};
+
+const scheduleStoredImageDeletions = (metadataList: StoredImageMetadata[]) => {
+  uniqueStoredImages(metadataList).forEach(metadata => {
+    void scheduleImageDeletion(metadata);
   });
 };
 
@@ -1657,7 +1664,8 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     const unusedUploadedImages = getRemovedStoredImages(uploadedStoredImagesRef.current, savedImages);
     imageTransactionCommittedRef.current = true;
     uploadedStoredImagesRef.current = [];
-    deleteStoredImages([...removedOriginalImages, ...unusedUploadedImages]);
+    scheduleStoredImageDeletions(removedOriginalImages);
+    deleteStoredImages(unusedUploadedImages);
     onSave(savedNotes);
     onClose();
   };

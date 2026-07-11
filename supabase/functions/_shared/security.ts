@@ -16,6 +16,7 @@ type RateBucket = {
 };
 
 const rateBuckets = new Map<string, RateBucket>();
+const rateLimitFallbackWarnings = new Set<string>();
 
 type RuntimeWithDeno = typeof globalThis & {
   Deno?: { env?: { get?: (name: string) => string | undefined } };
@@ -114,6 +115,16 @@ const hitMemoryRateLimit = (key: string, limit: number, windowMs: number) => {
   };
 };
 
+const warnRateLimitFallback = (reason: string) => {
+  if (rateLimitFallbackWarnings.has(reason)) return;
+  rateLimitFallbackWarnings.add(reason);
+  console.warn(JSON.stringify({
+    event: 'edge_rate_limit_fallback',
+    reason,
+    message: 'Durable rate limiting is unavailable; this function instance is using its in-memory limiter.',
+  }));
+};
+
 const sha256Hex = async (value: string) => {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest))
@@ -124,7 +135,10 @@ const sha256Hex = async (value: string) => {
 export const hitRateLimit = async (key: string, limit: number, windowMs: number) => {
   const supabaseUrl = readServerEnv('SUPABASE_URL');
   const serviceRoleKey = readServerEnv('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceRoleKey) return hitMemoryRateLimit(key, limit, windowMs);
+  if (!supabaseUrl || !serviceRoleKey) {
+    warnRateLimitFallback('missing_server_environment');
+    return hitMemoryRateLimit(key, limit, windowMs);
+  }
 
   try {
     const response = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_edge_rate_limit`, {
@@ -140,15 +154,22 @@ export const hitRateLimit = async (key: string, limit: number, windowMs: number)
         p_window_seconds: Math.max(1, Math.ceil(windowMs / 1000)),
       }),
     });
-    if (!response.ok) return hitMemoryRateLimit(key, limit, windowMs);
+    if (!response.ok) {
+      warnRateLimitFallback(`rpc_http_${response.status}`);
+      return hitMemoryRateLimit(key, limit, windowMs);
+    }
     const payload = await response.json();
     const result = Array.isArray(payload) ? payload[0] : payload;
-    if (!result || typeof result.limited !== 'boolean') return hitMemoryRateLimit(key, limit, windowMs);
+    if (!result || typeof result.limited !== 'boolean') {
+      warnRateLimitFallback('rpc_invalid_payload');
+      return hitMemoryRateLimit(key, limit, windowMs);
+    }
     return {
       limited: result.limited,
       retryAfterSeconds: Math.max(1, Number(result.retry_after_seconds) || Math.ceil(windowMs / 1000)),
     };
   } catch {
+    warnRateLimitFallback('rpc_request_failed');
     return hitMemoryRateLimit(key, limit, windowMs);
   }
 };

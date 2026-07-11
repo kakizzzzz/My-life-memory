@@ -1,4 +1,3 @@
-import * as exifr from 'exifr';
 import { UPLOAD_IMAGE_MAX_BYTES } from '../constants/appDefaults';
 
 const canvasToImageBlob = (canvas: HTMLCanvasElement, mimeType: string, quality: number) => (
@@ -223,6 +222,7 @@ const readExifGpsFromArrayBuffer = (buffer: ArrayBuffer): [number, number] | nul
 
 export const readPhotoGpsCoordinates = async (file: File): Promise<[number, number] | null> => {
   try {
+    const exifr = await import('exifr');
     const gps = await exifr.gps(file);
     if (
       gps &&

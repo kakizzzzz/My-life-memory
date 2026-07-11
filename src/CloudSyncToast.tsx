@@ -31,10 +31,10 @@ const COPY: Record<string, Record<Exclude<CloudSyncPhase, 'idle'>, string>> = {
   },
 };
 
-const CONFLICT_ACTION_COPY: Record<string, { local: string; cloud: string }> = {
-  en: { local: 'Keep this device', cloud: 'Load cloud copy' },
-  zh: { local: '保留本机版本', cloud: '载入云端版本' },
-  ko: { local: '이 기기 유지', cloud: '클라우드 불러오기' },
+const CONFLICT_ACTION_COPY: Record<string, { merge: string; local: string; cloud: string }> = {
+  en: { merge: 'Merge safely', local: 'Keep this device', cloud: 'Load cloud copy' },
+  zh: { merge: '安全合并', local: '保留本机版本', cloud: '载入云端版本' },
+  ko: { merge: '안전하게 병합', local: '이 기기 유지', cloud: '클라우드 불러오기' },
 };
 
 export function CloudSyncToast() {
@@ -59,7 +59,7 @@ export function CloudSyncToast() {
   const languageCopy = COPY[status.language] || COPY.en;
   const actionCopy = CONFLICT_ACTION_COPY[status.language] || CONFLICT_ACTION_COPY.en;
 
-  const handleResolve = async (strategy: 'local' | 'cloud') => {
+  const handleResolve = async (strategy: 'merge' | 'local' | 'cloud') => {
     if (isResolving) return;
     setIsResolving(true);
     try {
@@ -81,7 +81,15 @@ export function CloudSyncToast() {
     >
       <div>{languageCopy[status.phase]}</div>
       {status.phase === 'conflict' && (
-        <div className="mt-2 flex justify-center gap-2">
+        <div className="mt-2 flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            disabled={isResolving}
+            onClick={() => void handleResolve('merge')}
+            className="rounded-full bg-black/20 px-3 py-1 text-[12px] disabled:opacity-50"
+          >
+            {actionCopy.merge}
+          </button>
           <button
             type="button"
             disabled={isResolving}

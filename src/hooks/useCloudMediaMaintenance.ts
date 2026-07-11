@@ -11,8 +11,30 @@ import {
   uniqueStoredImages,
 } from '../lib/noteHtmlUtils';
 import { migrateInlineMediaToStorage } from '../lib/mediaMigration';
-import { getCloudSyncStatus } from '../lib/cloudSyncStatus';
+import { getCloudSyncStatus, subscribeCloudSyncStatus } from '../lib/cloudSyncStatus';
 import type { StarData, UserProfile } from '../types/app';
+
+const MEDIA_SCAN_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const MEDIA_SCAN_STORAGE_KEY_PREFIX = 'my-life-memory-media-scan-v1:';
+
+const getMediaScanStorageKey = (account: string) => (
+  `${MEDIA_SCAN_STORAGE_KEY_PREFIX}${encodeURIComponent(account.trim().toLowerCase())}`
+);
+
+const isMediaScanDue = (account: string) => {
+  if (typeof window === 'undefined' || !account) return false;
+  const previousScan = Number(window.localStorage.getItem(getMediaScanStorageKey(account)) || 0);
+  return !Number.isFinite(previousScan) || Date.now() - previousScan >= MEDIA_SCAN_INTERVAL_MS;
+};
+
+const markMediaScanComplete = (account: string) => {
+  if (typeof window === 'undefined' || !account) return;
+  try {
+    window.localStorage.setItem(getMediaScanStorageKey(account), String(Date.now()));
+  } catch {
+    // A future focus/online event can safely retry the maintenance scan.
+  }
+};
 
 export const useCloudMediaMaintenance = ({
   isSignedIn,
@@ -62,7 +84,7 @@ export const useCloudMediaMaintenance = ({
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
 
     const retryDeletes = () => {
-      void retryPendingImageDeletions();
+      void retryPendingImageDeletions(getReferencedStoredMedia());
     };
 
     retryDeletes();
@@ -73,7 +95,7 @@ export const useCloudMediaMaintenance = ({
       window.removeEventListener('online', retryDeletes);
       window.removeEventListener('focus', retryDeletes);
     };
-  }, [isSignedIn, profile.account]);
+  }, [getReferencedStoredMedia, isSignedIn, profile.account]);
 
   React.useEffect(() => {
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
@@ -120,8 +142,13 @@ export const useCloudMediaMaintenance = ({
             (star.notes || []).flatMap(note => getStoredImagesFromNote(note))
           )),
         ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata)));
-        if (getCloudSyncStatus().phase !== 'conflict') {
-          await cleanupUnreferencedStorageImages(referencedMedia);
+        const canCleanCloudMedia = !migrated.changed && getCloudSyncStatus().phase === 'synced';
+        if (canCleanCloudMedia) {
+          await retryPendingImageDeletions(referencedMedia);
+          if (isMediaScanDue(sourceProfile.account)) {
+            await cleanupUnreferencedStorageImages(referencedMedia);
+            markMediaScanComplete(sourceProfile.account);
+          }
         }
       } catch (error) {
         console.warn('Cloud media maintenance could not finish:', error);
@@ -135,10 +162,14 @@ export const useCloudMediaMaintenance = ({
     window.addEventListener('online', requestMaintenance);
     window.addEventListener('focus', requestMaintenance);
     window.addEventListener('mlm:media-maintenance', requestMaintenance);
+    const unsubscribeCloudSync = subscribeCloudSyncStatus(() => {
+      if (getCloudSyncStatus().phase === 'synced') requestMaintenance();
+    });
     return () => {
       window.removeEventListener('online', requestMaintenance);
       window.removeEventListener('focus', requestMaintenance);
       window.removeEventListener('mlm:media-maintenance', requestMaintenance);
+      unsubscribeCloudSync();
     };
   }, [isSignedIn, profile.account, setProfile, setStars]);
 };

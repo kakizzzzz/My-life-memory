@@ -27,6 +27,7 @@ export type PendingCloudSnapshot = {
   sequence: number;
   savedAt: number;
   language: string;
+  baseState?: PersistedAppState;
 };
 
 export type CloudRevisionInfo = {

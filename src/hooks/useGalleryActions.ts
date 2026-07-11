@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  deleteImageFromStorageReliably,
+  scheduleImageDeletion,
   isSupabaseMediaEnabled,
   requestCloudMediaMaintenance,
   storagePlaceholderSrc,
@@ -63,7 +63,7 @@ export const useGalleryActions = ({
 
     setProfile(prev => ({ ...prev, avatarUrl, avatarImage }));
     if (previousAvatarImage && previousAvatarImage.key !== avatarImage?.key) {
-      void deleteImageFromStorageReliably(previousAvatarImage);
+      void scheduleImageDeletion(previousAvatarImage);
     }
     event.target.value = '';
   }, [profile.avatarImage, setProfile]);
