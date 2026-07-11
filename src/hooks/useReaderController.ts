@@ -40,6 +40,7 @@ import {
   type ReaderTextTarget,
 } from '../lib/readerDomUtils';
 import { HOME_COPY } from '../copy/homeCopy';
+import { isReaderEditorReadyForSave } from '../lib/readerDraftSafety';
 import type { AppView, HomePanel, NoteData, ReadingNoteTarget, StarData } from '../types/app';
 
 type HomeCopy = typeof HOME_COPY.en;
@@ -105,6 +106,7 @@ export const useReaderController = ({
   const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
   const readerUploadedImagesRef = React.useRef<StoredImageMetadata[]>([]);
   const readerTransactionKeyRef = React.useRef<string | null>(null);
+  const readerEditorReadyKeyRef = React.useRef<string | null>(null);
 
   const readerRecord = React.useMemo(() => {
     if (!readingNoteTarget) return null;
@@ -140,27 +142,41 @@ export const useReaderController = ({
   }, [discardUploadedReaderImages]);
 
   React.useLayoutEffect(() => {
-    if (activeView !== 'reader' || !readerRecord) return;
+    readerEditorReadyKeyRef.current = null;
+    if (activeView !== 'reader' || !readerRecord || !readerRecordKey) return;
     const titleEditor = readerTitleRef.current;
     const contentEditor = readerContentRef.current;
+    if (!titleEditor || !contentEditor) return;
 
-    if (titleEditor && titleEditor.innerHTML !== readerRecord.titleHtml) {
+    if (titleEditor.innerHTML !== readerRecord.titleHtml) {
       titleEditor.innerHTML = sanitizeRichHtml(readerRecord.titleHtml);
     }
 
-    if (contentEditor && contentEditor.innerHTML !== readerRecord.contentHtml) {
+    if (contentEditor.innerHTML !== readerRecord.contentHtml) {
       contentEditor.innerHTML = sanitizeRichHtml(readerRecord.contentHtml);
     }
 
-    if (contentEditor) ensureReaderEditableTailAfterMedia(contentEditor);
+    ensureReaderEditableTailAfterMedia(contentEditor);
     readerSavedRangeRef.current = null;
     readerPendingTitleStylesRef.current = {};
     readerPendingContentStylesRef.current = {};
+    readerEditorReadyKeyRef.current = readerRecordKey;
     setReaderSelectedUnderline(false);
+
+    return () => {
+      if (readerEditorReadyKeyRef.current === readerRecordKey) {
+        readerEditorReadyKeyRef.current = null;
+      }
+    };
   }, [activeView, readerRecordKey, readerRecord?.titleHtml, readerRecord?.contentHtml]);
 
   const saveReaderDraft = React.useCallback((updates: Partial<NoteData> = {}) => {
-    if (!readerRecord) return false;
+    if (!readerRecord || !isReaderEditorReadyForSave({
+      recordKey: readerRecordKey,
+      readyKey: readerEditorReadyKeyRef.current,
+      hasTitleEditor: Boolean(readerTitleRef.current),
+      hasContentEditor: Boolean(readerContentRef.current),
+    })) return false;
     if (readerContentRef.current) ensureReaderEditableTailAfterMedia(readerContentRef.current);
     const titleHtml = sanitizeRichHtml(readerTitleRef.current?.innerHTML ?? readerRecord.titleHtml);
     const rawContentHtml = readerContentRef.current?.innerHTML ?? readerRecord.contentHtml;
@@ -257,6 +273,7 @@ export const useReaderController = ({
   }, [readerActiveTextTarget]);
 
   const openReaderFromRecord = React.useCallback((starId: string, noteId: string) => {
+    readerEditorReadyKeyRef.current = null;
     setReadingNoteTarget({ starId, noteId });
     setActiveView('reader');
     setActiveHomePanel(null);

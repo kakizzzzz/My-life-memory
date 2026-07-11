@@ -155,6 +155,7 @@ export function StarActionOverlay({
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [isMapChooserOpen, setIsMapChooserOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
+  const [customColor, setCustomColor] = useState('#EDC727');
   const copyTimerRef = React.useRef<number | null>(null);
   const selectedStar = selectedStarId ? stars.find(star => star.id === selectedStarId) : undefined;
   const selectedStarLat = selectedStar?.lat;
@@ -179,6 +180,12 @@ export function StarActionOverlay({
       setIsMapChooserOpen(false);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (showCustomPicker && selectedStar?.color) {
+      setCustomColor(selectedStar.color);
+    }
+  }, [selectedStarId, showCustomPicker]);
 
   useEffect(() => () => {
     if (copyTimerRef.current !== null) {
@@ -411,7 +418,10 @@ export function StarActionOverlay({
               {DEFAULT_COLORS.map(c => (
                 <button 
                   key={c}
-                  onClick={() => onUpdateStar(star.id, { color: c })}
+                  onClick={() => {
+                    setCustomColor(c);
+                    onUpdateStar(star.id, { color: c });
+                  }}
                   className="w-[20px] h-[20px] rounded-full"
                   style={{ 
                     backgroundColor: c,
@@ -439,12 +449,23 @@ export function StarActionOverlay({
               onPointerUp={(event) => event.stopPropagation()}
               onPointerCancel={(event) => event.stopPropagation()}
             >
-               <HexColorPicker color={star.color || '#EDC727'} onChange={(c) => onUpdateStar(star.id, { color: c })} />
+               <HexColorPicker
+                 color={customColor}
+                 onChange={setCustomColor}
+                 onChangeEnd={(color) => onUpdateStar(star.id, { color })}
+               />
                <div className="flex items-center w-full">
                   <span className="text-white/70 font-mono text-[13px] leading-none pt-[1px] mr-1">#</span>
                   <HexColorInput 
-                    color={star.color || '#EDC727'} 
-                    onChange={(c) => onUpdateStar(star.id, { color: c })}
+                    color={customColor}
+                    onChange={setCustomColor}
+                    onBlur={() => onUpdateStar(star.id, { color: customColor })}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        onUpdateStar(star.id, { color: customColor });
+                        event.currentTarget.blur();
+                      }
+                    }}
                     className="flex-1 min-w-0 h-[22px] bg-white/10 border border-white/20 text-white rounded-[6px] px-1.5 text-[12px] font-mono uppercase focus:outline-none focus:border-white/50"
                   />
                </div>
