@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
@@ -12,6 +11,10 @@ import {
   sanitizeRichHtml,
   tokenPrefix,
 } from '../_shared/security.ts';
+
+type AdminClient = ReturnType<typeof createClient<any>>;
+type ProfileRow = { account_id: string | null; name: string | null; avatar_url: string | null };
+type StateRow = { state: Record<string, unknown> | null };
 
 const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
@@ -93,7 +96,6 @@ const memoryResponse = (
     ok: true,
     source: 'my-life-memory',
     action,
-    count,
     query: meta.query ?? getString(body.query),
     timestamp: new Date().toISOString(),
     ...(count === 0 ? {
@@ -308,7 +310,7 @@ const collectMediaPathsFromNote = (note: Record<string, unknown>, userId: string
   return Array.from(paths);
 };
 
-const deleteMediaPaths = async (admin: ReturnType<typeof createClient>, paths: string[]) => {
+const deleteMediaPaths = async (admin: AdminClient, paths: string[]) => {
   const uniquePaths = Array.from(new Set(paths)).filter(Boolean);
   if (uniquePaths.length === 0) return { deleted: [], error: null };
   const { error } = await admin.storage.from('life-media').remove(uniquePaths);
@@ -370,7 +372,7 @@ const buildMemoryReportHtml = ({
 };
 
 const loadMemoryForUserId = async (
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   userId: string,
   accountFallback = '',
   corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
@@ -380,12 +382,12 @@ const loadMemoryForUserId = async (
       .from('profiles')
       .select('account_id,name,avatar_url')
       .eq('id', userId)
-      .maybeSingle(),
+      .maybeSingle<ProfileRow>(),
     admin
       .from('app_states')
       .select('state')
       .eq('user_id', userId)
-      .maybeSingle(),
+      .maybeSingle<StateRow>(),
   ]);
 
   if (profileError || stateError) {
@@ -410,7 +412,7 @@ const loadMemoryForUserId = async (
 };
 
 const loadMemory = async (
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   token: string,
   corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
 ) => {
@@ -425,7 +427,7 @@ const loadMemory = async (
   return loadMemoryForUserId(admin, userData.user.id, '', corsHeaders);
 };
 
-const saveState = async (admin: ReturnType<typeof createClient>, userId: string, state: Record<string, unknown>) => {
+const saveState = async (admin: AdminClient, userId: string, state: Record<string, unknown>) => {
   const { error } = await admin
     .from('app_states')
     .upsert({ user_id: userId, state: sanitizeValue(state) }, { onConflict: 'user_id' });
@@ -488,7 +490,7 @@ serve(async request => {
   const requireWrite = (input: Record<string, unknown>) => requireWriteIntent(input, localCorsHeaders);
   const requireDelete = (input: Record<string, unknown>) => requireDeleteIntent(input, localCorsHeaders);
 
-  const ipLimit = hitRateLimit(`memory-api:${clientIp(request)}`, 180, 60_000);
+  const ipLimit = await hitRateLimit(`memory-api:${clientIp(request)}`, 180, 60_000);
   if (ipLimit.limited) {
     return rateLimitResponse(localCorsHeaders, ipLimit.retryAfterSeconds);
   }
@@ -515,7 +517,7 @@ serve(async request => {
     return fail('bad_request', 'Invalid request body.', 400);
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
+  const admin = createClient<any>(supabaseUrl, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -526,7 +528,7 @@ serve(async request => {
     const authHeader = request.headers.get('authorization') || '';
     const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1] || '';
     const internalHeader = request.headers.get('x-memory-api-internal-token') || '';
-    const authLimit = hitRateLimit(`memory-api-auth:${clientIp(request)}:${tokenPrefix(internalHeader || token)}`, 120, 60_000);
+    const authLimit = await hitRateLimit(`memory-api-auth:${clientIp(request)}:${tokenPrefix(internalHeader || token)}`, 120, 60_000);
     if (authLimit.limited) {
       return rateLimitResponse(localCorsHeaders, authLimit.retryAfterSeconds);
     }
@@ -777,7 +779,7 @@ serve(async request => {
       const noteIndex = notes.findIndex(note => getString(note.id) === noteId);
       if (noteIndex === -1) return fail('not_found', 'Note was not found.', 404);
       const updates = sanitizeValue(body.updates || {}) as Record<string, unknown>;
-      const nextNote = { ...notes[noteIndex], updatedAt: Date.now() };
+      const nextNote: Record<string, unknown> = { ...notes[noteIndex], updatedAt: Date.now() };
       Object.entries(updates).forEach(([key, value]) => {
         if (!writableNoteKeys.has(key)) return;
         nextNote[key] = key === 'contentHtml' ? sanitizeRichHtml(value) : value;

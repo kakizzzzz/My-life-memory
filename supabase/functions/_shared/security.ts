@@ -1,4 +1,3 @@
-// @ts-nocheck
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://kakizzzzz.github.io',
   'http://localhost:3000',
@@ -18,8 +17,16 @@ type RateBucket = {
 
 const rateBuckets = new Map<string, RateBucket>();
 
+type RuntimeWithDeno = typeof globalThis & {
+  Deno?: { env?: { get?: (name: string) => string | undefined } };
+};
+
+const readServerEnv = (name: string) => (
+  (globalThis as RuntimeWithDeno).Deno?.env?.get?.(name) || ''
+);
+
 const getAllowedOrigins = () => {
-  const configured = (Deno.env.get('ALLOWED_ORIGINS') || '')
+  const configured = readServerEnv('ALLOWED_ORIGINS')
     .split(',')
     .map(origin => origin.trim())
     .filter(Boolean);
@@ -91,7 +98,7 @@ export const parseMcpAccessToken = (authorization: string) => {
   return '';
 };
 
-export const hitRateLimit = (key: string, limit: number, windowMs: number) => {
+const hitMemoryRateLimit = (key: string, limit: number, windowMs: number) => {
   const now = Date.now();
   const existing = rateBuckets.get(key);
   const bucket = existing && existing.resetAt > now
@@ -105,6 +112,45 @@ export const hitRateLimit = (key: string, limit: number, windowMs: number) => {
     limited: bucket.count > limit,
     retryAfterSeconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
   };
+};
+
+const sha256Hex = async (value: string) => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('');
+};
+
+export const hitRateLimit = async (key: string, limit: number, windowMs: number) => {
+  const supabaseUrl = readServerEnv('SUPABASE_URL');
+  const serviceRoleKey = readServerEnv('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !serviceRoleKey) return hitMemoryRateLimit(key, limit, windowMs);
+
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_edge_rate_limit`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceRoleKey,
+        authorization: `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        p_key_hash: await sha256Hex(key),
+        p_limit: limit,
+        p_window_seconds: Math.max(1, Math.ceil(windowMs / 1000)),
+      }),
+    });
+    if (!response.ok) return hitMemoryRateLimit(key, limit, windowMs);
+    const payload = await response.json();
+    const result = Array.isArray(payload) ? payload[0] : payload;
+    if (!result || typeof result.limited !== 'boolean') return hitMemoryRateLimit(key, limit, windowMs);
+    return {
+      limited: result.limited,
+      retryAfterSeconds: Math.max(1, Number(result.retry_after_seconds) || Math.ceil(windowMs / 1000)),
+    };
+  } catch {
+    return hitMemoryRateLimit(key, limit, windowMs);
+  }
 };
 
 export const rateLimitResponse = (corsHeaders: Record<string, string>, retryAfterSeconds: number) => (

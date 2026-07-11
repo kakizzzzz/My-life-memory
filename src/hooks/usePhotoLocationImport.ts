@@ -3,6 +3,7 @@ import { sanitizeRichHtml } from '../lib/htmlSanitizer';
 import {
   dehydrateStorageMediaHtml,
   isSupabaseMediaEnabled,
+  requestCloudMediaMaintenance,
   uploadImageToStorage,
   type StoredImageMetadata,
 } from '../lib/mediaStorage';
@@ -102,6 +103,7 @@ export const usePhotoLocationImport = ({
           }
         } catch (error) {
           console.warn('Supabase Storage photo GPS upload failed, using data URL fallback:', error);
+          requestCloudMediaMaintenance();
         }
       }
 

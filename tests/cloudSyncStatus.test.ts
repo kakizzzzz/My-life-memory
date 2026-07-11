@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getCloudSyncStatus,
+  registerCloudConflictResolver,
+  resolveCloudConflict,
   setCloudSyncStatus,
   subscribeCloudSyncStatus,
 } from '../src/lib/cloudSyncStatus';
@@ -20,4 +22,16 @@ test('publishes cloud sync phase changes and supports unsubscribe', () => {
   unsubscribe();
   setCloudSyncStatus('syncing', 'zh');
   assert.equal(notificationCount, 1);
+});
+
+test('routes an explicit cloud conflict choice to the registered resolver', async () => {
+  const choices: string[] = [];
+  registerCloudConflictResolver(async strategy => {
+    choices.push(strategy);
+  });
+
+  await resolveCloudConflict('local');
+  await resolveCloudConflict('cloud');
+  assert.deepEqual(choices, ['local', 'cloud']);
+  registerCloudConflictResolver(null);
 });

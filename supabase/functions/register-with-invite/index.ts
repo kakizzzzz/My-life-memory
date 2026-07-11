@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
@@ -75,7 +74,7 @@ serve(async request => {
   const localCorsHeaders = createCorsHeaders(request);
   const json = (body: unknown, status = 200) => jsonResponse(body, status, localCorsHeaders);
 
-  const ipLimit = hitRateLimit(`register:${clientIp(request)}`, 30, 60_000);
+  const ipLimit = await hitRateLimit(`register:${clientIp(request)}`, 30, 60_000);
   if (ipLimit.limited) {
     return rateLimitResponse(localCorsHeaders, ipLimit.retryAfterSeconds);
   }
@@ -114,7 +113,7 @@ serve(async request => {
     : {};
 
   if (!inviteCode || inviteCode !== inviteSecret) {
-    const failLimit = hitRateLimit(`register-invite-fail:${clientIp(request)}:${normalizedAccount || 'none'}`, 5, 10 * 60_000);
+    const failLimit = await hitRateLimit(`register-invite-fail:${clientIp(request)}:${normalizedAccount || 'none'}`, 5, 10 * 60_000);
     if (failLimit.limited) return rateLimitResponse(localCorsHeaders, failLimit.retryAfterSeconds);
     return json({ error: { code: 'invalid_invite', message: 'Invite code is invalid.' } }, 403);
   }

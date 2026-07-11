@@ -26,6 +26,12 @@ export const getPersistableAvatarUrl = (profile?: Partial<UserProfile>) => (
   profile?.avatarImage ? storagePlaceholderSrc(profile.avatarImage) : profile?.avatarUrl || ''
 );
 
+export const TRACK_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const isTrackDraftExpired = (savedAt: number, now = Date.now()) => (
+  !Number.isFinite(savedAt) || savedAt <= 0 || now - savedAt > TRACK_DRAFT_MAX_AGE_MS
+);
+
 export const readPersistedAppState = (): PersistedAppState | null => {
   if (typeof window === 'undefined') return null;
 
@@ -118,12 +124,17 @@ export const readTrackDraft = (account: string): TrackDraftData | null => {
     const raw = window.localStorage.getItem(getTrackDraftStorageKey(account));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<TrackDraftData>;
+    const savedAt = Math.max(0, Number(parsed.savedAt) || 0);
+    if (isTrackDraftExpired(savedAt)) {
+      window.localStorage.removeItem(getTrackDraftStorageKey(account));
+      return null;
+    }
     const paths = normalizeTrackDraftPaths(parsed.paths);
     if (paths.length === 0) return null;
     return {
       paths,
       time: Math.max(0, Number(parsed.time) || 0),
-      savedAt: Math.max(0, Number(parsed.savedAt) || Date.now()),
+      savedAt,
     };
   } catch {
     return null;

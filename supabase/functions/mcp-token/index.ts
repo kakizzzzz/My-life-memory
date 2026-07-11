@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
@@ -84,7 +83,7 @@ serve(async request => {
     errorResponse(code, message, status, localCorsHeaders)
   );
 
-  const ipLimit = hitRateLimit(`mcp-token:${clientIp(request)}`, 60, 60_000);
+  const ipLimit = await hitRateLimit(`mcp-token:${clientIp(request)}`, 60, 60_000);
   if (ipLimit.limited) {
     return rateLimitResponse(localCorsHeaders, ipLimit.retryAfterSeconds);
   }
@@ -105,7 +104,7 @@ serve(async request => {
 
   const userToken = getBearerToken(request);
   if (!userToken) {
-    const limit = hitRateLimit(`mcp-token-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
+    const limit = await hitRateLimit(`mcp-token-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
     if (limit.limited) return rateLimitResponse(localCorsHeaders, limit.retryAfterSeconds);
     return fail('unauthorized', 'A valid login session is required.', 401);
   }
@@ -126,7 +125,7 @@ serve(async request => {
 
   const { data: userData, error: userError } = await admin.auth.getUser(userToken);
   if (userError || !userData.user) {
-    const limit = hitRateLimit(`mcp-token-auth-fail:${clientIp(request)}:${tokenPrefix(userToken)}`, 10, 10 * 60_000);
+    const limit = await hitRateLimit(`mcp-token-auth-fail:${clientIp(request)}:${tokenPrefix(userToken)}`, 10, 10 * 60_000);
     if (limit.limited) return rateLimitResponse(localCorsHeaders, limit.retryAfterSeconds);
     return fail('unauthorized', 'A valid login session is required.', 401);
   }

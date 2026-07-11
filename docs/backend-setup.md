@@ -25,8 +25,9 @@ My Life Memory can run in two modes:
    - private Storage bucket `life-media`
    - RLS policies for per-user rows
    - Storage policies for per-user image paths
-8. Copy `.env.example` to `.env.local`.
-9. Fill:
+8. Run every SQL file in `supabase/migrations/`, including `20260710_add_app_state_revision.sql` and `20260711_add_edge_rate_limits.sql`.
+9. Copy `.env.example` to `.env.local`.
+10. Fill:
 
 ```bash
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co

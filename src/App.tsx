@@ -382,6 +382,8 @@ export default function App() {
     isSignedIn,
     profile,
     stars,
+    setProfile,
+    setStars,
     onMediaReady: handleCloudMediaReady,
   });
   const {

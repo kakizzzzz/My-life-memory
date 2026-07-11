@@ -269,7 +269,12 @@ select {
 }
 
 .note-rich-editor p {
-  margin: 0 0 0.75rem;
+  margin: 0;
+}
+
+.note-rich-editor > div {
+  margin: 0;
+  line-height: inherit;
 }
 
 .note-rich-editor p[data-note-tail="true"] {
@@ -361,7 +366,7 @@ select {
 }
 
 .note-reader-content p {
-  margin: 0 0 1rem;
+  margin: 0;
 }
 
 .note-reader-content p[data-note-tail="true"] {

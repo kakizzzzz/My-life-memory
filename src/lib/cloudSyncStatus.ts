@@ -6,6 +6,10 @@ export type CloudSyncStatus = {
   updatedAt: number;
 };
 
+export type CloudConflictStrategy = 'local' | 'cloud';
+
+let conflictResolver: ((strategy: CloudConflictStrategy) => Promise<void>) | null = null;
+
 let currentStatus: CloudSyncStatus = {
   phase: 'idle',
   language: 'en',
@@ -30,4 +34,15 @@ export const setCloudSyncStatus = (phase: CloudSyncPhase, language = currentStat
     updatedAt: Date.now(),
   };
   listeners.forEach(listener => listener());
+};
+
+export const registerCloudConflictResolver = (
+  resolver: ((strategy: CloudConflictStrategy) => Promise<void>) | null
+) => {
+  conflictResolver = resolver;
+};
+
+export const resolveCloudConflict = async (strategy: CloudConflictStrategy) => {
+  if (!conflictResolver) return;
+  await conflictResolver(strategy);
 };

@@ -53,10 +53,10 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - `app_states` stores stars, notes, routes, settings, and image metadata.
 - `life-media` is a private Supabase Storage bucket for avatar and note image files.
 - The frontend stores only Storage metadata in app state: `provider`, `bucket`, `path`, `mimeType`, `size`, and `createdAt`.
-- Legacy compressed data URL images still render as fallback, but new uploads use Storage when Supabase is configured.
+- Legacy compressed data URL images still render as an offline fallback. After login or network recovery, the app migrates them into private Storage and updates app state with Storage metadata.
 - Photo-GPS star creation uploads the selected photo through the same Storage flow, then creates a star and a note at the embedded photo coordinates. If the photo has no usable GPS metadata, no star is created.
 - Deleting an avatar, note image, star, or note queues the related Storage object for deletion. Failed deletes are retried after login, focus, or network recovery.
-- Automatic login cleanup of old unreferenced media is intentionally disabled to avoid multi-device stale-state deletion. Media cleanup should stay user-scoped and conservative.
+- Media maintenance scans only the authenticated user's UUID folder. It skips cleanup during a cloud conflict and keeps a 24-hour grace period before deleting unreferenced objects.
 - Rich note HTML is sanitized before save/load so only the note editor's small allowlist is stored.
 - Cloud and local app state are normalized at runtime before entering React state, including stars, notes, routes, image metadata, HTML length, data URL compatibility, and GPS coordinate shape.
 - Unsaved active route recording is stored as a local draft and can be restored or discarded after reload.
@@ -154,19 +154,20 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 1. Create a Supabase project.
 2. In Authentication settings, disable public Email signup after the invite function is deployed, so new users cannot bypass the invite flow with the anon key.
 3. Open SQL Editor and run `supabase/schema.sql`.
-4. Confirm these objects exist:
+4. Run every SQL file in `supabase/migrations/`, including the app-state revision and durable Edge Function rate-limit migrations.
+5. Confirm these objects exist:
    - `public.profiles`
    - `public.app_states`
    - private Storage bucket `life-media`
    - RLS policies for both tables and `storage.objects`
-5. Deploy the Supabase Edge Functions `register-with-invite`, `memory-api`, `mcp-token`, and `mcp`.
-6. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
-7. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
-8. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
-9. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
-10. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-11. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
-12. If table grants are missing, run `supabase/fix-permissions.sql`.
+6. Deploy the Supabase Edge Functions `register-with-invite`, `memory-api`, `mcp-token`, and `mcp`.
+7. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
+8. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
+9. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
+10. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
+11. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+12. If permissions look wrong, run `supabase/verify-cloud-backend.sql` to inspect the project.
+13. If table grants are missing, run `supabase/fix-permissions.sql`.
 
 Storage paths are user scoped:
 
@@ -211,7 +212,7 @@ For GitHub Pages:
 - The frontend must use only the Supabase publishable/anon key.
 - `service_role` belongs only in trusted server environments and is not needed for this app.
 - Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
-- Browser-facing Edge Functions reject origins outside `ALLOWED_ORIGINS`. The cloud `mcp` endpoint accepts native MCP origins because access is instead gated by a per-user bearer token; all functions continue to apply basic in-memory rate limits by IP plus account/token prefix.
+- Browser-facing Edge Functions reject origins outside `ALLOWED_ORIGINS`. The cloud `mcp` endpoint accepts native MCP origins because access is instead gated by a per-user bearer token. Rate-limit keys are SHA-256 hashed and counted atomically in Postgres, with an in-memory fallback until the migration is available.
 - The `memory-api` Edge Function must authenticate a real user bearer token, or a private internal MCP call with a resolved `user_id`, before reading or changing app state.
 - Cloud MCP tokens are per-user. The app shows the full token once, stores only one active hash per user in `public.mcp_tokens`, and can delete the active token from Settings.
 - The local MCP server logs in as one normal user or uses one user access token; it does not use service-role credentials.
@@ -226,7 +227,7 @@ For GitHub Pages:
 - App state sanitization strips password-like fields before cloud save. Production builds do not allow local account/password fallback when Supabase is not configured.
 - Supabase Auth passwords cannot be viewed by the app. The app supports changing passwords, not revealing saved passwords.
 - Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`.
-- Legacy data URL images are kept only as compatibility fallback. They should not be used as the long-term storage path for new media.
+- Legacy data URL images are kept only as compatibility fallback and are automatically migrated to private Storage after login or network recovery.
 - If GitHub Pages is used as a live demo, configure Supabase environment variables in GitHub Actions secrets before building.
 
 ## Useful Scripts
@@ -235,6 +236,7 @@ For GitHub Pages:
 npm run dev
 npm run mcp:memory
 npm run lint
+npm run lint:edge
 npm test
 npm run build
 ```

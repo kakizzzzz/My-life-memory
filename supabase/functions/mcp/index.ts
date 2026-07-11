@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
@@ -192,7 +191,7 @@ const authenticateMcpRequest = async (
       authorizationLength: authorization.trim().length,
       hasBearerScheme: /^Bearer\s+/i.test(authorization.trim()),
     });
-    const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
+    const limit = await hitRateLimit(`mcp-auth-fail:${clientIp(request)}:none`, 20, 10 * 60_000);
     if (limit.limited) throw rateLimitResponse(corsHeaders, limit.retryAfterSeconds);
     throw new Response(JSON.stringify(rpcError(null, -32001, 'Unauthorized')), {
       status: 401,
@@ -228,7 +227,7 @@ const authenticateMcpRequest = async (
       tokenPrefix: tokenPrefix(token),
       tokenHashPrefix: tokenHash.slice(0, 12),
     });
-    const limit = hitRateLimit(`mcp-auth-fail:${clientIp(request)}:${tokenPrefix(token)}`, 10, 10 * 60_000);
+    const limit = await hitRateLimit(`mcp-auth-fail:${clientIp(request)}:${tokenPrefix(token)}`, 10, 10 * 60_000);
     if (limit.limited) throw rateLimitResponse(corsHeaders, limit.retryAfterSeconds);
     throw new Response(JSON.stringify(rpcError(null, -32001, 'Unauthorized')), {
       status: 401,
@@ -350,7 +349,7 @@ serve(async request => {
     extraHeaders: Record<string, string> = {},
   ) => jsonResponse(body, status, localCorsHeaders, extraHeaders);
 
-  const ipLimit = hitRateLimit(`mcp:${clientIp(request)}`, 240, 60_000);
+  const ipLimit = await hitRateLimit(`mcp:${clientIp(request)}`, 240, 60_000);
   if (ipLimit.limited) {
     return rateLimitResponse(localCorsHeaders, ipLimit.retryAfterSeconds);
   }

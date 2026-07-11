@@ -23,7 +23,11 @@ import {
   writePendingCloudSnapshot,
   type PendingCloudSnapshot,
 } from '../lib/cloudSyncPersistence';
-import { setCloudSyncStatus } from '../lib/cloudSyncStatus';
+import {
+  registerCloudConflictResolver,
+  setCloudSyncStatus,
+  type CloudConflictStrategy,
+} from '../lib/cloudSyncStatus';
 import { normalizePersistedAppState } from '../lib/appStateNormalize';
 import { normalizeAccountId } from '../lib/accountUtils';
 import {
@@ -365,6 +369,47 @@ export const useCloudAuthSync = ({
     flushCloudSaveRef.current = flushCloudSave;
   }, [flushCloudSave]);
 
+  const resolveCloudConflict = React.useCallback(async (strategy: CloudConflictStrategy) => {
+    const userId = cloudUserIdRef.current;
+    if (!userId || !cloudConflictRef.current) return;
+
+    setCloudSyncStatus('syncing', language);
+    if (strategy === 'local') {
+      const revisionInfo = await readCloudStateRevision(userId);
+      const pendingSnapshot = pendingCloudSnapshotRef.current || await readPendingCloudSnapshot(userId);
+      if (!pendingSnapshot) {
+        cloudConflictRef.current = false;
+        setCloudSyncStatus('idle', language);
+        return;
+      }
+      const rebasedSnapshot = {
+        ...pendingSnapshot,
+        baseRevision: revisionInfo.revision,
+      };
+      cloudRevisionRef.current = revisionInfo.revision;
+      cloudRevisionSupportedRef.current = revisionInfo.supported;
+      pendingCloudSnapshotRef.current = rebasedSnapshot;
+      await writePendingCloudSnapshot(rebasedSnapshot);
+      cloudConflictRef.current = false;
+      setCloudSyncStatus('local', rebasedSnapshot.language);
+      await flushCloudSaveRef.current();
+      return;
+    }
+
+    const session = await getCloudSession();
+    if (!session?.user || session.user.id !== userId) throw new Error('No active cloud session.');
+    const { profile: cloudProfile, state } = await loadCloudAccountData(session.user);
+    await clearPendingCloudSnapshot(userId);
+    pendingCloudSnapshotRef.current = null;
+    cloudConflictRef.current = false;
+    await resolveCloudSnapshot(userId, cloudProfile, state);
+  }, [language, resolveCloudSnapshot]);
+
+  React.useEffect(() => {
+    registerCloudConflictResolver(resolveCloudConflict);
+    return () => registerCloudConflictResolver(null);
+  }, [resolveCloudConflict]);
+
   const hydrateCloudSession = React.useCallback(async (session: Awaited<ReturnType<typeof getCloudSession>>) => {
     if (!isCloudBackendEnabled) return;
     if (cloudRegistrationInProgressRef.current) return;
@@ -678,8 +723,7 @@ export const useCloudAuthSync = ({
       !isCloudBackendEnabled ||
       !isSignedIn ||
       !cloudReadyToSaveRef.current ||
-      isApplyingCloudStateRef.current ||
-      cloudConflictRef.current
+      isApplyingCloudStateRef.current
     ) return;
 
     const userId = cloudUserIdRef.current;
@@ -699,7 +743,9 @@ export const useCloudAuthSync = ({
         name: profile.name,
         avatarUrl: getPersistableAvatarUrl(profile),
       },
-      baseRevision: cloudRevisionRef.current,
+      baseRevision: cloudConflictRef.current
+        ? pendingCloudSnapshotRef.current?.baseRevision ?? cloudRevisionRef.current
+        : cloudRevisionRef.current,
       sequence,
       savedAt: Date.now(),
       language,
@@ -711,7 +757,8 @@ export const useCloudAuthSync = ({
       .then(async () => {
         await writePendingCloudSnapshot(pendingSnapshot);
         if (pendingCloudSnapshotRef.current?.sequence !== sequence) return;
-        setCloudSyncStatus('local', language);
+        setCloudSyncStatus(cloudConflictRef.current ? 'conflict' : 'local', language);
+        if (cloudConflictRef.current) return;
         cloudSaveTimerRef.current = window.setTimeout(() => {
           cloudSaveTimerRef.current = null;
           void flushCloudSaveRef.current();

@@ -4,6 +4,7 @@ import {
   deleteImageFromStorageReliably,
   imageMetadataFromElement,
   isSupabaseMediaEnabled,
+  requestCloudMediaMaintenance,
   uploadImageToStorage,
   type StoredImageMetadata,
 } from '../lib/mediaStorage';
@@ -380,6 +381,7 @@ export const useReaderController = ({
         imageHtml = imageToReaderHtml(uploaded.src, homeCopy.noteImageAlt, homeCopy.removeImage, uploaded.metadata);
       } catch (error) {
         console.warn('Supabase Storage upload failed, using data URL fallback:', error);
+        requestCloudMediaMaintenance();
       }
     }
 

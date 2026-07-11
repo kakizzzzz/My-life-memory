@@ -4,6 +4,7 @@ export const MEDIA_BUCKET = 'life-media';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const PENDING_MEDIA_DELETE_STORAGE_KEY_PREFIX = 'my-life-memory-pending-media-deletes-v1:';
+const ORPHAN_MEDIA_GRACE_MS = 24 * 60 * 60 * 1000;
 
 export type StoredImageMetadata = {
   provider: 'supabase';
@@ -23,6 +24,11 @@ export type StoredImageUpload = {
 const signedUrlCache = new Map<string, { src: string; expiresAt: number }>();
 
 export const isSupabaseMediaEnabled = Boolean(isCloudBackendEnabled && supabase);
+
+export const requestCloudMediaMaintenance = () => {
+  if (typeof window === 'undefined') return;
+  window.setTimeout(() => window.dispatchEvent(new Event('mlm:media-maintenance')), 1000);
+};
 
 const cacheKeyForMetadata = (metadata: Pick<StoredImageMetadata, 'bucket' | 'path'>) => (
   `${metadata.bucket}/${metadata.path}`
@@ -251,6 +257,75 @@ export const retryPendingImageDeletions = async () => {
     if (!deleted) remainingDeletes.push(metadata);
   }
   writePendingDeletes(userId, remainingDeletes);
+};
+
+const listStorageFilesRecursively = async (folder: string): Promise<Array<{
+  path: string;
+  createdAt: number;
+  mimeType: string;
+  size: number;
+}>> => {
+  if (!supabase) return [];
+  const output: Array<{ path: string; createdAt: number; mimeType: string; size: number }> = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await supabase.storage.from(MEDIA_BUCKET).list(folder, {
+      limit: 100,
+      offset,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+    if (error) throw error;
+    const entries = data || [];
+    for (const entry of entries) {
+      const path = `${folder}/${entry.name}`;
+      if (!entry.id) {
+        output.push(...await listStorageFilesRecursively(path));
+        continue;
+      }
+      output.push({
+        path,
+        createdAt: Date.parse(entry.created_at || entry.updated_at || '') || Date.now(),
+        mimeType: String(entry.metadata?.mimetype || 'image/jpeg'),
+        size: Number(entry.metadata?.size || 0),
+      });
+    }
+    if (entries.length < 100) break;
+    offset += entries.length;
+  }
+  return output;
+};
+
+export const cleanupUnreferencedStorageImages = async (
+  referencedMetadata: StoredImageMetadata[],
+  graceMs = ORPHAN_MEDIA_GRACE_MS
+) => {
+  const userId = await getCurrentUserId().catch(() => '');
+  if (!userId) return { scanned: 0, deleted: 0 };
+
+  const referencedPaths = new Set(
+    uniqueMetadata(referencedMetadata)
+      .filter(metadata => metadata.path.startsWith(`${userId}/`))
+      .map(metadata => metadata.path)
+  );
+  const files = await listStorageFilesRecursively(userId);
+  const cutoff = Date.now() - Math.max(0, graceMs);
+  const orphanedFiles = files.filter(file => file.createdAt < cutoff && !referencedPaths.has(file.path));
+
+  let deleted = 0;
+  for (const file of orphanedFiles) {
+    const didDelete = await deleteImageFromStorageReliably({
+      provider: 'supabase',
+      bucket: MEDIA_BUCKET,
+      key: file.path,
+      path: file.path,
+      mimeType: file.mimeType,
+      size: file.size,
+      createdAt: file.createdAt,
+    });
+    if (didDelete) deleted += 1;
+  }
+  return { scanned: files.length, deleted };
 };
 
 export const imageMetadataFromElement = (element: Element | null): StoredImageMetadata | null => {

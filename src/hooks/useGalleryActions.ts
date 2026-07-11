@@ -2,6 +2,7 @@ import React from 'react';
 import {
   deleteImageFromStorageReliably,
   isSupabaseMediaEnabled,
+  requestCloudMediaMaintenance,
   storagePlaceholderSrc,
   uploadImageToStorage,
   type StoredImageMetadata,
@@ -56,6 +57,7 @@ export const useGalleryActions = ({
         }
       } catch (error) {
         console.warn('Supabase Storage avatar upload failed, using data URL fallback:', error);
+        requestCloudMediaMaintenance();
       }
     }
 
