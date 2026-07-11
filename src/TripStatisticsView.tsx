@@ -801,14 +801,14 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             {copy.rankingTitle}
           </h2>
 
-          <div className="mt-1 flex min-h-0 flex-1 -translate-y-1 items-end justify-center px-0">
+          <div className="-mx-5 mt-1 grid min-h-0 flex-1 -translate-y-1 grid-cols-[28px_226px_28px] items-end justify-center gap-x-[13px]">
             <button
               onClick={() => clickRankingButton(-1)}
               onPointerDown={() => startRankingHold(-1)}
               onPointerLeave={stopRankingHold}
               onPointerUp={stopRankingHold}
               onPointerCancel={stopRankingHold}
-              className={`absolute left-0 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
+              className={`flex h-10 w-7 self-center items-center justify-center transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.previousRanking}
             >
               <ChevronLeft size={28} strokeWidth={2.2} />
@@ -817,7 +817,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             <div
               ref={rankingScrollRef}
               onScroll={updateRankingScrollState}
-              className={`mx-auto flex h-full min-h-0 w-[226px] items-end gap-1.5 overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${rankingScrollState.hasOverflow ? 'justify-start' : 'justify-center'}`}
+              className={`flex h-full min-h-0 w-[226px] items-end gap-1.5 overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${rankingScrollState.hasOverflow ? 'justify-start' : 'justify-center'}`}
             >
               {textRankings.map((item, index) => (
                 <div key={item.name} className="flex h-full w-[15px] shrink-0 flex-col items-center justify-end">
@@ -839,7 +839,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
               onPointerLeave={stopRankingHold}
               onPointerUp={stopRankingHold}
               onPointerCancel={stopRankingHold}
-              className={`absolute right-0 top-[58%] z-10 -translate-y-1/2 transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
+              className={`flex h-10 w-7 self-center items-center justify-center transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.nextRanking}
             >
               <ChevronRight size={28} strokeWidth={2.2} />
