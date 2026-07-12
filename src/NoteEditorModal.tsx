@@ -17,6 +17,12 @@ import {
 } from './lib/mediaStorage';
 import { sanitizeRichHtml } from './lib/htmlSanitizer';
 import { notesHaveMeaningfulChanges } from './lib/noteChangeDetection';
+import {
+  applyRichTextStyleSession,
+  applyRichTextStyleToRange,
+  createRichTextStyleSession,
+  type RichTextStyleSession,
+} from './lib/richTextStyleSession';
 import type { NoteData, StarData } from './types/app';
 import {
   DEFAULT_RECORD_STAR_ID,
@@ -494,6 +500,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
+  const colorStyleSessionRef = useRef<RichTextStyleSession | null>(null);
   const pendingEditorStylesRef = useRef<Record<string, string>>({});
   const pendingTitleStylesRef = useRef<Record<string, string>>({});
   const copy = NOTE_EDITOR_COPY[language as keyof typeof NOTE_EDITOR_COPY] || NOTE_EDITOR_COPY.en;
@@ -594,6 +601,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     setEditorEmpty(getEditorPlainText().length === 0 && !editor.querySelector('img'));
     setActivePanel(null);
     setShowCustomPicker(false);
+    colorStyleSessionRef.current = null;
     setActiveTextTarget('editor');
     setSelectedFontSize(currentNote.fontSize || 18);
     setSelectedUnderline(false);
@@ -621,10 +629,15 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
       if (toolbarRef.current?.contains(event.target as Node)) return;
       setActivePanel(null);
       setShowCustomPicker(false);
+      colorStyleSessionRef.current = null;
     };
 
     document.addEventListener('pointerdown', handleOutsidePointerDown, true);
     return () => document.removeEventListener('pointerdown', handleOutsidePointerDown, true);
+  }, [activePanel]);
+
+  useEffect(() => {
+    if (activePanel !== 'color') colorStyleSessionRef.current = null;
   }, [activePanel]);
 
   const clearPendingEditorStyles = () => {
@@ -864,37 +877,22 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     return null;
   };
 
-  const splitRangeTextBoundaries = (range: Range) => {
-    if (
-      range.startContainer === range.endContainer &&
-      range.startContainer.nodeType === Node.TEXT_NODE
-    ) {
-      const textNode = range.startContainer as Text;
-      const startOffset = range.startOffset;
-      const endOffset = range.endOffset;
-      textNode.splitText(endOffset);
-      const selectedText = textNode.splitText(startOffset);
-      range.setStart(selectedText, 0);
-      range.setEnd(selectedText, selectedText.length);
-      return;
-    }
+  const beginColorStyleSession = () => {
+    const range = savedRangeRef.current;
+    const root = range && rangeIsInsideTitle(range)
+      ? titleEditorRef.current
+      : range && rangeIsInsideEditor(range)
+        ? editorRef.current
+        : null;
+    colorStyleSessionRef.current = createRichTextStyleSession(root, range);
+  };
 
-    if (
-      range.endContainer.nodeType === Node.TEXT_NODE &&
-      range.endOffset > 0 &&
-      range.endOffset < (range.endContainer.textContent?.length || 0)
-    ) {
-      (range.endContainer as Text).splitText(range.endOffset);
-    }
-
-    if (
-      range.startContainer.nodeType === Node.TEXT_NODE &&
-      range.startOffset > 0 &&
-      range.startOffset < (range.startContainer.textContent?.length || 0)
-    ) {
-      const selectedStart = (range.startContainer as Text).splitText(range.startOffset);
-      range.setStart(selectedStart, 0);
-    }
+  const handleColorPanelToggle = () => {
+    const isOpening = activePanel !== 'color';
+    if (isOpening) beginColorStyleSession();
+    else colorStyleSessionRef.current = null;
+    setShowCustomPicker(false);
+    setActivePanel(isOpening ? 'color' : null);
   };
 
   const applyStyleToRangeInElement = (
@@ -908,50 +906,13 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
     if (range.collapsed || !rangeIsInsideElement(range, element)) return false;
 
-    const workingRange = range.cloneRange();
-    splitRangeTextBoundaries(workingRange);
-
-    const selectedTextNodes: Text[] = [];
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: node => {
-          if (!node.textContent) return NodeFilter.FILTER_REJECT;
-          const parentElement = node.parentElement;
-          if (parentElement?.closest('[contenteditable="false"], [data-note-image="true"], button')) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          return workingRange.intersectsNode(node)
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_REJECT;
-        }
-      }
-    );
-
-    while (walker.nextNode()) {
-      selectedTextNodes.push(walker.currentNode as Text);
-    }
-
-    if (selectedTextNodes.length === 0) return false;
-
-    const styledNodes = selectedTextNodes.map(textNode => {
-      const span = document.createElement('span');
-      Object.entries(styles).forEach(([property, value]) => {
-        span.style.setProperty(property, value);
-      });
-      textNode.replaceWith(span);
-      span.appendChild(textNode);
-      return span;
-    });
+    const result = applyRichTextStyleToRange(element, range, styles);
+    if (result.targets.length === 0 || !result.range) return false;
 
     element.focus();
     selection.removeAllRanges();
-    const newRange = document.createRange();
-    newRange.setStartBefore(styledNodes[0]);
-    newRange.setEndAfter(styledNodes[styledNodes.length - 1]);
-    selection.addRange(newRange);
-    savedRangeRef.current = newRange.cloneRange();
+    selection.addRange(result.range);
+    savedRangeRef.current = result.range.cloneRange();
     syncAfterChange();
     return true;
   };
@@ -964,6 +925,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   };
 
   const handleFontSize = (size: number) => {
+    colorStyleSessionRef.current = null;
     setSelectedFontSize(size);
     if (activeTextTarget === 'title' || document.activeElement === titleEditorRef.current) {
       clearPendingEditorStyles();
@@ -1033,6 +995,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   };
 
   const handleUnderline = () => {
+    colorStyleSessionRef.current = null;
     const nextUnderline = !selectedUnderline;
     setSelectedUnderline(nextUnderline);
     setActivePanel(null);
@@ -1086,6 +1049,23 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
   const handleTextColor = (color: string) => {
     setSelectedColor(color);
+
+    if (!colorStyleSessionRef.current) beginColorStyleSession();
+    const session = colorStyleSessionRef.current;
+    const sessionResult = applyRichTextStyleSession(session, { color });
+    if (session && sessionResult.range) {
+      if (session.root === titleEditorRef.current) {
+        clearPendingTitleStyles();
+        clearPendingEditorStyles();
+        restoreRangeInElement(session.root, sessionResult.range);
+        syncTitleContent();
+      } else {
+        clearPendingEditorStyles();
+        restoreRangeInElement(session.root, sessionResult.range);
+        syncEditorContent();
+      }
+      return;
+    }
 
     if (activeTextTarget === 'title' || document.activeElement === titleEditorRef.current) {
       clearPendingEditorStyles();
@@ -1536,6 +1516,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     const editor = editorRef.current;
     if (!editor) return;
 
+    colorStyleSessionRef.current = null;
     clearPendingEditorStyles();
   };
 
@@ -1736,7 +1717,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
               <div className={toolbarButtonSlotClass}>
                 <button
                   onMouseDown={keepEditorSelectionMouseDown}
-                  onClick={() => setActivePanel(activePanel === 'color' ? null : 'color')}
+                  onClick={handleColorPanelToggle}
                   className={toolbarButtonClass}
                   aria-label={copy.noteColor}
                 >
@@ -1838,7 +1819,10 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                 onFocus={syncToolbarFontSizeFromTitle}
                 onClick={syncToolbarFontSizeFromTitle}
                 onKeyUp={syncToolbarFontSizeFromTitle}
-                onMouseDown={() => clearPendingTitleStyles()}
+                onMouseDown={() => {
+                  colorStyleSessionRef.current = null;
+                  clearPendingTitleStyles();
+                }}
                 onMouseUp={syncToolbarFontSizeFromTitle}
                 onKeyDown={e => {
                   if (e.key === 'Enter') e.preventDefault();

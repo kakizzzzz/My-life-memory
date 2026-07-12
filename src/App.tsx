@@ -648,8 +648,27 @@ export default function App() {
         copy: {
           noteLabel: homeCopy.noteLabel,
         },
+        onProgress: progress => {
+          if (progress.stage === 'preparing') {
+            setExportDataStatus(homeCopy.exportPreparing);
+          } else if (progress.stage === 'images') {
+            setExportDataStatus(
+              homeCopy.exportImagesProgress
+                .replace('{completed}', String(progress.completed))
+                .replace('{total}', String(progress.total))
+            );
+          } else {
+            setExportDataStatus(homeCopy.exportGenerating);
+          }
+        },
       });
-      setExportDataStatus(result.hasImageError ? homeCopy.exportDataPartial : homeCopy.exportDataReady);
+      setExportDataStatus(
+        result.failedImageCount > 0
+          ? homeCopy.exportImagesMissing.replace('{count}', String(result.failedImageCount))
+          : result.hasImageError
+            ? homeCopy.exportDataPartial
+            : homeCopy.exportDataReady
+      );
     } catch (error) {
       console.error('Could not export user data:', error);
       setExportDataStatus(homeCopy.exportDataFailed);

@@ -5,6 +5,7 @@ import {
   readerNodeHasMeaningfulContent,
 } from './noteHtmlUtils';
 import { cssColorToHex } from './generalUtils';
+import { applyRichTextStyleToRange } from './richTextStyleSession';
 
 export type ReaderTextTarget = 'title' | 'content';
 
@@ -231,39 +232,6 @@ export const getReaderSelectionRange = (
   return null;
 };
 
-export const splitReaderRangeTextBoundaries = (range: Range) => {
-  if (
-    range.startContainer === range.endContainer &&
-    range.startContainer.nodeType === Node.TEXT_NODE
-  ) {
-    const textNode = range.startContainer as Text;
-    const startOffset = range.startOffset;
-    const endOffset = range.endOffset;
-    textNode.splitText(endOffset);
-    const selectedText = textNode.splitText(startOffset);
-    range.setStart(selectedText, 0);
-    range.setEnd(selectedText, selectedText.length);
-    return;
-  }
-
-  if (
-    range.endContainer.nodeType === Node.TEXT_NODE &&
-    range.endOffset > 0 &&
-    range.endOffset < (range.endContainer.textContent?.length || 0)
-  ) {
-    (range.endContainer as Text).splitText(range.endOffset);
-  }
-
-  if (
-    range.startContainer.nodeType === Node.TEXT_NODE &&
-    range.startOffset > 0 &&
-    range.startOffset < (range.startContainer.textContent?.length || 0)
-  ) {
-    const selectedStart = (range.startContainer as Text).splitText(range.startOffset);
-    range.setStart(selectedStart, 0);
-  }
-};
-
 export const applyReaderStyleToSelection = ({
   target,
   titleEditor,
@@ -293,49 +261,13 @@ export const applyReaderStyleToSelection = ({
     return true;
   }
 
-  const workingRange = range.cloneRange();
-  splitReaderRangeTextBoundaries(workingRange);
-
-  const selectedTextNodes: Text[] = [];
-  const walker = document.createTreeWalker(
-    element,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode: node => {
-        if (!node.textContent) return NodeFilter.FILTER_REJECT;
-        const parentElement = node.parentElement;
-        if (parentElement?.closest('[contenteditable="false"], [data-note-image="true"], button')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return workingRange.intersectsNode(node)
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT;
-      },
-    }
-  );
-
-  while (walker.nextNode()) {
-    selectedTextNodes.push(walker.currentNode as Text);
-  }
-
-  if (selectedTextNodes.length === 0) return false;
-  const styledNodes = selectedTextNodes.map(textNode => {
-    const span = document.createElement('span');
-    Object.entries(styles).forEach(([property, value]) => {
-      span.style.setProperty(property, value);
-    });
-    textNode.replaceWith(span);
-    span.appendChild(textNode);
-    return span;
-  });
+  const result = applyRichTextStyleToRange(element, range, styles);
+  if (result.targets.length === 0 || !result.range) return false;
 
   element.focus();
   selection.removeAllRanges();
-  const newRange = document.createRange();
-  newRange.setStartBefore(styledNodes[0]);
-  newRange.setEndAfter(styledNodes[styledNodes.length - 1]);
-  selection.addRange(newRange);
-  savedRangeRef.current = newRange.cloneRange();
+  selection.addRange(result.range);
+  savedRangeRef.current = result.range.cloneRange();
   return true;
 };
 

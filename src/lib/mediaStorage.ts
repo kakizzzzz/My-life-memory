@@ -23,6 +23,48 @@ export type StoredImageUpload = {
   src: string;
 };
 
+export type StoredImageDownloadFailureType = (
+  'not-found' | 'permission' | 'timeout' | 'network' | 'server' | 'invalid' | 'unknown'
+);
+
+export class StoredImageDownloadError extends Error {
+  failureType: StoredImageDownloadFailureType;
+  status?: number;
+  retryable: boolean;
+
+  constructor(
+    message: string,
+    failureType: StoredImageDownloadFailureType,
+    options: { status?: number; retryable?: boolean } = {},
+  ) {
+    super(message);
+    this.name = 'StoredImageDownloadError';
+    this.failureType = failureType;
+    this.status = options.status;
+    this.retryable = options.retryable ?? ['timeout', 'network', 'server'].includes(failureType);
+  }
+}
+
+type StorageDownloadResponse = {
+  data: Blob | null;
+  error: unknown;
+};
+
+export type StoredImageDownloadOptions = {
+  timeoutMs?: number;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  allowSignedUrlFallback?: boolean;
+  download?: (bucket: string, path: string) => Promise<StorageDownloadResponse>;
+  createSignedUrl?: (metadata: StoredImageMetadata) => Promise<string>;
+  fetch?: typeof fetch;
+};
+
+export type StoredImageBlobDownload = {
+  blob: Blob;
+  method: 'download' | 'signed-url';
+};
+
 type PendingMediaDelete = StoredImageMetadata & {
   deleteAfter?: number;
   immediate?: boolean;
@@ -155,6 +197,171 @@ export const createSignedImageUrl = async (metadata: StoredImageMetadata) => {
     });
   }
   return signedUrl;
+};
+
+const getErrorStatus = (error: unknown) => {
+  if (!error || typeof error !== 'object') return undefined;
+  const candidate = error as { status?: unknown; statusCode?: unknown };
+  const status = Number(candidate.status ?? candidate.statusCode);
+  return Number.isFinite(status) ? status : undefined;
+};
+
+const classifyStoredImageDownloadError = (error: unknown) => {
+  if (error instanceof StoredImageDownloadError) return error;
+  const status = getErrorStatus(error);
+  const message = error instanceof Error ? error.message : String(error || 'Unknown image download error');
+  const lowered = message.toLowerCase();
+
+  if (status === 404 || /not found|does not exist/.test(lowered)) {
+    return new StoredImageDownloadError(message, 'not-found', { status, retryable: false });
+  }
+  if (status === 401 || status === 403 || /unauthorized|forbidden|permission|row-level security/.test(lowered)) {
+    return new StoredImageDownloadError(message, 'permission', { status, retryable: false });
+  }
+  if (status && status >= 500) {
+    return new StoredImageDownloadError(message, 'server', { status, retryable: true });
+  }
+  if (/timeout|timed out|aborterror|aborted/.test(lowered)) {
+    return new StoredImageDownloadError(message, 'timeout', { status, retryable: true });
+  }
+  if (error instanceof TypeError || /failed to fetch|network|load failed|connection/.test(lowered)) {
+    return new StoredImageDownloadError(message, 'network', { status, retryable: true });
+  }
+  if (/not configured|missing|invalid path|empty path/.test(lowered)) {
+    return new StoredImageDownloadError(message, 'invalid', { status, retryable: false });
+  }
+  return new StoredImageDownloadError(message, 'unknown', { status, retryable: false });
+};
+
+const withImageDownloadTimeout = async <T,>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  path: string,
+) => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new StoredImageDownloadError(
+        `Timed out while downloading ${path}`,
+        'timeout',
+        { retryable: true },
+      ));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
+
+const waitForImageRetry = (delayMs: number) => (
+  new Promise(resolve => setTimeout(resolve, delayMs))
+);
+
+const runImageDownloadWithRetries = async <T,>(
+  operation: () => Promise<T>,
+  maxRetries: number,
+  retryDelayMs: number,
+) => {
+  let lastError: StoredImageDownloadError | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = classifyStoredImageDownloadError(error);
+      if (!lastError.retryable || attempt >= maxRetries) throw lastError;
+      await waitForImageRetry(retryDelayMs * (attempt + 1));
+    }
+  }
+  throw lastError || new StoredImageDownloadError('Image download failed', 'unknown');
+};
+
+export const downloadStoredImageBlob = async (
+  metadata: StoredImageMetadata,
+  options: StoredImageDownloadOptions = {},
+): Promise<StoredImageBlobDownload> => {
+  const bucket = metadata.bucket || MEDIA_BUCKET;
+  const path = metadata.path;
+  if (!path) throw new StoredImageDownloadError('Invalid empty path', 'invalid', { retryable: false });
+
+  const timeoutMs = Math.max(1, options.timeoutMs ?? 15_000);
+  const maxRetries = Math.max(0, Math.min(2, options.maxRetries ?? 2));
+  const retryDelayMs = Math.max(0, options.retryDelayMs ?? 250);
+  const directDownload = options.download ?? (async (downloadBucket: string, downloadPath: string) => {
+    if (!supabase) {
+      throw new StoredImageDownloadError('Supabase Storage is not configured.', 'invalid', { retryable: false });
+    }
+    return supabase.storage.from(downloadBucket).download(downloadPath);
+  });
+
+  let directError: StoredImageDownloadError | null = null;
+  try {
+    const blob = await runImageDownloadWithRetries(async () => {
+      const response = await withImageDownloadTimeout(
+        directDownload(bucket, path),
+        timeoutMs,
+        path,
+      );
+      if (response.error) throw response.error;
+      if (!(response.data instanceof Blob)) {
+        throw new StoredImageDownloadError('Storage download returned no image data.', 'unknown');
+      }
+      return response.data;
+    }, maxRetries, retryDelayMs);
+    return { blob, method: 'download' };
+  } catch (error) {
+    directError = classifyStoredImageDownloadError(error);
+  }
+
+  const canUseFallback = (
+    options.allowSignedUrlFallback !== false &&
+    directError.failureType !== 'not-found' &&
+    directError.failureType !== 'permission' &&
+    directError.failureType !== 'invalid'
+  );
+  if (!canUseFallback) throw directError;
+
+  const createSignedUrl = options.createSignedUrl ?? createSignedImageUrl;
+  const fetchImpl = options.fetch ?? fetch;
+  const fallbackRetries = directError.retryable ? 0 : maxRetries;
+  try {
+    const blob = await runImageDownloadWithRetries(async () => {
+      const signedUrl = await withImageDownloadTimeout(createSignedUrl(metadata), timeoutMs, path);
+      if (!signedUrl) {
+        throw new StoredImageDownloadError('Signed image URL was empty.', 'invalid', { retryable: false });
+      }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await withImageDownloadTimeout(
+          fetchImpl(signedUrl, { signal: controller.signal }),
+          timeoutMs,
+          path,
+        );
+        if (!response.ok) {
+          throw new StoredImageDownloadError(
+            `HTTP ${response.status}`,
+            response.status === 404
+              ? 'not-found'
+              : response.status === 401 || response.status === 403
+                ? 'permission'
+                : response.status >= 500
+                  ? 'server'
+                  : 'unknown',
+            { status: response.status },
+          );
+        }
+        return response.blob();
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }, fallbackRetries, retryDelayMs);
+    return { blob, method: 'signed-url' };
+  } catch (error) {
+    throw classifyStoredImageDownloadError(error);
+  }
 };
 
 export const warmStorageImageUrls = async (metadataList: StoredImageMetadata[]) => {

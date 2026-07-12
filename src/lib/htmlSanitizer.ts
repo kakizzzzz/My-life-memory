@@ -1,3 +1,5 @@
+import { normalizeRichTextSpans } from './richTextStyleSession';
+
 const ALLOWED_RICH_TAGS = new Set(['P', 'BR', 'SPAN', 'U', 'FIGURE', 'IMG']);
 const BLOCKED_RICH_TAGS = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'SVG', 'MATH']);
 const SAFE_MEDIA_DATA_ATTR = /^data-media-[a-z0-9-]+$/i;
@@ -130,6 +132,7 @@ export const sanitizeRichHtml = (html?: string) => {
   template.innerHTML = html;
   const output = document.createElement('div');
   copyChildren(template.content, output);
+  normalizeRichTextSpans(output);
   return output.innerHTML;
 };
 

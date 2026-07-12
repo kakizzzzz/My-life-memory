@@ -41,6 +41,11 @@ import {
 } from '../lib/readerDomUtils';
 import { HOME_COPY } from '../copy/homeCopy';
 import { isReaderEditorReadyForSave } from '../lib/readerDraftSafety';
+import {
+  applyRichTextStyleSession,
+  createRichTextStyleSession,
+  type RichTextStyleSession,
+} from '../lib/richTextStyleSession';
 import type { AppView, HomePanel, NoteData, ReadingNoteTarget, StarData } from '../types/app';
 
 type HomeCopy = typeof HOME_COPY.en;
@@ -102,6 +107,7 @@ export const useReaderController = ({
   const readerCameraInputRef = React.useRef<HTMLInputElement>(null);
   const readerImageInputRef = React.useRef<HTMLInputElement>(null);
   const readerSavedRangeRef = React.useRef<Range | null>(null);
+  const readerColorStyleSessionRef = React.useRef<RichTextStyleSession | null>(null);
   const readerPendingTitleStylesRef = React.useRef<Record<string, string>>({});
   const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
   const readerUploadedImagesRef = React.useRef<StoredImageMetadata[]>([]);
@@ -158,6 +164,7 @@ export const useReaderController = ({
 
     ensureReaderEditableTailAfterMedia(contentEditor);
     readerSavedRangeRef.current = null;
+    readerColorStyleSessionRef.current = null;
     readerPendingTitleStylesRef.current = {};
     readerPendingContentStylesRef.current = {};
     readerEditorReadyKeyRef.current = readerRecordKey;
@@ -264,6 +271,20 @@ export const useReaderController = ({
     return getReaderDomSelectionRange(target, readerTitleRef.current, readerContentRef.current, readerSavedRangeRef);
   }, [readerActiveTextTarget]);
 
+  const beginReaderColorStyleSession = React.useCallback(() => {
+    const range = readerSavedRangeRef.current;
+    const root = range && readerRangeIsInsideElement(range, readerTitleRef.current)
+      ? readerTitleRef.current
+      : range && readerRangeIsInsideElement(range, readerContentRef.current)
+        ? readerContentRef.current
+        : null;
+    readerColorStyleSessionRef.current = createRichTextStyleSession(root, range);
+  }, []);
+
+  React.useEffect(() => {
+    if (readerActivePanel !== 'color') readerColorStyleSessionRef.current = null;
+  }, [readerActivePanel]);
+
   const applyReaderStyleToSelection = React.useCallback((styles: Record<string, string>) => {
     return applyReaderDomStyleToSelection({
       target: readerActiveTextTarget,
@@ -308,6 +329,7 @@ export const useReaderController = ({
   }, [saveReaderSelection]);
 
   const handleReaderFontSize = React.useCallback((size: number) => {
+    readerColorStyleSessionRef.current = null;
     setReaderSelectedFontSize(size);
     applyReaderStyleToSelection({ 'font-size': `${size}px` });
     setReaderActivePanel(null);
@@ -315,10 +337,21 @@ export const useReaderController = ({
 
   const handleReaderTextColor = React.useCallback((color: string) => {
     setReaderSelectedColor(color);
+    if (!readerColorStyleSessionRef.current) beginReaderColorStyleSession();
+    const sessionResult = applyRichTextStyleSession(readerColorStyleSessionRef.current, { color });
+    if (sessionResult.range && readerColorStyleSessionRef.current) {
+      const selection = window.getSelection();
+      readerColorStyleSessionRef.current.root.focus();
+      selection?.removeAllRanges();
+      selection?.addRange(sessionResult.range);
+      readerSavedRangeRef.current = sessionResult.range.cloneRange();
+      return;
+    }
     applyReaderStyleToSelection({ color });
-  }, [applyReaderStyleToSelection]);
+  }, [applyReaderStyleToSelection, beginReaderColorStyleSession]);
 
   const handleReaderUnderline = React.useCallback(() => {
+    readerColorStyleSessionRef.current = null;
     const nextUnderline = !readerSelectedUnderline;
     setReaderSelectedUnderline(nextUnderline);
     setReaderActivePanel(null);
@@ -347,6 +380,7 @@ export const useReaderController = ({
   }, [getReaderElementForTarget, getReaderSelectionRange, insertStyledReaderText]);
 
   const handleReaderInput = React.useCallback(() => {
+    readerColorStyleSessionRef.current = null;
     const editor = readerContentRef.current;
     if (editor) ensureReaderEditableTailAfterMedia(editor);
     requestAnimationFrame(saveReaderSelection);
@@ -455,9 +489,12 @@ export const useReaderController = ({
 
   const handleReaderPanelToggle = React.useCallback((panel: 'font' | 'color') => {
     saveReaderSelection();
+    const isOpening = readerActivePanel !== panel;
+    if (panel === 'color' && isOpening) beginReaderColorStyleSession();
+    else readerColorStyleSessionRef.current = null;
     setReaderShowCustomPicker(false);
     setReaderActivePanel(currentPanel => currentPanel === panel ? null : panel);
-  }, [saveReaderSelection]);
+  }, [beginReaderColorStyleSession, readerActivePanel, saveReaderSelection]);
 
   return {
     readingNoteTarget,

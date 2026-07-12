@@ -1,7 +1,10 @@
 import type { NoteData } from '../types/app';
 import {
-  createSignedImageUrl,
+  downloadStoredImageBlob,
   storagePlaceholderSrc,
+  StoredImageDownloadError,
+  type StoredImageDownloadFailureType,
+  type StoredImageDownloadOptions,
   type StoredImageMetadata,
 } from './mediaStorage';
 import {
@@ -23,16 +26,84 @@ export type ExportedImageData = {
   createdAt?: number;
   dataUrl?: string;
   exportError?: string;
+  exportErrorType?: ExportImageFailureType;
 };
 
-const blobToDataUrl = (blob: Blob) => (
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  })
-);
+export type ExportImageFailureType = StoredImageDownloadFailureType;
+
+export type ExportImageFailure = {
+  key: string;
+  path: string;
+  type: ExportImageFailureType;
+  message: string;
+};
+
+export type ExportImageTask = {
+  key: string;
+  dedupeKey: string;
+  source: string;
+  kind: 'stored' | 'source';
+  metadata?: StoredImageMetadata;
+  src?: string;
+};
+
+export type ExportImageTaskProgress = {
+  completed: number;
+  total: number;
+};
+
+export type ExportImageTaskResult = {
+  results: Map<string, ExportedImageData | null>;
+  failures: ExportImageFailure[];
+  total: number;
+};
+
+type ExportSourceOptions = {
+  timeoutMs?: number;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  fetch?: typeof fetch;
+};
+
+type ExportImageTaskOptions = {
+  concurrency?: number;
+  storedImageOptions?: StoredImageDownloadOptions;
+  sourceOptions?: ExportSourceOptions;
+  onProgress?: (progress: ExportImageTaskProgress) => void;
+  resolveTask?: (task: ExportImageTask) => Promise<ExportedImageData | null>;
+};
+
+class ExportSourceError extends Error {
+  failureType: ExportImageFailureType;
+  retryable: boolean;
+
+  constructor(message: string, failureType: ExportImageFailureType, retryable = false) {
+    super(message);
+    this.name = 'ExportSourceError';
+    this.failureType = failureType;
+    this.retryable = retryable;
+  }
+}
+
+export const blobToDataUrl = (blob: Blob) => {
+  if (typeof FileReader !== 'undefined') {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  return blob.arrayBuffer().then(buffer => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+  });
+};
 
 const getDataUrlMimeType = (dataUrl: string) => (
   dataUrl.match(/^data:([^;,]+)/)?.[1] || 'application/octet-stream'
@@ -43,7 +114,25 @@ const getDataUrlApproxSize = (dataUrl: string) => {
   return Math.max(0, Math.floor((base64.length * 3) / 4));
 };
 
-const fetchImageAsDataUrl = async (src: string) => {
+const classifySourceError = (error: unknown) => {
+  if (error instanceof ExportSourceError) return error;
+  if (error instanceof StoredImageDownloadError) {
+    return new ExportSourceError(error.message, error.failureType, error.retryable);
+  }
+  const message = error instanceof Error ? error.message : String(error || 'Unknown image error');
+  const lowered = message.toLowerCase();
+  if (/timeout|timed out|aborterror|aborted/.test(lowered)) {
+    return new ExportSourceError(message, 'timeout', true);
+  }
+  if (error instanceof TypeError || /failed to fetch|network|load failed|connection/.test(lowered)) {
+    return new ExportSourceError(message, 'network', true);
+  }
+  return new ExportSourceError(message, 'unknown');
+};
+
+const waitForRetry = (delayMs: number) => new Promise(resolve => setTimeout(resolve, delayMs));
+
+const fetchImageAsDataUrl = async (src: string, options: ExportSourceOptions = {}) => {
   if (src.startsWith('data:')) {
     return {
       dataUrl: src,
@@ -52,21 +141,62 @@ const fetchImageAsDataUrl = async (src: string) => {
     };
   }
 
-  const response = await fetch(src);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const blob = await response.blob();
-  return {
-    dataUrl: await blobToDataUrl(blob),
-    mimeType: blob.type || 'image/jpeg',
-    size: blob.size,
-  };
+  const timeoutMs = Math.max(1, options.timeoutMs ?? 15_000);
+  const maxRetries = Math.max(0, Math.min(2, options.maxRetries ?? 2));
+  const retryDelayMs = Math.max(0, options.retryDelayMs ?? 250);
+  const fetchImpl = options.fetch ?? fetch;
+  let lastError: ExportSourceError | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        fetchImpl(src, { signal: controller.signal }),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            controller.abort();
+            reject(new ExportSourceError(`Timed out while downloading image source`, 'timeout', true));
+          }, timeoutMs);
+        }),
+      ]);
+      if (!response.ok) {
+        const type: ExportImageFailureType = response.status === 404
+          ? 'not-found'
+          : response.status === 401 || response.status === 403
+            ? 'permission'
+            : response.status >= 500
+              ? 'server'
+              : 'unknown';
+        throw new ExportSourceError(`HTTP ${response.status}`, type, type === 'server');
+      }
+      const blob = await response.blob();
+      return {
+        dataUrl: await blobToDataUrl(blob),
+        mimeType: blob.type || 'image/jpeg',
+        size: blob.size,
+      };
+    } catch (error) {
+      lastError = classifySourceError(error);
+      if (!lastError.retryable || attempt >= maxRetries) throw lastError;
+      await waitForRetry(retryDelayMs * (attempt + 1));
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
+  throw lastError || new ExportSourceError('Image download failed', 'unknown');
 };
 
-export const exportImageSource = async (src: string, source: string): Promise<ExportedImageData | null> => {
+export const exportImageSource = async (
+  src: string,
+  source: string,
+  options: ExportSourceOptions = {},
+): Promise<ExportedImageData | null> => {
   if (!src || src.startsWith('storage://')) return null;
 
   try {
-    const imageData = await fetchImageAsDataUrl(src);
+    const imageData = await fetchImageAsDataUrl(src, options);
     return {
       source,
       provider: src.startsWith('data:') ? 'inline' : 'external',
@@ -79,11 +209,16 @@ export const exportImageSource = async (src: string, source: string): Promise<Ex
       provider: 'external',
       src,
       exportError: error instanceof Error ? error.message : String(error),
+      exportErrorType: classifySourceError(error).failureType,
     };
   }
 };
 
-export const exportStoredImage = async (metadata: StoredImageMetadata, source: string): Promise<ExportedImageData> => {
+export const exportStoredImage = async (
+  metadata: StoredImageMetadata,
+  source: string,
+  options: StoredImageDownloadOptions = {},
+): Promise<ExportedImageData> => {
   const baseImage = {
     source,
     provider: 'supabase' as const,
@@ -96,28 +231,139 @@ export const exportStoredImage = async (metadata: StoredImageMetadata, source: s
   };
 
   try {
-    const signedUrl = await createSignedImageUrl(metadata);
-    const imageData = signedUrl ? await fetchImageAsDataUrl(signedUrl) : null;
+    const { blob } = await downloadStoredImageBlob(metadata, options);
     return {
       ...baseImage,
       src: storagePlaceholderSrc(metadata),
-      ...(imageData || {}),
+      dataUrl: await blobToDataUrl(blob),
+      mimeType: blob.type || metadata.mimeType || 'image/jpeg',
+      size: blob.size,
     };
   } catch (error) {
+    const classified = error instanceof StoredImageDownloadError
+      ? error
+      : new StoredImageDownloadError(
+          error instanceof Error ? error.message : String(error),
+          'unknown',
+        );
     return {
       ...baseImage,
       src: storagePlaceholderSrc(metadata),
-      exportError: error instanceof Error ? error.message : String(error),
+      exportError: classified.message,
+      exportErrorType: classified.failureType,
     };
   }
 };
 
+export const storedExportImageKey = (metadata: Pick<StoredImageMetadata, 'bucket' | 'path'>) => (
+  `storage:${metadata.bucket}/${metadata.path}`
+);
+
+export const sourceExportImageKey = (src: string) => {
+  let hash = 1469598103934665603n;
+  for (let index = 0; index < src.length; index += 1) {
+    hash ^= BigInt(src.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * 1099511628211n);
+  }
+  return `source:${src.length}:${hash.toString(16)}`;
+};
+
+export const createStoredExportImageTask = (
+  metadata: StoredImageMetadata,
+  source: string,
+): ExportImageTask => {
+  const key = storedExportImageKey(metadata);
+  return { key, dedupeKey: key, source, kind: 'stored', metadata };
+};
+
+export const createSourceExportImageTask = (src: string, source: string): ExportImageTask => ({
+  key: sourceExportImageKey(src),
+  dedupeKey: src,
+  source,
+  kind: 'source',
+  src,
+});
+
+const defaultResolveExportImageTask = (
+  task: ExportImageTask,
+  options: ExportImageTaskOptions,
+) => {
+  if (task.kind === 'stored' && task.metadata) {
+    return exportStoredImage(task.metadata, task.source, options.storedImageOptions);
+  }
+  return exportImageSource(task.src || '', task.source, options.sourceOptions);
+};
+
+export const exportImageTasks = async (
+  tasks: ExportImageTask[],
+  options: ExportImageTaskOptions = {},
+): Promise<ExportImageTaskResult> => {
+  const uniqueTasks = Array.from(new Map(tasks.map(task => [task.dedupeKey, task])).values());
+  const concurrency = Math.max(1, Math.min(3, options.concurrency ?? 3));
+  const results = new Map<string, ExportedImageData | null>();
+  const failures: ExportImageFailure[] = [];
+  let nextIndex = 0;
+  let completed = 0;
+  const resolveTask = options.resolveTask ?? (task => defaultResolveExportImageTask(task, options));
+
+  options.onProgress?.({ completed: 0, total: uniqueTasks.length });
+  const worker = async () => {
+    while (nextIndex < uniqueTasks.length) {
+      const task = uniqueTasks[nextIndex];
+      nextIndex += 1;
+      let result: ExportedImageData | null;
+      try {
+        result = await resolveTask(task);
+      } catch (error) {
+        const classified = classifySourceError(error);
+        result = {
+          source: task.source,
+          provider: task.kind === 'stored' ? 'supabase' : 'external',
+          bucket: task.metadata?.bucket,
+          key: task.metadata?.key,
+          path: task.metadata?.path,
+          src: task.kind === 'stored' && task.metadata
+            ? storagePlaceholderSrc(task.metadata)
+            : task.src,
+          exportError: classified.message,
+          exportErrorType: classified.failureType,
+        };
+      }
+
+      results.set(task.dedupeKey, result);
+      if (result?.exportError) {
+        const failure = {
+          key: task.key,
+          path: task.metadata?.path || task.source,
+          type: result.exportErrorType || 'unknown',
+          message: result.exportError,
+        } satisfies ExportImageFailure;
+        failures.push(failure);
+        console.warn('Export image could not be embedded:', failure);
+      }
+      completed += 1;
+      options.onProgress?.({ completed, total: uniqueTasks.length });
+    }
+  };
+
+  await Promise.all(Array.from(
+    { length: Math.min(concurrency, Math.max(1, uniqueTasks.length)) },
+    () => worker(),
+  ));
+  return { results, failures, total: uniqueTasks.length };
+};
+
 export const getInlineExportImageSources = (note?: NoteData) => {
   const storedPlaceholders = new Set(getStoredImagesFromNote(note).map(storagePlaceholderSrc));
-  const sources = [
-    ...extractImagesFromHtml(note?.contentHtml),
-    ...getLegacyNoteImages(note),
-  ];
+  let htmlSources = extractImagesFromHtml(note?.contentHtml);
+  if (note?.contentHtml && typeof document !== 'undefined') {
+    const container = document.createElement('div');
+    container.innerHTML = note.contentHtml;
+    htmlSources = Array.from(container.querySelectorAll<HTMLImageElement>('img'))
+      .filter(image => !(image.dataset.mediaProvider === 'supabase' && image.dataset.mediaPath))
+      .map(image => image.getAttribute('src') || '');
+  }
+  const sources = [...htmlSources, ...getLegacyNoteImages(note)];
 
   return Array.from(new Set(sources)).filter(src => (
     Boolean(src) && !storedPlaceholders.has(src) && !src.startsWith('storage://')

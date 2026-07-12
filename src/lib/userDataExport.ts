@@ -1,10 +1,12 @@
 import type { StarData, UserProfile } from '../types/app';
 import {
   buildReadableExportHtml,
-  exportImageSource,
-  exportStoredImage,
+  createSourceExportImageTask,
+  createStoredExportImageTask,
+  exportImageTasks,
   getInlineExportImageSources,
   hasImageExportError,
+  type ExportImageTask,
   type ExportedImageData,
 } from './exportReport';
 import { getNoteTimestamp } from './noteDataUtils';
@@ -19,44 +21,55 @@ type UserDataExportCopy = {
   noteLabel: string;
 };
 
+export type UserDataExportProgress = (
+  { stage: 'preparing' } |
+  { stage: 'images'; completed: number; total: number } |
+  { stage: 'generating' }
+);
+
 export const exportReadableUserData = async ({
   stars,
   profile,
   languageLocale,
   copy,
+  onProgress,
 }: {
   stars: StarData[];
   profile: UserProfile;
   languageLocale: string;
   copy: UserDataExportCopy;
+  onProgress?: (progress: UserDataExportProgress) => void;
 }) => {
+  onProgress?.({ stage: 'preparing' });
   const exportedAt = new Date().toISOString();
-  const locations = await Promise.all(stars.map(async (star, starIndex) => {
-    const notes = await Promise.all((star.notes || []).map(async (note, noteIndex) => {
+  const imageTasks: ExportImageTask[] = [];
+  const locationDrafts = stars.map((star, starIndex) => {
+    const notes = (star.notes || []).map((note, noteIndex) => {
       if (!hasMeaningfulNoteContent(note)) return null;
       const timestamp = getNoteTimestamp(note);
-      const storedImages = await Promise.all(
-        getStoredImagesFromNote(note).map((metadata, imageIndex) => (
-          exportStoredImage(metadata, `locations.${starIndex}.notes.${noteIndex}.images.${imageIndex}`)
-        ))
-      );
-      const inlineImages = await Promise.all(
-        getInlineExportImageSources(note).map((src, imageIndex) => (
-          exportImageSource(src, `locations.${starIndex}.notes.${noteIndex}.inlineImages.${imageIndex}`)
-        ))
-      );
-      const images = [
-        ...storedImages,
-        ...inlineImages.filter((image): image is ExportedImageData => Boolean(image)),
+      const noteTasks = [
+        ...getStoredImagesFromNote(note).map((metadata, imageIndex) => (
+          createStoredExportImageTask(
+            metadata,
+            `locations.${starIndex}.notes.${noteIndex}.images.${imageIndex}`,
+          )
+        )),
+        ...getInlineExportImageSources(note).map((src, imageIndex) => (
+          createSourceExportImageTask(
+            src,
+            `locations.${starIndex}.notes.${noteIndex}.inlineImages.${imageIndex}`,
+          )
+        )),
       ];
+      imageTasks.push(...noteTasks);
 
       return {
         title: htmlToText(note.titleHtml) || note.title || `${copy.noteLabel} ${noteIndex + 1}`,
         text: htmlToText(note.contentHtml) || note.content || '',
         timestamp,
-        images,
+        imageTasks: noteTasks,
       };
-    }));
+    });
 
     return {
       index: starIndex + 1,
@@ -65,9 +78,31 @@ export const exportReadableUserData = async ({
       createdAt: star.createdAt || null,
       notes: notes.filter((note): note is NonNullable<typeof note> => Boolean(note)),
     };
+  });
+
+  const imageTaskResult = await exportImageTasks(imageTasks, {
+    concurrency: 3,
+    onProgress: progress => {
+      if (progress.total > 0) onProgress?.({ stage: 'images', ...progress });
+    },
+  });
+  const locations = locationDrafts.map(location => ({
+    ...location,
+    notes: location.notes.map(note => ({
+      title: note.title,
+      text: note.text,
+      timestamp: note.timestamp,
+      images: note.imageTasks
+        .map(task => {
+          const image = imageTaskResult.results.get(task.dedupeKey);
+          return image ? { ...image, source: task.source } : null;
+        })
+        .filter((image): image is ExportedImageData => Boolean(image)),
+    })),
   }));
 
   const readableLocations = locations.filter(location => location.notes.length > 0);
+  onProgress?.({ stage: 'generating' });
   const html = buildReadableExportHtml({
     appName: 'My Life Memory',
     account: normalizeAccountId(profile.account),
@@ -90,5 +125,7 @@ export const exportReadableUserData = async ({
 
   return {
     hasImageError: hasImageExportError(readableLocations),
+    failedImageCount: imageTaskResult.failures.length,
+    imageFailures: imageTaskResult.failures,
   };
 };
