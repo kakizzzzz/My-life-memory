@@ -26,6 +26,19 @@ test('migration preserves old archives and marks verification only after all com
   assert.match(verify, /migration_verified/);
 });
 
+test('migration locks legacy sources before capturing the normalized snapshot', () => {
+  const transactionStart = sql.indexOf('begin;');
+  const appStatesLock = sql.indexOf('lock table public.app_states in share row exclusive mode;');
+  const profilesLock = sql.indexOf('lock table public.profiles in share row exclusive mode;');
+  const migrationSnapshot = sql.indexOf('create temporary table memory_v2_migration_users');
+
+  assert.ok(transactionStart >= 0, 'migration transaction must start explicitly');
+  assert.ok(appStatesLock > transactionStart, 'app_states must be locked after the transaction starts');
+  assert.ok(profilesLock > transactionStart, 'profiles must be locked after the transaction starts');
+  assert.ok(appStatesLock < migrationSnapshot, 'app_states must be locked before the archive snapshot');
+  assert.ok(profilesLock < migrationSnapshot, 'profiles must be locked before the archive snapshot');
+});
+
 test('RLS and RPC scope every ordinary request to auth.uid', () => {
   for (const table of ['memory_settings', 'memory_stars', 'memory_notes', 'memory_tracks', 'memory_entity_history']) {
     assert.match(sql, new RegExp(`using \\(auth\\.uid\\(\\) = user_id\\)[\\s\\S]*${table}|${table}[\\s\\S]*using \\(auth\\.uid\\(\\) = user_id\\)`));

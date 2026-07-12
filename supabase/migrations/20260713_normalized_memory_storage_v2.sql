@@ -5,6 +5,12 @@
 
 begin;
 
+-- Freeze legacy account snapshots while the normalized migration captures and
+-- verifies them. Waiting v1 writes resume only after this transaction commits,
+-- when the legacy write privileges and RPCs have already been revoked.
+lock table public.app_states in share row exclusive mode;
+lock table public.profiles in share row exclusive mode;
+
 create table if not exists public.memory_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   map_style text not null default 'light',
