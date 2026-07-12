@@ -8,7 +8,7 @@ Production My Life Memory requires Supabase. A local account/password fallback e
 - `profiles` stores the public account profile row.
 - `memory_settings` stores map/theme/language settings and the account-wide `dataset_revision`.
 - `memory_stars`, `memory_notes`, and `memory_tracks` store ordered entities independently.
-- `memory_entity_history` stores the latest 20 pre-update or pre-delete versions per entity.
+- `memory_entity_history` stores pre-update or pre-delete versions for at most seven days, capped at the latest 20 versions per entity.
 - `app_states` is the immutable v1 operator archive after a verified migration. Authenticated clients have no direct access, and normal v2 reads and writes never use it.
 - `life-media` is a private Storage bucket. Database rows contain paths and metadata, not public URLs.
 
@@ -18,16 +18,17 @@ Authenticated clients have SELECT-only access to their own normalized rows throu
 
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in SQL Editor.
-3. Run every file in `supabase/migrations/` in filename order, ending with `20260713_normalized_memory_storage_v2.sql`.
+3. Run migrations in filename order through `20260713_normalized_memory_storage_v2.sql`.
 4. Immediately after that migration, run `supabase/verify-normalized-memory.sql`. Do this before users begin normal v2 editing, because it compares the normalized rows with the unchanged v1 archive.
-5. Run `supabase/verify-cloud-backend.sql` and confirm:
+5. After verification succeeds, run `20260714_memory_trash_retention.sql`.
+6. Run `supabase/verify-cloud-backend.sql` and confirm:
    - every normalized table exists and has RLS enabled;
    - authenticated table privileges are SELECT only;
    - `app_states` has no authenticated privilege, while `profiles` has no direct authenticated write grant;
    - required RPCs exist;
    - the `life-media` bucket and user-folder Storage policies exist.
-6. Deploy `register-with-invite`, `memory-api`, `mcp-token`, and `mcp` from the same release commit.
-7. Disable public Email signup after invite registration is deployed.
+7. Deploy `register-with-invite`, `memory-api`, `mcp-token`, and `mcp` from the same release commit.
+8. Disable public Email signup after invite registration is deployed.
 
 Never deploy the v2 frontend before the v2 migration and checksum verification succeed. The exact maintenance-window, backup, verification, rollback, and recovery order is in the README under **Normalized v2 production checklist**.
 
@@ -120,7 +121,7 @@ authUserId/notes/noteId/imageId.jpg
 
 Stored metadata contains `provider`, `bucket`, `path`/`key`, MIME type, size, and creation time. Private images render with short-lived signed URLs that are kept only in memory.
 
-Soft-deleted rows, conflict copies, entity history, the local entity outbox, and unresolved legacy pending snapshots protect their referenced media. The outbox also persists the exact in-flight mutation batch before network I/O so a lost response can be reconciled after restart. Cleanup scans only the current user's folder and applies the existing 30-day grace period. It must never use `app_states` as the live reference source.
+Soft-deleted rows, conflict copies, retained entity history, the local entity outbox, and unresolved legacy pending snapshots protect their referenced media. The outbox also persists the exact in-flight mutation batch before network I/O so a lost response can be reconciled after restart. Once per account per day, and only after conflict-free cloud sync, `purge_expired_memory_trash()` physically removes that user's soft-deleted entities and history older than seven days. The client then reloads protected paths before applying the seven-day deletion queue and orphan-file grace period. Cleanup scans only the current user's folder and must never use `app_states` as the live reference source.
 
 ## Recovery
 

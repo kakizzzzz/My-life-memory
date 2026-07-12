@@ -87,6 +87,7 @@ where routine_schema = 'public'
     'apply_memory_mutations',
     'initialize_normalized_memory_account',
     'list_protected_memory_media_paths',
+    'purge_expired_memory_trash',
     'summarize_normalized_memory_range',
     'save_app_snapshot',
     'load_app_snapshot'

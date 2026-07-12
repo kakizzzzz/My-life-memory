@@ -1,6 +1,6 @@
 -- Repair grants for normalized memory storage v2 only.
--- Run 20260713_normalized_memory_storage_v2.sql first. This script deliberately
--- keeps profiles and app_states read-only for normal authenticated clients.
+-- Run normalized storage v2 and all later migrations first. This script
+-- deliberately keeps profiles and app_states read-only for normal clients.
 
 grant usage on schema public to authenticated;
 
@@ -32,6 +32,8 @@ revoke all on function public.apply_memory_mutations(bigint, jsonb) from public,
 grant execute on function public.apply_memory_mutations(bigint, jsonb) to authenticated;
 revoke all on function public.list_protected_memory_media_paths() from public, anon;
 grant execute on function public.list_protected_memory_media_paths() to authenticated;
+revoke all on function public.purge_expired_memory_trash() from public, anon, service_role;
+grant execute on function public.purge_expired_memory_trash() to authenticated;
 revoke all on function public.summarize_normalized_memory_range(uuid, date, date, text)
   from public, anon, authenticated;
 grant execute on function public.summarize_normalized_memory_range(uuid, date, date, text)
