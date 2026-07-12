@@ -7,7 +7,10 @@ import {
   warmStorageImageUrls,
   type StoredImageMetadata,
 } from '../lib/mediaStorage';
-import { loadProtectedMemoryMediaPaths } from '../lib/memoryRepository';
+import {
+  loadProtectedMemoryMediaPaths,
+  purgeExpiredMemoryTrash,
+} from '../lib/memoryRepository';
 import { readPendingMemoryMediaPaths } from '../lib/memoryOutbox';
 import { getCloudSession } from '../lib/cloudBackend';
 import {
@@ -20,6 +23,7 @@ import type { ProfileConflictData, StarData, UserProfile } from '../types/app';
 
 const MEDIA_SCAN_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const MEDIA_SCAN_STORAGE_KEY_PREFIX = 'my-life-memory-media-scan-v1:';
+const MEMORY_TRASH_PURGE_STORAGE_KEY_PREFIX = 'my-life-memory-trash-purge-v1:';
 
 const getMediaScanStorageKey = (account: string) => (
   `${MEDIA_SCAN_STORAGE_KEY_PREFIX}${encodeURIComponent(account.trim().toLowerCase())}`
@@ -37,6 +41,22 @@ const markMediaScanComplete = (account: string) => {
     window.localStorage.setItem(getMediaScanStorageKey(account), String(Date.now()));
   } catch {
     // A future focus/online event can safely retry the maintenance scan.
+  }
+};
+
+const claimDailyMemoryTrashPurge = (account: string) => {
+  if (typeof window === 'undefined' || !account) return false;
+  const storageKey = `${MEMORY_TRASH_PURGE_STORAGE_KEY_PREFIX}${encodeURIComponent(account.trim().toLowerCase())}`;
+  const now = Date.now();
+  try {
+    const previousAttempt = Number(window.localStorage.getItem(storageKey) || 0);
+    if (Number.isFinite(previousAttempt) && now - previousAttempt < MEDIA_SCAN_INTERVAL_MS) return false;
+    // Claim before the request so focus/online retries cannot call the RPC more
+    // than once per day, even when the request itself fails.
+    window.localStorage.setItem(storageKey, String(now));
+    return true;
+  } catch {
+    return false;
   }
 };
 
@@ -157,6 +177,11 @@ export const useCloudMediaMaintenance = ({
               }),
             };
           }));
+        }
+
+        const canPurgeExpiredTrash = !migrated.changed && getCloudSyncStatus().phase === 'synced';
+        if (canPurgeExpiredTrash && claimDailyMemoryTrashPurge(sourceProfile.account)) {
+          await purgeExpiredMemoryTrash();
         }
 
         const latestProfile = latestProfileRef.current;

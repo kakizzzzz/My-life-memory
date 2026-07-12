@@ -210,6 +210,28 @@ export const loadProtectedMemoryMediaPaths = async () => {
     .filter(Boolean);
 };
 
+export type MemoryTrashPurgeResult = {
+  cutoff?: string;
+  deletedNotes: number;
+  deletedTracks: number;
+  deletedStars: number;
+  deletedHistory: number;
+};
+
+export const purgeExpiredMemoryTrash = async (): Promise<MemoryTrashPurgeResult> => {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('purge_expired_memory_trash');
+  if (error) throw error;
+  const result = (data || {}) as Partial<MemoryTrashPurgeResult>;
+  return {
+    cutoff: typeof result.cutoff === 'string' ? result.cutoff : undefined,
+    deletedNotes: Math.max(0, Number(result.deletedNotes) || 0),
+    deletedTracks: Math.max(0, Number(result.deletedTracks) || 0),
+    deletedStars: Math.max(0, Number(result.deletedStars) || 0),
+    deletedHistory: Math.max(0, Number(result.deletedHistory) || 0),
+  };
+};
+
 export const applyMemoryMutations = async (
   expectedRevision: number,
   mutations: MemoryMutation[]

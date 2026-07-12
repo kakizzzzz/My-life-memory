@@ -53,15 +53,15 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - `profiles` stores account ID, nickname, and the legacy avatar URL field.
 - `memory_settings` stores map/theme/language settings, profile conflict metadata, and the account-wide `dataset_revision`.
 - `memory_stars`, `memory_notes`, and `memory_tracks` store independent ordered entities with `changed_revision` and `deleted_at` fields.
-- `memory_entity_history` stores pre-update and pre-delete entity versions, limited to the newest 20 versions for each entity.
+- `memory_entity_history` stores pre-update and pre-delete entity versions for at most seven days, limited to the newest 20 versions for each entity.
 - `app_states` is retained only as the immutable v1 operator archive after a verified migration. Authenticated clients have no direct table access, and the v2 frontend never uses it as a normal read or write source.
 - `life-media` is a private Supabase Storage bucket for avatar and note image files.
 - Note rows and profile metadata store only Storage metadata: `provider`, `bucket`, `path`, `mimeType`, `size`, and `createdAt`.
 - Legacy compressed data URL images still render as an offline fallback. After login or network recovery, the app migrates them into private Storage and updates the owning normalized note or profile metadata.
 - The production build registers a same-origin app-shell service worker. It caches only public application assets; Supabase responses, private signed media, map tiles, and memory data are excluded. This improves launch reliability without creating a second plaintext cache of private memories, but it is not a promise of full offline cloud editing.
 - Photo-GPS star creation uploads the selected photo through the same Storage flow, then creates a star and a note at the embedded photo coordinates. If the photo has no usable GPS metadata, no star is created.
-- Deleting a star or note soft-deletes database rows and does not immediately remove its files. Media maintenance combines live UI references with server-protected references from normalized rows and history before retrying deletions.
-- Media maintenance scans only the authenticated user's UUID folder. It skips cleanup during a cloud conflict and uses a 30-day grace period before deleting an object that has no protected reference.
+- Deleting a star or note soft-deletes database rows and does not immediately remove its files. After seven days, user-scoped maintenance physically removes expired trash and matching history before rebuilding the protected media path set.
+- Media maintenance scans only the authenticated user's UUID folder. It runs the trash RPC at most once per account per day, only after cloud sync succeeds without a conflict, and uses a seven-day grace period before deleting an object that has no active row, retained history, conflict, or local outbox reference.
 - Rich note HTML is sanitized before save/load so only the note editor's small allowlist is stored.
 - Normalized rows are loaded with pagination loops and assembled into the existing React state shape. A revision check before and after the multi-table read prevents a mixed old/new result during concurrent writes.
 - Cloud changes are diffed into entity mutations. No quantity limit silently slices stars, notes, tracks, route points, or HTML during legacy reads; unsafe or oversized new writes remain in the local outbox and report a sync error instead of pretending to save.
@@ -162,8 +162,10 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 1. Create a Supabase project.
 2. In Authentication settings, disable public Email signup after the invite function is deployed, so new users cannot bypass the invite flow with the anon key.
 3. Open SQL Editor and run `supabase/schema.sql`.
-4. Run the existing migrations in filename order, ending with `supabase/migrations/20260713_normalized_memory_storage_v2.sql`. Do not deploy the v2 frontend before this transaction succeeds.
-5. Confirm these objects exist:
+4. Run the existing migrations in filename order through `supabase/migrations/20260713_normalized_memory_storage_v2.sql`. Do not deploy the v2 frontend before this transaction succeeds.
+5. Immediately run `supabase/verify-normalized-memory.sql`. Existing v1 accounts must show matching counts, ID/order checksums, content checksums, and a non-null `migration_verified_at`.
+6. After verification succeeds, run `supabase/migrations/20260714_memory_trash_retention.sql` to install the seven-day user-scoped trash and history maintenance RPC.
+7. Confirm these objects exist:
    - `public.profiles`
    - read-only archive `public.app_states`
    - `public.memory_settings`
@@ -171,19 +173,18 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
    - `public.memory_notes`
    - `public.memory_tracks`
    - `public.memory_entity_history`
-   - RPCs `public.apply_memory_mutations`, `public.list_protected_memory_media_paths`, and the service-only `public.summarize_normalized_memory_range`
+   - RPCs `public.apply_memory_mutations`, `public.list_protected_memory_media_paths`, `public.purge_expired_memory_trash`, and the service-only `public.summarize_normalized_memory_range`
    - private Storage bucket `life-media`
    - own-user SELECT RLS policies for every normalized table and existing policies for `storage.objects`
-6. Deploy the Supabase Edge Functions `register-with-invite`, `memory-api`, `mcp-token`, and `mcp`.
-7. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
-8. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
-9. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
-10. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
-11. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-12. If permissions look wrong, run the read-only `supabase/verify-cloud-backend.sql` to inspect the project.
-13. Only after the v2 migration exists, use `supabase/fix-permissions.sql` to restore the v2 grants. It gives authenticated clients own-row SELECT on profiles/normalized tables, no `app_states` access, and no direct writes; do not reuse an older script that grants legacy access.
-14. Immediately after migration, run `supabase/verify-normalized-memory.sql`. Existing v1 accounts must show matching counts, ID/order checksums, content checksums, and a non-null `migration_verified_at`.
-15. Keep `app_states` unchanged as the rollback archive. Do not manually clear it after verification.
+8. Deploy the Supabase Edge Functions `register-with-invite`, `memory-api`, `mcp-token`, and `mcp`.
+9. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
+10. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
+11. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
+12. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
+13. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+14. If permissions look wrong, run the read-only `supabase/verify-cloud-backend.sql` to inspect the project.
+15. Only after the v2 migration exists, use `supabase/fix-permissions.sql` to restore the v2 grants. It gives authenticated clients own-row SELECT on profiles/normalized tables, no `app_states` access, and no direct writes; do not reuse an older script that grants legacy access.
+16. Keep `app_states` unchanged as the rollback archive. Do not manually clear it after verification.
 
 `20260713_normalized_memory_storage_v2.sql` is idempotent and transactional. It decomposes each existing archive, preserves original IDs and ordering, compares stable content checksums, and marks a user verified only after all checks pass. A mismatch raises an exception and rolls the transaction back. New registrations atomically create `profiles`, `memory_settings`, and the default star without creating a new app-state snapshot.
 
@@ -282,7 +283,7 @@ For GitHub Pages:
 - Private images are rendered with short-lived signed URLs; signed URLs are not stored in normalized metadata.
 - Mutation sanitization strips password-like fields before cloud save. Production builds do not allow local account/password fallback when Supabase is not configured.
 - Supabase Auth passwords cannot be viewed by the app. The app supports changing passwords, not revealing saved passwords.
-- Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`. Previously referenced media enters a 30-day deletion queue and is removed only after cloud sync succeeds and the current account state no longer references it. Full orphan scans run at most once per account per day.
+- Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`. Previously referenced media enters a seven-day deletion queue. After cloud sync succeeds without a conflict, daily maintenance purges expired soft-deleted rows and history, reloads protected paths, and removes only files no longer referenced by active data or the local outbox. Full orphan scans run at most once per account per day.
 - Legacy data URL images are kept only as compatibility fallback and are automatically migrated to private Storage after login or network recovery.
 - If GitHub Pages is used as a live demo, configure Supabase environment variables in GitHub Actions secrets before building.
 
