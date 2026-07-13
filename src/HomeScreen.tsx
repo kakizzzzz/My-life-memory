@@ -26,16 +26,17 @@ import {
   Share,
   ShieldCheck,
   Star,
-  Trash2,
   UserRound,
 } from 'lucide-react';
+import { PrivacyConsentDialog, PrivacyNoticeContent } from './AccountLifecyclePanels';
 import { HomeGalleryPanel, HomeProfilePanel, HomeThemePanel, type ThemeColorControl } from './HomePrimaryPanels';
-import { HomeSettingsPanels, isHomeSettingsPanel, PrivacyNoticeContent, type SettingsMenuItem } from './HomeSettingsPanels';
+import { HomeSettingsPanels, isHomeSettingsPanel, type SettingsMenuItem } from './HomeSettingsPanels';
 import { LoginWorldMapBackground } from './LoginWorldMapBackground';
 import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
 import { getCloudMcpEndpoint, type CloudAuthAction, type CloudMcpTokenInfo } from './lib/cloudBackend';
 import { supabaseFunctionUrl } from './lib/supabaseClient';
 import { LANGUAGE_OPTIONS, LOGIN_LANGUAGE_LABELS } from './constants/language';
+import { CLOUD_PASSWORD_MIN_LENGTH } from './constants/appDefaults';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE } from './constants/ui';
 import { HOME_COPY } from './copy/homeCopy';
 import type { HomePanel, SystemTheme, UploadedImage, UserProfile } from './types/app';
@@ -180,6 +181,53 @@ export function HomeScreen({
   onCreateMcpToken,
   onRevokeMcpToken,
 }: HomeScreenProps) {
+  const [isPrivacyConsentOpen, setIsPrivacyConsentOpen] = React.useState(false);
+  const [hasAcceptedPrivacyForRegistration, setHasAcceptedPrivacyForRegistration] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isOpen && !isSignedIn && authMode === 'register') return;
+    setIsPrivacyConsentOpen(false);
+    setHasAcceptedPrivacyForRegistration(false);
+  }, [authMode, isOpen, isSignedIn]);
+
+  const requestRegistration = React.useCallback((event?: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    if (isAuthBusy) return;
+
+    const shouldRunExistingValidation = (
+      !loginAccount.trim() ||
+      !loginPassword ||
+      loginPassword.length < CLOUD_PASSWORD_MIN_LENGTH ||
+      Boolean(cloudConfigError) ||
+      (isCloudBackendEnabled && !registerInviteCode.trim())
+    );
+    if (shouldRunExistingValidation) {
+      void onRegisterSubmit();
+      return;
+    }
+
+    if (!hasAcceptedPrivacyForRegistration) {
+      setIsPrivacyConsentOpen(true);
+      return;
+    }
+    void onRegisterSubmit();
+  }, [
+    cloudConfigError,
+    hasAcceptedPrivacyForRegistration,
+    isAuthBusy,
+    isCloudBackendEnabled,
+    loginAccount,
+    loginPassword,
+    onRegisterSubmit,
+    registerInviteCode,
+  ]);
+
+  const acceptPrivacyAndRegister = React.useCallback(() => {
+    setHasAcceptedPrivacyForRegistration(true);
+    setIsPrivacyConsentOpen(false);
+    void onRegisterSubmit();
+  }, [onRegisterSubmit]);
+
   const homeMenuItems: { panel: Extract<HomePanel, 'profile' | 'theme' | 'gallery' | 'settings'>; label: string; icon: React.ReactNode }[] = [
     { panel: 'profile', label: homeCopy.modify, icon: <Database size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'theme', label: homeCopy.theme, icon: <Palette size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
@@ -224,7 +272,6 @@ export function HomeScreen({
     { panel: 'apiSecurity', label: homeCopy.apiSecurity, icon: <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
     { panel: 'mcp', label: homeCopy.mcpAccess, icon: <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
     { panel: 'export', label: homeCopy.exportData, icon: <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-    { panel: 'deleteAccount', label: homeCopy.accountDelete, icon: <Trash2 size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
   ];
   const manualIconGuide = [
     { icon: <MapIcon size={18} strokeWidth={iconStrokeWidth} />, label: homeCopy.bottomMap, body: homeCopy.manualIconMap },
@@ -305,7 +352,7 @@ export function HomeScreen({
                   </div>
                 ) : (
                 <form
-                  onSubmit={authMode === 'register' ? onRegisterSubmit : onLoginSubmit}
+                  onSubmit={authMode === 'register' ? requestRegistration : onLoginSubmit}
                   className="relative z-10 flex min-h-full flex-col items-center justify-center"
                 >
                   <div className="relative flex w-full flex-col items-center">
@@ -414,7 +461,7 @@ export function HomeScreen({
                               onPasswordRevealChange(false);
                               return;
                             }
-                            void onRegisterSubmit(event);
+                            requestRegistration(event);
                           }}
                           className="h-[48px] rounded-full bg-[var(--app-soft-surface)] text-[16px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
                         >
@@ -541,6 +588,7 @@ export function HomeScreen({
                   isExportingData={isExportingData}
                   exportDataStatus={exportDataStatus}
                   exportDataProgress={exportDataProgress}
+                  showDeleteAccount={isCloudBackendEnabled}
                   accountDeletePassword={accountDeletePassword}
                   accountDeleteStatus={accountDeleteStatus}
                   isDeletingAccount={isDeletingAccount}
@@ -558,6 +606,13 @@ export function HomeScreen({
               )}
             </AnimatePresence>
           </div>
+          <PrivacyConsentDialog
+            open={isPrivacyConsentOpen}
+            homeCopy={homeCopy}
+            isBusy={isAuthBusy}
+            onDecline={() => setIsPrivacyConsentOpen(false)}
+            onAgree={acceptPrivacyAndRegister}
+          />
         </motion.div>
       )}
     </AnimatePresence>

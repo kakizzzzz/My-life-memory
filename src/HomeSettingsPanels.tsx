@@ -1,5 +1,6 @@
 import React from 'react';
-import { BookOpen, ChevronRight, Download, KeyRound, Languages, Lock, MapPin, ShieldCheck, Trash2 } from 'lucide-react';
+import { BookOpen, ChevronRight, Download, KeyRound, Languages, Lock, MapPin, ShieldCheck } from 'lucide-react';
+import { AccountDeletionPanel, PrivacyNoticeContent } from './AccountLifecyclePanels';
 import type { CloudMcpTokenInfo } from './lib/cloudBackend';
 import { LANGUAGE_OPTIONS } from './constants/language';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE, UI_ICON_STROKE } from './constants/ui';
@@ -47,6 +48,7 @@ type HomeSettingsPanelsProps = {
   isExportingData: boolean;
   exportDataStatus: string;
   exportDataProgress: number | null;
+  showDeleteAccount: boolean;
   accountDeletePassword: string;
   accountDeleteStatus: string;
   isDeletingAccount: boolean;
@@ -74,32 +76,6 @@ export const isHomeSettingsPanel = (panel: HomePanel): panel is HomeSettingsPane
   panel === 'deleteAccount'
 );
 
-export function PrivacyNoticeContent({ homeCopy }: { homeCopy: HomeCopy }) {
-  return (
-    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
-      <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-black/60">
-        <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-        {homeCopy.privacyNotice}
-      </div>
-      <div className="text-[13px] font-medium leading-snug text-black/55">
-        {homeCopy.privacyIntro}
-      </div>
-      <div className="mt-4 space-y-3">
-        {homeCopy.privacySections.map(section => (
-          <div key={section.title}>
-            <div className="text-[13px] font-semibold leading-tight text-black">
-              {section.title}
-            </div>
-            <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
-              {section.body}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function HomeSettingsPanels({
   activeHomePanel,
   homeCopy,
@@ -119,6 +95,7 @@ export function HomeSettingsPanels({
   isExportingData,
   exportDataStatus,
   exportDataProgress,
+  showDeleteAccount,
   accountDeletePassword,
   accountDeleteStatus,
   isDeletingAccount,
@@ -155,13 +132,24 @@ export function HomeSettingsPanels({
             <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
             {homeCopy.accountAccess}
           </div>
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
-          >
-            {homeCopy.exit}
-          </button>
+          <div className={`grid gap-2 ${showDeleteAccount ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="h-10 rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
+            >
+              {homeCopy.exit}
+            </button>
+            {showDeleteAccount && (
+              <button
+                type="button"
+                onClick={() => onOpenPanel('deleteAccount')}
+                className="h-10 rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
+              >
+                {homeCopy.accountDelete}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -366,45 +354,14 @@ export function HomeSettingsPanels({
 
   if (activeHomePanel === 'deleteAccount') {
     return (
-      <div className="mt-4">
-        <div className="rounded-[14px] bg-[var(--app-card)] p-3">
-          <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
-            <Trash2 size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-            {homeCopy.accountDelete}
-          </div>
-          <div className="text-[12px] font-medium leading-snug text-black/52">
-            {homeCopy.accountDeleteIntro}
-          </div>
-          <div className="mt-2 text-[12px] font-medium leading-snug text-black/68">
-            {homeCopy.accountDeleteWarning}
-          </div>
-          <label className="mt-4 flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
-            <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-            <input
-              value={accountDeletePassword}
-              onChange={event => onAccountDeletePasswordChange(event.target.value)}
-              type="password"
-              autoComplete="current-password"
-              disabled={isDeletingAccount}
-              className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30 disabled:opacity-60"
-              placeholder={homeCopy.accountDeletePassword}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={onDeleteAccount}
-            disabled={isDeletingAccount || !accountDeletePassword}
-            className="mt-3 h-10 w-full rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-45"
-          >
-            {isDeletingAccount ? homeCopy.accountDeleting : homeCopy.accountDeleteConfirm}
-          </button>
-          {accountDeleteStatus && (
-            <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/55">
-              {accountDeleteStatus}
-            </div>
-          )}
-        </div>
-      </div>
+      <AccountDeletionPanel
+        homeCopy={homeCopy}
+        password={accountDeletePassword}
+        status={accountDeleteStatus}
+        isDeleting={isDeletingAccount}
+        onPasswordChange={onAccountDeletePasswordChange}
+        onDelete={onDeleteAccount}
+      />
     );
   }
 
