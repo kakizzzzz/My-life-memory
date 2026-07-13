@@ -252,7 +252,7 @@ For GitHub Pages:
    ```
 
 3. Publish `dist/` to the Pages branch or use `.github/workflows/deploy-pages.yml`.
-   Backend releases use the separate manual `.github/workflows/deploy-supabase.yml` workflow after configuring `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF` as GitHub Actions secrets. It verifies the app and Edge Functions before applying only unregistered migrations through the Supabase Management API and deploying all five functions. A database password is not stored in GitHub. Keep the account-wide access token restricted to this repository, rotate it if repository access changes, and revoke it immediately if workflow logs or repository permissions are ever compromised.
+   Backend releases use the official Supabase GitHub Integration connected only to this repository. The repository root is the Supabase working directory and `main` is the production branch, so committed migrations and Edge Functions deploy without storing an account-wide Supabase access token in GitHub Actions. Protect `main`, review backend changes before merging, and keep the GitHub App installation limited to this repository.
 4. After deploy, open the Pages URL and test:
    - register and log in
    - switch accounts on the same device and confirm each account sees only its own data

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const deleteAccount = readFileSync('supabase/functions/delete-account/index.ts', 'utf8');
 const register = readFileSync('supabase/functions/register-with-invite/index.ts', 'utf8');
 const registrationMigration = readFileSync('supabase/migrations/20260715_registration_integrity.sql', 'utf8');
 const lifecycleMigration = readFileSync('supabase/migrations/20260716_account_lifecycle_hardening.sql', 'utf8');
-const deployment = readFileSync('.github/workflows/deploy-supabase.yml', 'utf8');
+const deploymentDocs = readFileSync('README.md', 'utf8');
 const edgeConfig = readFileSync('supabase/config.toml', 'utf8');
 
 test('account deletion authenticates the session and re-verifies the current password', () => {
@@ -66,7 +66,9 @@ test('registration verifies password confirmation and persists a versioned priva
   assert.match(registrationMigration, /p_privacy_version/);
 });
 
-test('delete-account is included in Edge config and production deployment', () => {
+test('delete-account is included in Edge config and the official production integration', () => {
   assert.match(edgeConfig, /\[functions\.delete-account\][\s\S]*verify_jwt = false/);
-  assert.match(deployment, /supabase functions deploy delete-account/);
+  assert.match(deploymentDocs, /official Supabase GitHub Integration/);
+  assert.match(deploymentDocs, /`main` is the production branch/);
+  assert.equal(existsSync('.github/workflows/deploy-supabase.yml'), false);
 });
