@@ -8,7 +8,7 @@ export const LANGUAGE_OPTIONS = [
   { label: '中文', value: 'zh' },
   { label: 'English', value: 'en' },
   { label: '한국어', value: 'ko' },
-];
+] as const;
 
 export const LOGIN_LANGUAGE_LABELS: Record<string, string> = {
   zh: '中',

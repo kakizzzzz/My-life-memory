@@ -87,7 +87,7 @@ export const HOME_COPY = {
     privacySections: [
       { title: 'Cloud provider', body: 'Account, memory, and image data are stored with Supabase Auth, Database, and private Storage. Data is separated by user ID and protected by access policies.' },
       { title: 'Administrator access', body: 'This service is not end-to-end encrypted. A project administrator with privileged backend access can technically read database content and private media for maintenance or incident recovery.' },
-      { title: 'Deletion and retention', body: 'Deleted notes, stars, routes, related history, and unreferenced images may be retained for up to seven days before automatic physical cleanup. Deleting the whole account requests immediate removal of its private media and Auth account, with related database rows removed by cascade.' },
+      { title: 'Deletion and retention', body: 'Deleted notes, stars, routes, and related history are physically purged by a daily server task after a retention period of up to seven days. Unreferenced images enter the same seven-day queue and are removed by the next successful secure media-maintenance run. Deleting the whole account requests immediate removal of its private media and Auth account, with related database rows removed by cascade.' },
       { title: 'Export and account deletion', body: 'You can export a readable offline report from Settings. You can also delete your account after confirming the current password; this action is irreversible.' },
       { title: 'Recovery limits', body: 'Short-lived entity history and local pending-sync data help recover some failures, but they are not a permanent backup and cannot guarantee recovery from every device, network, or service failure.' },
       { title: 'No sale or public sharing', body: 'The app does not sell your data or intentionally publish it. Sharing an exported file, MCP token, login session, or device access can still expose your memories, so keep them private.' },
@@ -311,7 +311,7 @@ export const HOME_COPY = {
     privacySections: [
       { title: '云端服务', body: '账号、记忆和图片使用 Supabase Auth、Database 与私有 Storage 储存。数据按用户 ID 隔离，并由访问策略保护。' },
       { title: '管理员访问能力', body: '本服务目前不是端到端加密。拥有后端高权限的项目管理员在技术上可以为了维护或故障恢复读取数据库内容和私有图片。' },
-      { title: '删除与保留期限', body: '被删除的笔记、星星、路线、相关历史和无引用图片最长可能保留七天，之后自动物理清理。删除整个账号时会请求立即清除该账号的私有图片和 Auth 用户，相关数据库行由级联删除。' },
+      { title: '删除与保留期限', body: '被删除的笔记、星星、路线和相关历史最多保留七天，之后由每日服务端任务物理清理。无引用图片进入同样的七天队列，并在下一次安全媒体维护成功时删除。删除整个账号时会请求立即清除该账号的私有图片和 Auth 用户，相关数据库行由级联删除。' },
       { title: '导出与删除账号', body: '你可以在设置中导出可离线阅读的报告，也可以在验证当前密码后删除账号。删除账号不可撤销。' },
       { title: '故障恢复能力', body: '短期实体历史和本机待同步数据可以帮助恢复部分故障，但它们不是永久备份，无法保证恢复所有设备、网络或服务异常造成的数据问题。' },
       { title: '不会出售或公开', body: '本程序不会出售或主动公开用户数据。导出文件、MCP Token、登录会话或设备访问权限仍可能暴露记忆，请妥善保管。' },
@@ -535,7 +535,7 @@ export const HOME_COPY = {
     privacySections: [
       { title: '클라우드 제공자', body: '계정, 기억, 이미지 데이터는 Supabase Auth, Database, 비공개 Storage에 저장됩니다. 데이터는 사용자 ID별로 분리되고 접근 정책으로 보호됩니다.' },
       { title: '관리자 접근', body: '현재 이 서비스는 종단간 암호화를 제공하지 않습니다. 높은 백엔드 권한을 가진 프로젝트 관리자는 유지보수나 장애 복구를 위해 데이터베이스 내용과 비공개 미디어를 기술적으로 읽을 수 있습니다.' },
-      { title: '삭제 및 보존', body: '삭제한 노트, 별표, 경로, 관련 기록과 참조되지 않는 이미지는 자동 영구 삭제 전 최대 7일 동안 보존될 수 있습니다. 전체 계정을 삭제하면 비공개 미디어와 Auth 계정을 즉시 제거하고 관련 데이터베이스 행은 연쇄 삭제됩니다.' },
+      { title: '삭제 및 보존', body: '삭제한 노트, 별표, 경로 및 관련 기록은 최대 7일 보존된 뒤 매일 실행되는 서버 작업으로 영구 삭제됩니다. 참조되지 않는 이미지는 같은 7일 대기열에 들어가며 다음 보안 미디어 유지 관리가 성공할 때 삭제됩니다. 전체 계정을 삭제하면 비공개 미디어와 Auth 계정을 즉시 제거하고 관련 데이터베이스 행은 연쇄 삭제됩니다.' },
       { title: '내보내기 및 계정 삭제', body: '설정에서 오프라인 읽기용 보고서를 내보낼 수 있습니다. 현재 비밀번호를 확인한 뒤 계정을 삭제할 수도 있으며, 이 작업은 되돌릴 수 없습니다.' },
       { title: '복구 한계', body: '단기 버전 기록과 기기의 대기 중 동기화 데이터는 일부 장애 복구에 도움이 되지만 영구 백업이 아니며 모든 기기, 네트워크, 서비스 장애에서 복구를 보장하지 않습니다.' },
       { title: '판매 또는 공개 안 함', body: '앱은 사용자 데이터를 판매하거나 의도적으로 공개하지 않습니다. 내보낸 파일, MCP 토큰, 로그인 세션 또는 기기 접근 권한을 공유하면 기억이 노출될 수 있으므로 비공개로 보관하세요.' },
