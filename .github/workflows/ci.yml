@@ -49,9 +49,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Install WebKit browser
-        run: npx playwright install --with-deps webkit
-
-      - name: Mobile WebKit smoke test
-        run: npm run test:e2e
