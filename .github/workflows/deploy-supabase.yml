@@ -22,7 +22,6 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -53,13 +52,9 @@ jobs:
           npm test
           npm run build
 
-      - name: Link production project
-        if: ${{ inputs.apply_migrations }}
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
-
       - name: Apply pending migrations
         if: ${{ inputs.apply_migrations }}
-        run: supabase db push --linked
+        run: npm run deploy:supabase-migrations
 
       - name: Deploy Edge Functions
         run: |

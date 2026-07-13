@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "mcp:memory": "node mcp/my-life-memory.mjs",
+    "deploy:supabase-migrations": "node scripts/deploy-supabase-migrations.mjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "lint:edge": "deno check supabase/functions/register-with-invite/index.ts supabase/functions/delete-account/index.ts supabase/functions/mcp-token/index.ts supabase/functions/mcp/index.ts supabase/functions/memory-api/index.ts",
