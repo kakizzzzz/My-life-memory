@@ -45,6 +45,7 @@ export type TrackDraftData = {
 };
 
 export type MapStyle = 'light' | 'dark' | 'aerial';
+export type AppLanguage = 'en' | 'zh' | 'ko';
 export type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchResults';
 export type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'privacy' | 'apiSecurity' | 'mcp' | 'export' | 'deleteAccount' | null;
 export type SearchField = 'coordinate' | 'text';

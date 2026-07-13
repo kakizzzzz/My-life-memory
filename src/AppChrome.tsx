@@ -469,7 +469,7 @@ export function BottomNavigation({
 }) {
   if (!isVisible) return null;
 
-  const bottomNavTransition = { type: 'spring', stiffness: 420, damping: 34 };
+  const bottomNavTransition = { type: 'spring' as const, stiffness: 420, damping: 34 };
   const getBottomNavClass = (view: AppView) => (
     activeView === view
       ? 'bg-[var(--app-dark)] text-white rounded-full px-6 py-3 flex items-center justify-center transition-all duration-300 ease-out'

@@ -39,7 +39,7 @@ import { LANGUAGE_OPTIONS, LOGIN_LANGUAGE_LABELS } from './constants/language';
 import { CLOUD_PASSWORD_MIN_LENGTH } from './constants/appDefaults';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE } from './constants/ui';
 import { HOME_COPY } from './copy/homeCopy';
-import type { HomePanel, SystemTheme, UploadedImage, UserProfile } from './types/app';
+import type { AppLanguage, HomePanel, SystemTheme, UploadedImage, UserProfile } from './types/app';
 
 type HomeCopy = typeof HOME_COPY.en;
 type PermissionRequestState = 'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported';
@@ -48,7 +48,7 @@ type HomeScreenProps = {
   isOpen: boolean;
   isSignedIn: boolean;
   homeCopy: HomeCopy;
-  language: string;
+  language: AppLanguage;
   screenTopPaddingClass: string;
   iconStrokeWidth: number;
   avatarInputRef: React.RefObject<HTMLInputElement | null>;
@@ -67,7 +67,7 @@ type HomeScreenProps = {
   onLoginPasswordChange: (value: string) => void;
   onRegisterConfirmPasswordChange: (value: string) => void;
   onRegisterInviteCodeChange: (value: string) => void;
-  onLanguageChange: (language: string) => void;
+  onLanguageChange: (language: AppLanguage) => void;
   onAuthModeChange: (mode: CloudAuthAction) => void;
   onLoginErrorChange: (value: string) => void;
   onPasswordRevealChange: (value: boolean | ((previous: boolean) => boolean)) => void;

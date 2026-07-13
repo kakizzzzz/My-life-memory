@@ -28,11 +28,19 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Install dependencies
         run: npm ci
 
       - name: Type check
         run: npm run lint
+
+      - name: Type check Edge Functions
+        run: npm run lint:edge
 
       - name: Test
         run: npm test
@@ -42,6 +50,12 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Install WebKit browser
+        run: npx playwright install --with-deps webkit
+
+      - name: Mobile WebKit smoke test
+        run: npm run test:e2e
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

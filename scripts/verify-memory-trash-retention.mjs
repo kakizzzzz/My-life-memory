@@ -9,6 +9,10 @@ const retentionMigration = await readFile(
   'supabase/migrations/20260714_memory_trash_retention.sql',
   'utf8'
 );
+const serverRetentionMigration = await readFile(
+  'supabase/migrations/20260717_server_retention_and_archive_redaction.sql',
+  'utf8'
+);
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const otherUserId = '22222222-2222-4222-8222-222222222222';
@@ -58,6 +62,11 @@ const bootstrap = async db => {
 };
 
 const makeState = suffix => ({
+  profile: {
+    account: `owner${suffix}`,
+    name: `Owner${suffix}`,
+    password: `legacy-secret${suffix}`,
+  },
   mapStyle: 'light',
   language: 'en',
   systemTheme: {},
@@ -114,6 +123,20 @@ for (const [id, account, state] of [
 await db.exec(normalizedMigration);
 await db.exec(retentionMigration);
 await db.exec(retentionMigration);
+await db.exec(serverRetentionMigration);
+await db.exec(serverRetentionMigration);
+
+const sanitizedArchives = await db.query(`
+  select
+    public.memory_json_has_sensitive_keys(state) as has_sensitive,
+    state #>> '{stars,0,id}' as retained_star
+  from public.app_states
+  order by user_id
+`);
+assert(sanitizedArchives.rows.every(row => row.has_sensitive === false),
+  'Server retention migration left a credential-like key in app_states.');
+assert(sanitizedArchives.rows.every(row => String(row.retained_star).startsWith('active-star')),
+  'Credential redaction removed non-sensitive legacy memory data.');
 
 const activePath = `${userId}/notes/active-note/active.jpg`;
 const expiredPath = `${userId}/notes/expired-note/expired.jpg`;
@@ -267,6 +290,14 @@ await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]
 await db.query("select set_config('request.jwt.claim.role', 'authenticated', false)");
 await db.exec('set role authenticated');
 
+let systemPurgeRejected = false;
+try {
+  await db.query('select public.purge_expired_memory_trash_all_users()');
+} catch (error) {
+  systemPurgeRejected = /permission denied/i.test(String(error));
+}
+assert(systemPurgeRejected, 'Authenticated clients can execute the all-user retention task.');
+
 const protectedBefore = new Set(
   (await db.query('select path from public.list_protected_memory_media_paths()')).rows.map(row => row.path)
 );
@@ -336,6 +367,18 @@ const otherUserRows = await db.query(`
 assert(Number(otherUserRows.rows[0].note_count) === 1 && Number(otherUserRows.rows[0].track_count) === 1,
   'One user purged another user\'s expired trash.');
 
+const systemPurge = await db.query('select public.purge_expired_memory_trash_all_users() as result');
+assert(Number(systemPurge.rows[0].result.processedUsers) >= 1,
+  `System purge did not process the remaining user: ${JSON.stringify(systemPurge.rows[0].result)}`);
+const otherUserAfterSystemPurge = await db.query(`
+  select
+    (select count(*) from public.memory_notes where user_id = $1 and id = 'active-note-other') as note_count,
+    (select count(*) from public.memory_tracks where user_id = $1 and id = 'active-track-other') as track_count
+`, [otherUserId]);
+assert(Number(otherUserAfterSystemPurge.rows[0].note_count) === 0
+  && Number(otherUserAfterSystemPurge.rows[0].track_count) === 0,
+  'Owner-only system retention did not purge expired rows for an inactive account.');
+
 const archiveAfter = await db.query(
   'select user_id, state::text as state from public.app_states order by user_id'
 );
@@ -362,6 +405,10 @@ assert(Number(staleHistoryAfterWrite.rows[0].count) === 0,
 console.log(JSON.stringify({
   retentionMigrationExecuted: true,
   retentionMigrationIdempotent: true,
+  serverRetentionMigrationIdempotent: true,
+  scheduledPurgeFunctionVerified: true,
+  systemPurgeDeniedToAuthenticated: true,
+  legacyCredentialKeysRedacted: true,
   unauthenticatedRejected: true,
   recentTrashRetained: true,
   expiredTrashPurged: true,

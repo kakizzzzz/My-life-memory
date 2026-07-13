@@ -1,13 +1,16 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { AppErrorBoundary } from './AppErrorBoundary';
 import { CloudSyncToast } from './CloudSyncToast';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
-    <CloudSyncToast />
+    <AppErrorBoundary>
+      <App />
+      <CloudSyncToast />
+    </AppErrorBoundary>
   </StrictMode>,
 );
 
