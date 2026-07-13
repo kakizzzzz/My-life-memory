@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-life-memory-shell-v2-normalized-storage';
+const CACHE_NAME = 'my-life-memory-shell-v2-registration-integrity';
 const SHELL_FILES = ['./', './index.html', './site.webmanifest', './app-icon.png'];
 
 self.addEventListener('install', event => {

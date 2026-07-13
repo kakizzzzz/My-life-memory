@@ -26,7 +26,8 @@ export const TRACK_MAX_PLAUSIBLE_SPEED_MPS = 90;
 export const TRACK_MAX_SEGMENT_GAP_MS = 60_000;
 export const TRACK_MIN_POINT_INTERVAL_MS = 500;
 export const TRACK_STALE_POSITION_GRACE_MS = 2000;
-export const CLOUD_PASSWORD_MIN_LENGTH = 6;
+export const CLOUD_PASSWORD_MIN_LENGTH = 8;
+export const PRIVACY_NOTICE_VERSION = '2026-07-13';
 
 export const UPLOAD_IMAGE_MAX_BYTES = 100 * 1024;
 export const SAMPLE_NOTE_IMAGE_URL = `${import.meta.env.BASE_URL}note-sample.jpg`;

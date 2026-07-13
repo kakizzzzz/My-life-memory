@@ -69,6 +69,6 @@ test('same-account recovery cannot target another source account', () => {
 });
 
 test('service worker cache is bumped for the normalized client', () => {
-  assert.match(serviceWorker, /my-life-memory-shell-v2-normalized-storage/);
+  assert.match(serviceWorker, /my-life-memory-shell-v2-registration-integrity/);
   assert.doesNotMatch(serviceWorker, /my-life-memory-shell-v1/);
 });

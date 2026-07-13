@@ -344,6 +344,8 @@ export default function App() {
     setLoginAccount,
     loginPassword,
     setLoginPassword,
+    registerConfirmPassword,
+    setRegisterConfirmPassword,
     registerInviteCode,
     setRegisterInviteCode,
     isPasswordRevealed,
@@ -908,10 +910,12 @@ export default function App() {
         cloudConfigError={cloudConfigError}
         loginAccount={loginAccount}
         loginPassword={loginPassword}
+        registerConfirmPassword={registerConfirmPassword}
         registerInviteCode={registerInviteCode}
         loginError={loginError}
         onLoginAccountChange={setLoginAccount}
         onLoginPasswordChange={setLoginPassword}
+        onRegisterConfirmPasswordChange={setRegisterConfirmPassword}
         onRegisterInviteCodeChange={setRegisterInviteCode}
         onLanguageChange={setLanguage}
         onAuthModeChange={setAuthMode}

@@ -137,6 +137,7 @@ export const useCloudAuthSync = ({
   const [authMode, setAuthMode] = React.useState<CloudAuthAction>('login');
   const [loginAccount, setLoginAccount] = React.useState('');
   const [loginPassword, setLoginPassword] = React.useState('');
+  const [registerConfirmPassword, setRegisterConfirmPassword] = React.useState('');
   const [registerInviteCode, setRegisterInviteCode] = React.useState('');
   const [isPasswordRevealed, setIsPasswordRevealed] = React.useState(false);
   const [loginError, setLoginError] = React.useState('');
@@ -385,7 +386,10 @@ export const useCloudAuthSync = ({
     }
     if (code === 'invite_required') return homeCopy.inviteOnly;
     if (code === 'account_exists') return homeCopy.accountExists;
+    if (code === 'registration_in_progress') return homeCopy.registrationInProgress;
     if (code === 'weak_password') return homeCopy.passwordTooShort;
+    if (code === 'password_mismatch') return homeCopy.registerPasswordMismatch;
+    if (code === 'privacy_consent_required') return homeCopy.privacyConsentRequired;
     if (code === 'invalid_credentials') {
       return homeCopy.loginError;
     }
@@ -845,14 +849,17 @@ export const useCloudAuthSync = ({
     setIsSignedIn,
   ]);
 
-  const handleRegister = React.useCallback(async (event?: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>) => {
+  const handleRegister = React.useCallback(async (
+    event?: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>,
+    privacyAccepted = false,
+  ) => {
     event?.preventDefault();
     const enteredAccount = loginAccount.trim();
     setAuthMode('register');
     setIsPasswordRevealed(false);
     if (isAuthBusy) return;
 
-    if (!enteredAccount || !loginPassword) {
+    if (!enteredAccount || !loginPassword || !registerConfirmPassword) {
       setLoginError(homeCopy.registerMissing);
       return;
     }
@@ -867,8 +874,18 @@ export const useCloudAuthSync = ({
       return;
     }
 
+    if (loginPassword !== registerConfirmPassword) {
+      setLoginError(homeCopy.registerPasswordMismatch);
+      return;
+    }
+
     if (isCloudBackendEnabled && !registerInviteCode.trim()) {
       setLoginError(homeCopy.inviteOnly);
+      return;
+    }
+
+    if (isCloudBackendEnabled && !privacyAccepted) {
+      setLoginError(homeCopy.privacyConsentRequired);
       return;
     }
 
@@ -883,6 +900,7 @@ export const useCloudAuthSync = ({
       setAuthMode('login');
       setLoginError(homeCopy.registerSuccess);
       setLoginPassword('');
+      setRegisterConfirmPassword('');
       return;
     }
 
@@ -899,7 +917,9 @@ export const useCloudAuthSync = ({
       await registerCloudAccount({
         account: normalizedAccount,
         password: loginPassword,
+        passwordConfirmation: registerConfirmPassword,
         inviteCode: registerInviteCode,
+        privacyAccepted,
         initialProfile: initialProfileForCloud,
         initialState,
       });
@@ -909,6 +929,7 @@ export const useCloudAuthSync = ({
       setAuthMode('login');
       setLoginAccount(normalizedAccount);
       setLoginPassword('');
+      setRegisterConfirmPassword('');
       setRegisterInviteCode('');
       setLoginError(homeCopy.registerSuccess);
     } catch (error) {
@@ -930,6 +951,7 @@ export const useCloudAuthSync = ({
     isAuthBusy,
     loginAccount,
     loginPassword,
+    registerConfirmPassword,
     registerInviteCode,
     setIsSignedIn,
     setProfile,
@@ -1080,6 +1102,8 @@ export const useCloudAuthSync = ({
     setLoginAccount,
     loginPassword,
     setLoginPassword,
+    registerConfirmPassword,
+    setRegisterConfirmPassword,
     registerInviteCode,
     setRegisterInviteCode,
     isPasswordRevealed,

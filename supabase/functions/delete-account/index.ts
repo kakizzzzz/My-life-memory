@@ -12,6 +12,7 @@ import {
 const MEDIA_BUCKET = 'life-media';
 const STORAGE_PAGE_SIZE = 100;
 const STORAGE_REMOVE_BATCH_SIZE = 100;
+const POST_AUTH_CLEANUP_DELAYS_MS = [250, 750, 1500] as const;
 
 const jsonResponse = (
   body: unknown,
@@ -202,9 +203,29 @@ serve(async request => {
     }, 500);
   }
 
+  let postAuthRemovedMediaCount = 0;
+  let postAuthCleanupError = '';
+  for (const delay of POST_AUTH_CLEANUP_DELAYS_MS) {
+    await wait(delay);
+    try {
+      postAuthRemovedMediaCount += await removeUserMedia(admin.storage, user.id);
+      postAuthCleanupError = '';
+    } catch (error) {
+      postAuthCleanupError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (postAuthCleanupError) {
+    console.error(JSON.stringify({
+      event: 'account_delete_post_auth_storage_failed',
+      userId: user.id,
+      message: postAuthCleanupError,
+    }));
+  }
+
   return json({
     ok: true,
     userId: user.id,
-    removedMediaCount,
+    removedMediaCount: removedMediaCount + postAuthRemovedMediaCount,
+    cleanupWarning: Boolean(postAuthCleanupError),
   });
 });

@@ -11,6 +11,7 @@ import { sanitizeRichHtmlFields } from './htmlSanitizer';
 import { normalizePersistedAppState } from './appStateNormalize';
 import { normalizeAccountId } from './accountUtils';
 import { loadNormalizedMemoryAccountData } from './memoryRepository';
+import { CLOUD_PASSWORD_MIN_LENGTH, PRIVACY_NOTICE_VERSION } from '../constants/appDefaults';
 
 export type CloudProfile = {
   account: string;
@@ -65,13 +66,15 @@ const SENSITIVE_CLOUD_STATE_KEYS = new Set([
   'currentpassword',
   'newpassword',
   'confirmpassword',
+  'passwordconfirmation',
+  'registerconfirmpassword',
   'invitecode',
 ]);
 
 export type CloudAuthAction = 'login' | 'register';
 
 export class CloudAuthError extends Error {
-  code: 'invalid_credentials' | 'account_exists' | 'setup_required' | 'registration_disabled' | 'invite_required' | 'weak_password' | 'unknown';
+  code: 'invalid_credentials' | 'account_exists' | 'setup_required' | 'registration_disabled' | 'registration_in_progress' | 'invite_required' | 'weak_password' | 'password_mismatch' | 'privacy_consent_required' | 'unknown';
   details?: CloudAuthErrorDetails;
 
   constructor(code: CloudAuthError['code'], message: string, details?: CloudAuthErrorDetails) {
@@ -555,21 +558,27 @@ export const loginCloudAccount = async ({
 export const registerCloudAccount = async ({
   account,
   password,
+  passwordConfirmation,
   inviteCode,
+  privacyAccepted,
   initialProfile,
   initialState,
 }: {
   account: string;
   password: string;
+  passwordConfirmation: string;
   inviteCode: string;
+  privacyAccepted: boolean;
   initialProfile: CloudProfile;
   initialState: CloudAppState;
 }) => {
   const client = requireSupabase();
   const normalizedAccount = normalizeAccountId(account);
   if (!normalizedAccount || !password) throw new Error('Account and password are required.');
-  if (password.length < 6) throw new CloudAuthError('weak_password', 'Password is too short.');
+  if (password.length < CLOUD_PASSWORD_MIN_LENGTH) throw new CloudAuthError('weak_password', 'Password is too short.');
+  if (password !== passwordConfirmation) throw new CloudAuthError('password_mismatch', 'Password confirmation does not match.');
   if (!inviteCode.trim()) throw new CloudAuthError('invite_required', 'Invite code is required.');
+  if (!privacyAccepted) throw new CloudAuthError('privacy_consent_required', 'Privacy consent is required.');
 
   const email = accountIdToAuthEmail(normalizedAccount);
   const registerDebug = {
@@ -588,7 +597,10 @@ export const registerCloudAccount = async ({
       body: {
         account: normalizedAccount,
         password,
+        passwordConfirmation,
         inviteCode,
+        privacyAccepted,
+        privacyVersion: PRIVACY_NOTICE_VERSION,
         initialProfile: initialData.profile,
         initialState: initialData.state,
       },
@@ -608,10 +620,19 @@ export const registerCloudAccount = async ({
       if (functionError.status === 403 || functionError.code === 'invalid_invite') {
         throw new CloudAuthError('invite_required', 'Invite code is invalid.', details);
       }
+      if (functionError.code === 'registration_in_progress' || functionError.code === 'registration_claim_lost') {
+        throw new CloudAuthError('registration_in_progress', 'Registration is already in progress.', details);
+      }
       if (functionError.status === 409 || functionError.code === 'account_exists') {
         throw new CloudAuthError('account_exists', 'Account already exists.', details);
       }
       if (functionError.status === 422 || functionError.code === 'weak_password') {
+        if (functionError.code === 'password_mismatch') {
+          throw new CloudAuthError('password_mismatch', 'Password confirmation does not match.', details);
+        }
+        if (functionError.code === 'privacy_consent_required') {
+          throw new CloudAuthError('privacy_consent_required', 'Privacy consent is required.', details);
+        }
         throw new CloudAuthError('weak_password', 'Password is too short.', details);
       }
 
@@ -780,7 +801,7 @@ export const updateCloudPassword = async ({
   if (!normalizedAccount || !currentPassword || !newPassword) {
     throw new CloudAuthError('invalid_credentials', 'Account and password are required.');
   }
-  if (newPassword.length < 6) {
+  if (newPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
     throw new CloudAuthError('weak_password', 'Password is too short.');
   }
 

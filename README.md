@@ -54,6 +54,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - `memory_settings` stores map/theme/language settings, profile conflict metadata, and the account-wide `dataset_revision`.
 - `memory_stars`, `memory_notes`, and `memory_tracks` store independent ordered entities with `changed_revision` and `deleted_at` fields.
 - `memory_entity_history` stores pre-update and pre-delete entity versions for at most seven days, limited to the newest 20 versions for each entity.
+- `memory_privacy_consents` stores the server timestamp and notice version explicitly accepted during registration. Passwords and invite codes are never stored there.
 - `app_states` is retained only as the immutable v1 operator archive after a verified migration. Authenticated clients have no direct table access, and the v2 frontend never uses it as a normal read or write source.
 - `life-media` is a private Supabase Storage bucket for avatar and note image files.
 - Note rows and profile metadata store only Storage metadata: `provider`, `bucket`, `path`, `mimeType`, `size`, and `createdAt`.
@@ -71,7 +72,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - Password-like fields are never part of normalized memory mutations; password changes go through `supabase.auth.updateUser`.
 - Readable export intentionally omits raw app state, settings internals, and password fields. It writes a local `.html` report for the user to keep or archive.
 - Settings includes a concise privacy notice that explains Supabase hosting, administrator access, seven-day trash retention, recovery limits, export, and account deletion. The service is not end-to-end encrypted.
-- Self-service account deletion re-verifies the current password, removes every object under `life-media/<userId>/`, then hard-deletes the Auth user. Existing foreign keys cascade to profiles, settings, memories, history, app-state archive, MCP tokens, and Auth sessions. A Storage cleanup failure keeps the account instead of reporting a false success.
+- Self-service account deletion re-verifies the current password, removes every object under `life-media/<userId>/`, then hard-deletes the Auth user. Existing foreign keys cascade to profiles, settings, memories, history, app-state archive, MCP tokens, and Auth sessions. It scans Storage again with retries after Auth deletion, and Storage write policies require a live profile so an expiring access token cannot create new media for a deleted account.
 
 ## Memory API And MCP
 
@@ -167,7 +168,8 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 4. Run the existing migrations in filename order through `supabase/migrations/20260713_normalized_memory_storage_v2.sql`. Do not deploy the v2 frontend before this transaction succeeds.
 5. Immediately run `supabase/verify-normalized-memory.sql`. Existing v1 accounts must show matching counts, ID/order checksums, content checksums, and a non-null `migration_verified_at`.
 6. After verification succeeds, run `supabase/migrations/20260714_memory_trash_retention.sql` to install the seven-day user-scoped trash and history maintenance RPC.
-7. Confirm these objects exist:
+7. Run `supabase/migrations/20260715_registration_integrity.sql` and `supabase/migrations/20260716_account_lifecycle_hardening.sql` to install atomic registration claims, versioned privacy consent, and the deleted-account Storage guard.
+8. Confirm these objects exist:
    - `public.profiles`
    - read-only archive `public.app_states`
    - `public.memory_settings`
@@ -175,18 +177,20 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
    - `public.memory_notes`
    - `public.memory_tracks`
    - `public.memory_entity_history`
+   - `public.memory_registration_claims`
+   - `public.memory_privacy_consents`
    - RPCs `public.apply_memory_mutations`, `public.list_protected_memory_media_paths`, `public.purge_expired_memory_trash`, and the service-only `public.summarize_normalized_memory_range`
    - private Storage bucket `life-media`
    - own-user SELECT RLS policies for every normalized table and existing policies for `storage.objects`
-8. Deploy the Supabase Edge Functions `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, and `mcp`.
-9. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
-10. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
-11. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
-12. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
-13. The functions also require Supabase server environment variables `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-14. If permissions look wrong, run the read-only `supabase/verify-cloud-backend.sql` to inspect the project.
-15. Only after the v2 migration exists, use `supabase/fix-permissions.sql` to restore the v2 grants. It gives authenticated clients own-row SELECT on profiles/normalized tables, no `app_states` access, and no direct writes; do not reuse an older script that grants legacy access.
-16. Keep `app_states` unchanged as the rollback archive. Do not manually clear it after verification.
+9. Deploy the Supabase Edge Functions `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, and `mcp`.
+10. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
+11. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
+12. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
+13. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
+14. The functions also require Supabase server environment variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
+15. If permissions look wrong, run the read-only `supabase/verify-cloud-backend.sql` to inspect the project.
+16. Only after the v2 migration exists, use `supabase/fix-permissions.sql` to restore the v2 grants. It gives authenticated clients own-row SELECT on profiles/normalized tables, no `app_states` access, and no direct writes; do not reuse an older script that grants legacy access.
+17. Keep `app_states` unchanged as the rollback archive. Do not manually clear it after verification.
 
 `20260713_normalized_memory_storage_v2.sql` is idempotent and transactional. It decomposes each existing archive, preserves original IDs and ordering, compares stable content checksums, and marks a user verified only after all checks pass. A mismatch raises an exception and rolls the transaction back. New registrations atomically create `profiles`, `memory_settings`, and the default star without creating a new app-state snapshot.
 
@@ -248,7 +252,7 @@ For GitHub Pages:
    ```
 
 3. Publish `dist/` to the Pages branch or use `.github/workflows/deploy-pages.yml`.
-   Backend releases use the separate manual `.github/workflows/deploy-supabase.yml` workflow after configuring `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, and `SUPABASE_DB_PASSWORD` as GitHub Actions secrets. It verifies the app and Edge Functions before applying migrations and deploying all four functions, so frontend and backend releases can be audited from the same commit.
+   Backend releases use the separate manual `.github/workflows/deploy-supabase.yml` workflow after configuring `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, and `SUPABASE_DB_PASSWORD` as GitHub Actions secrets. It verifies the app and Edge Functions before applying migrations and deploying all five functions, so frontend and backend releases can be audited from the same commit.
 4. After deploy, open the Pages URL and test:
    - register and log in
    - switch accounts on the same device and confirm each account sees only its own data
@@ -269,10 +273,11 @@ For GitHub Pages:
 
 - Do not commit `.env.local`, service role keys, database passwords, or raw SQL connection strings.
 - The frontend must use only the Supabase publishable/anon key.
-- `service_role` belongs only in trusted server environments and is not needed for this app.
+- `service_role` belongs only in trusted Edge Function/server environments and must never be included in the frontend.
 - Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
-- Registration marks incomplete Auth users as pending. Initialization failure performs a verified, retried rollback; a later invite registration can safely recover only an Auth user carrying that pending marker and no profile.
-- Account deletion is performed only by the authenticated `delete-account` Edge Function after current-password verification. The function scopes Storage cleanup to the authenticated user UUID and deletes Auth only after the folder is confirmed empty.
+- Registration requires two matching passwords of at least eight characters and explicit acceptance of the current privacy notice. A unique account claim serializes concurrent requests before Auth creation. An existing incomplete Auth user must prove the original password and is never taken over by an administrator password reset.
+- Registration rollback can delete only an Auth user created by that exact request nonce while it is still marked pending. It rechecks profile, settings, and privacy consent first, so a completed concurrent registration cannot be removed.
+- Account deletion is performed only by the authenticated `delete-account` Edge Function after current-password verification. The function scopes Storage cleanup to the authenticated user UUID, scans again after Auth deletion, and relies on a live-profile Storage policy to close the last-upload race.
 - Browser-facing Edge Functions reject origins outside `ALLOWED_ORIGINS`. The cloud `mcp` endpoint accepts native MCP origins because access is instead gated by a per-user bearer token. Rate-limit keys are SHA-256 hashed and counted atomically in Postgres, with an in-memory fallback until the migration is available.
 - The `memory-api` Edge Function must authenticate a real user bearer token, or a private internal MCP call with a resolved `user_id`, before reading normalized rows. Optional writes are user-scoped entity mutations and never rewrite the legacy archive.
 - Cloud MCP tokens are per-user. The app shows the full token once, stores only one active hash per user in `public.mcp_tokens`, and can delete the active token from Settings.
@@ -287,6 +292,7 @@ For GitHub Pages:
 - Private images are rendered with short-lived signed URLs; signed URLs are not stored in normalized metadata.
 - Mutation sanitization strips password-like fields before cloud save. Production builds do not allow local account/password fallback when Supabase is not configured.
 - Supabase Auth passwords cannot be viewed by the app. The app supports changing passwords, not revealing saved passwords.
+- Synthetic account emails cannot receive Supabase reset mail. A secure self-service recovery-code flow is not implemented yet; do not add security questions or an administrator password-reset shortcut as a substitute.
 - Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`. Previously referenced media enters a seven-day deletion queue. After cloud sync succeeds without a conflict, daily maintenance purges expired soft-deleted rows and history, reloads protected paths, and removes only files no longer referenced by active data or the local outbox. Full orphan scans run at most once per account per day.
 - Legacy data URL images are kept only as compatibility fallback and are automatically migrated to private Storage after login or network recovery.
 - If GitHub Pages is used as a live demo, configure Supabase environment variables in GitHub Actions secrets before building.

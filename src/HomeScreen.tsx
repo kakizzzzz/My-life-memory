@@ -60,17 +60,22 @@ type HomeScreenProps = {
   cloudConfigError: string;
   loginAccount: string;
   loginPassword: string;
+  registerConfirmPassword: string;
   registerInviteCode: string;
   loginError: string;
   onLoginAccountChange: (value: string) => void;
   onLoginPasswordChange: (value: string) => void;
+  onRegisterConfirmPasswordChange: (value: string) => void;
   onRegisterInviteCodeChange: (value: string) => void;
   onLanguageChange: (language: string) => void;
   onAuthModeChange: (mode: CloudAuthAction) => void;
   onLoginErrorChange: (value: string) => void;
   onPasswordRevealChange: (value: boolean | ((previous: boolean) => boolean)) => void;
   onLoginSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
-  onRegisterSubmit: (event?: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
+  onRegisterSubmit: (
+    event?: React.FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>,
+    privacyAccepted?: boolean,
+  ) => void | Promise<void>;
   profile: UserProfile;
   profileAvatarSrc: string;
   activeHomePanel: HomePanel;
@@ -129,10 +134,12 @@ export function HomeScreen({
   cloudConfigError,
   loginAccount,
   loginPassword,
+  registerConfirmPassword,
   registerInviteCode,
   loginError,
   onLoginAccountChange,
   onLoginPasswordChange,
+  onRegisterConfirmPasswordChange,
   onRegisterInviteCodeChange,
   onLanguageChange,
   onAuthModeChange,
@@ -197,12 +204,14 @@ export function HomeScreen({
     const shouldRunExistingValidation = (
       !loginAccount.trim() ||
       !loginPassword ||
+      !registerConfirmPassword ||
       loginPassword.length < CLOUD_PASSWORD_MIN_LENGTH ||
+      loginPassword !== registerConfirmPassword ||
       Boolean(cloudConfigError) ||
       (isCloudBackendEnabled && !registerInviteCode.trim())
     );
     if (shouldRunExistingValidation) {
-      void onRegisterSubmit();
+      void onRegisterSubmit(undefined, false);
       return;
     }
 
@@ -210,7 +219,7 @@ export function HomeScreen({
       setIsPrivacyConsentOpen(true);
       return;
     }
-    void onRegisterSubmit();
+    void onRegisterSubmit(undefined, true);
   }, [
     cloudConfigError,
     hasAcceptedPrivacyForRegistration,
@@ -219,13 +228,14 @@ export function HomeScreen({
     loginAccount,
     loginPassword,
     onRegisterSubmit,
+    registerConfirmPassword,
     registerInviteCode,
   ]);
 
   const acceptPrivacyAndRegister = React.useCallback(() => {
     setHasAcceptedPrivacyForRegistration(true);
     setIsPrivacyConsentOpen(false);
-    void onRegisterSubmit();
+    void onRegisterSubmit(undefined, true);
   }, [onRegisterSubmit]);
 
   const homeMenuItems: { panel: Extract<HomePanel, 'profile' | 'theme' | 'gallery' | 'settings'>; label: string; icon: React.ReactNode }[] = [
@@ -416,6 +426,22 @@ export function HomeScreen({
                         </label>
                         {authMode === 'register' && (
                           <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+                            <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+                            <input
+                              value={registerConfirmPassword}
+                              onChange={event => {
+                                onRegisterConfirmPasswordChange(event.target.value);
+                                onLoginErrorChange('');
+                              }}
+                              type="password"
+                              autoComplete="new-password"
+                              className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30"
+                              placeholder={homeCopy.registerConfirmPassword}
+                            />
+                          </label>
+                        )}
+                        {authMode === 'register' && (
+                          <label className="flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
                             <Asterisk size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
                             <input
                               value={registerInviteCode}
@@ -445,6 +471,7 @@ export function HomeScreen({
                               event.preventDefault();
                             }
                             onAuthModeChange('login');
+                            onRegisterConfirmPasswordChange('');
                             onRegisterInviteCodeChange('');
                           }}
                           className="h-[48px] rounded-full bg-[var(--app-dark)] text-[16px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"

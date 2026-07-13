@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const migration = readFileSync('supabase/migrations/20260713_normalized_memory_storage_v2.sql', 'utf8');
+const registrationMigration = readFileSync('supabase/migrations/20260715_registration_integrity.sql', 'utf8');
 const backend = readFileSync('src/lib/cloudBackend.ts', 'utf8');
 const repository = readFileSync('src/lib/memoryRepository.ts', 'utf8');
 const syncHook = readFileSync('src/hooks/useCloudAuthSync.ts', 'utf8');
@@ -61,10 +62,11 @@ test('migration is idempotent and verifies counts, order, ids, and content befor
 });
 
 test('registration initializes normalized rows without creating a new app state snapshot', () => {
-  assert.match(register, /initialize_normalized_memory_account/);
+  assert.match(register, /initialize_claimed_memory_account/);
   assert.doesNotMatch(register, /\.from\(['"]app_states['"]\)/);
   assert.match(migration, /insert into public\.memory_settings/);
   assert.match(migration, /insert into public\.memory_stars/);
+  assert.match(registrationMigration, /perform public\.initialize_normalized_memory_account/);
 });
 
 test('Memory API is entity based, uses route createdAt, and defers media deletion', () => {
