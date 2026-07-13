@@ -2,6 +2,12 @@ name: Deploy Supabase Backend
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_migrations:
+        description: Apply pending database migrations before deploying Functions
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,9 +54,11 @@ jobs:
           npm run build
 
       - name: Link production project
+        if: ${{ inputs.apply_migrations }}
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
       - name: Apply pending migrations
+        if: ${{ inputs.apply_migrations }}
         run: supabase db push --linked
 
       - name: Deploy Edge Functions
