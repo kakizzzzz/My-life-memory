@@ -82,6 +82,18 @@ export class CloudAuthError extends Error {
   }
 }
 
+export class CloudAccountDeletionError extends Error {
+  code: string;
+  status: number;
+
+  constructor(code: string, message: string, status: number) {
+    super(message);
+    this.name = 'CloudAccountDeletionError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
 const requireSupabase = () => {
   if (!supabase) throw new Error('Cloud backend is not configured.');
   return supabase;
@@ -698,6 +710,60 @@ export const revokeCloudMcpToken = async (tokenId: string) => {
     action: 'revoke',
     tokenId,
   });
+};
+
+export const deleteCloudAccount = async (password: string) => {
+  const client = requireSupabase();
+  if (!password) {
+    throw new CloudAccountDeletionError('password_required', 'Current password is required.', 400);
+  }
+
+  const { data, error } = await client.auth.getSession();
+  if (error) throw error;
+  const token = data.session?.access_token;
+  if (!token) {
+    throw new CloudAccountDeletionError('unauthorized', 'No active cloud session.', 401);
+  }
+
+  const endpoint = supabaseFunctionUrl('delete-account');
+  if (!endpoint) {
+    throw new CloudAccountDeletionError('setup_required', 'Cloud backend is not configured.', 500);
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      apikey: supabasePublishableKey,
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ password }),
+  });
+  const text = await response.text();
+  let payload: {
+    ok?: boolean;
+    userId?: string;
+    removedMediaCount?: number;
+    error?: { code?: string; message?: string };
+  } | null = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || !payload?.ok || !payload.userId) {
+    throw new CloudAccountDeletionError(
+      payload?.error?.code || 'delete_failed',
+      payload?.error?.message || `Account deletion failed with HTTP ${response.status}`,
+      response.status,
+    );
+  }
+
+  return {
+    userId: payload.userId,
+    removedMediaCount: Math.max(0, Number(payload.removedMediaCount) || 0),
+  };
 };
 
 export const updateCloudPassword = async ({

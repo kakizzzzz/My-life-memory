@@ -26,10 +26,11 @@ import {
   Share,
   ShieldCheck,
   Star,
+  Trash2,
   UserRound,
 } from 'lucide-react';
 import { HomeGalleryPanel, HomeProfilePanel, HomeThemePanel, type ThemeColorControl } from './HomePrimaryPanels';
-import { HomeSettingsPanels, isHomeSettingsPanel, type SettingsMenuItem } from './HomeSettingsPanels';
+import { HomeSettingsPanels, isHomeSettingsPanel, PrivacyNoticeContent, type SettingsMenuItem } from './HomeSettingsPanels';
 import { LoginWorldMapBackground } from './LoginWorldMapBackground';
 import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
 import { getCloudMcpEndpoint, type CloudAuthAction, type CloudMcpTokenInfo } from './lib/cloudBackend';
@@ -97,9 +98,15 @@ type HomeScreenProps = {
   isMcpTokenBusy: boolean;
   isExportingData: boolean;
   exportDataStatus: string;
+  exportDataProgress: number | null;
+  accountDeletePassword: string;
+  accountDeleteStatus: string;
+  isDeletingAccount: boolean;
   onOpenPermissions: () => void;
   onSignOut: () => void;
   onExportUserData: () => void;
+  onAccountDeletePasswordChange: (value: string) => void;
+  onDeleteAccount: () => void;
   onCopyMcpText: (text: string) => void;
   onCreateMcpToken: () => void;
   onRevokeMcpToken: (tokenId: string) => void;
@@ -160,9 +167,15 @@ export function HomeScreen({
   isMcpTokenBusy,
   isExportingData,
   exportDataStatus,
+  exportDataProgress,
+  accountDeletePassword,
+  accountDeleteStatus,
+  isDeletingAccount,
   onOpenPermissions,
   onSignOut,
   onExportUserData,
+  onAccountDeletePasswordChange,
+  onDeleteAccount,
   onCopyMcpText,
   onCreateMcpToken,
   onRevokeMcpToken,
@@ -177,9 +190,11 @@ export function HomeScreen({
     language: homeCopy.language,
     permissions: homeCopy.openPermissionsHint,
     manual: homeCopy.userManual,
+    privacy: homeCopy.privacyNotice,
     apiSecurity: homeCopy.apiSecurity,
     mcp: homeCopy.mcpAccess,
     export: homeCopy.exportData,
+    deleteAccount: homeCopy.accountDelete,
   };
   const activeHomeTitle = settingsSubpageTitles[activeHomePanel] ||
     homeMenuItems.find(item => item.panel === activeHomePanel)?.label ||
@@ -205,9 +220,11 @@ export function HomeScreen({
     { panel: 'language', label: homeCopy.language, icon: <Languages size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'permissions', label: homeCopy.openPermissionsHint, icon: <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'manual', label: homeCopy.userManual, icon: <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
+    { panel: 'privacy', label: homeCopy.privacyNotice, icon: <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'apiSecurity', label: homeCopy.apiSecurity, icon: <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
     { panel: 'mcp', label: homeCopy.mcpAccess, icon: <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
     { panel: 'export', label: homeCopy.exportData, icon: <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
+    { panel: 'deleteAccount', label: homeCopy.accountDelete, icon: <Trash2 size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
   ];
   const manualIconGuide = [
     { icon: <MapIcon size={18} strokeWidth={iconStrokeWidth} />, label: homeCopy.bottomMap, body: homeCopy.manualIconMap },
@@ -244,7 +261,20 @@ export function HomeScreen({
           />
 
           <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto overscroll-contain px-10 pb-28 [touch-action:pan-y] ${screenTopPaddingClass}`} style={{ WebkitOverflowScrolling: 'touch' }}>
-            {!isSignedIn ? (
+            {!isSignedIn && activeHomePanel === 'privacy' ? (
+              <div className="relative z-10 pb-4">
+                <button
+                  type="button"
+                  onClick={() => onActiveHomePanelChange(null)}
+                  className="mb-5 isolate flex h-11 items-center gap-2 overflow-hidden rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black no-underline outline-none"
+                  aria-label={homeCopy.back}
+                >
+                  <ChevronLeft size={24} strokeWidth={iconStrokeWidth} />
+                  <span className="block translate-y-[-1px] leading-none no-underline [text-decoration:none]">{homeCopy.privacyNotice}</span>
+                </button>
+                <PrivacyNoticeContent homeCopy={homeCopy} />
+              </div>
+            ) : !isSignedIn ? (
               <>
                 <LoginWorldMapBackground />
                 <div className="absolute right-3 top-4 z-20 flex rounded-full bg-[var(--app-card)] p-1 shadow-sm">
@@ -292,6 +322,18 @@ export function HomeScreen({
                       <div className="mb-4 text-[15px] font-medium leading-tight text-black/45">
                         {authMode === 'register' ? homeCopy.registerHint : homeCopy.loginHint}
                       </div>
+                      {authMode === 'register' && (
+                        <div className="mb-4 text-[12px] font-medium leading-snug text-black/45">
+                          <span>{homeCopy.privacyRegisterHint} </span>
+                          <button
+                            type="button"
+                            onClick={() => onActiveHomePanelChange('privacy')}
+                            className="font-semibold text-black/68 underline decoration-black/25 underline-offset-2"
+                          >
+                            {homeCopy.privacyRegisterLink}
+                          </button>
+                        </div>
+                      )}
                       {cloudConfigError && (
                         <div className="mb-4 rounded-[12px] bg-black/8 px-3 py-2 text-[12px] leading-5 text-black/65">
                           {homeCopy.cloudConfigInvalid}
@@ -498,11 +540,17 @@ export function HomeScreen({
                   isMcpTokenBusy={isMcpTokenBusy}
                   isExportingData={isExportingData}
                   exportDataStatus={exportDataStatus}
+                  exportDataProgress={exportDataProgress}
+                  accountDeletePassword={accountDeletePassword}
+                  accountDeleteStatus={accountDeleteStatus}
+                  isDeletingAccount={isDeletingAccount}
                   onOpenPanel={onActiveHomePanelChange}
                   onLanguageChange={onLanguageChange}
                   onOpenPermissions={onOpenPermissions}
                   onSignOut={onSignOut}
                   onExportUserData={onExportUserData}
+                  onAccountDeletePasswordChange={onAccountDeletePasswordChange}
+                  onDeleteAccount={onDeleteAccount}
                   onCopyMcpText={onCopyMcpText}
                   onCreateMcpToken={onCreateMcpToken}
                   onRevokeMcpToken={onRevokeMcpToken}

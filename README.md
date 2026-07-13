@@ -70,6 +70,8 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - New routes preserve the actual recording start time as `createdAt`; `time`/`duration_seconds` remains elapsed movement duration. Old routes without a reliable creation timestamp remain `null` instead of being assigned a fabricated date.
 - Password-like fields are never part of normalized memory mutations; password changes go through `supabase.auth.updateUser`.
 - Readable export intentionally omits raw app state, settings internals, and password fields. It writes a local `.html` report for the user to keep or archive.
+- Settings includes a concise privacy notice that explains Supabase hosting, administrator access, seven-day trash retention, recovery limits, export, and account deletion. The service is not end-to-end encrypted.
+- Self-service account deletion re-verifies the current password, removes every object under `life-media/<userId>/`, then hard-deletes the Auth user. Existing foreign keys cascade to profiles, settings, memories, history, app-state archive, MCP tokens, and Auth sessions. A Storage cleanup failure keeps the account instead of reporting a false success.
 
 ## Memory API And MCP
 
@@ -176,7 +178,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
    - RPCs `public.apply_memory_mutations`, `public.list_protected_memory_media_paths`, `public.purge_expired_memory_trash`, and the service-only `public.summarize_normalized_memory_range`
    - private Storage bucket `life-media`
    - own-user SELECT RLS policies for every normalized table and existing policies for `storage.objects`
-8. Deploy the Supabase Edge Functions `register-with-invite`, `memory-api`, `mcp-token`, and `mcp`.
+8. Deploy the Supabase Edge Functions `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, and `mcp`.
 9. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
 10. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
 11. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
@@ -205,7 +207,7 @@ Migration and deployment order:
 1. Run `supabase/migrations/20260713_normalized_memory_storage_v2.sql` as one transaction. A checksum or structural mismatch must abort the transaction.
 2. Immediately run `supabase/verify-normalized-memory.sql` before any v2 edits occur. Every legacy account must report `migration_verified = true`; the report is an archive-to-migration comparison and is not expected to remain equal after normal v2 editing begins.
 3. Run `supabase/verify-cloud-backend.sql`. Confirm `app_states` has no authenticated privilege, and no authenticated `INSERT`, `UPDATE`, or `DELETE` grants exist on `profiles` or the normalized tables.
-4. Deploy `register-with-invite`, `memory-api`, `mcp-token`, and `mcp` from the same commit.
+4. Deploy `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, and `mcp` from the same commit.
 5. Deploy the v2 frontend and bumped service worker. Do not deploy a v2 frontend against a v1 database.
 
 After deployment:
@@ -269,6 +271,8 @@ For GitHub Pages:
 - The frontend must use only the Supabase publishable/anon key.
 - `service_role` belongs only in trusted server environments and is not needed for this app.
 - Registration is gated by the Supabase Edge Function `register-with-invite`; existing accounts log in normally and do not need an invite code.
+- Registration marks incomplete Auth users as pending. Initialization failure performs a verified, retried rollback; a later invite registration can safely recover only an Auth user carrying that pending marker and no profile.
+- Account deletion is performed only by the authenticated `delete-account` Edge Function after current-password verification. The function scopes Storage cleanup to the authenticated user UUID and deletes Auth only after the folder is confirmed empty.
 - Browser-facing Edge Functions reject origins outside `ALLOWED_ORIGINS`. The cloud `mcp` endpoint accepts native MCP origins because access is instead gated by a per-user bearer token. Rate-limit keys are SHA-256 hashed and counted atomically in Postgres, with an in-memory fallback until the migration is available.
 - The `memory-api` Edge Function must authenticate a real user bearer token, or a private internal MCP call with a resolved `user_id`, before reading normalized rows. Optional writes are user-scoped entity mutations and never rewrite the legacy archive.
 - Cloud MCP tokens are per-user. The app shows the full token once, stores only one active hash per user in `public.mcp_tokens`, and can delete the active token from Settings.

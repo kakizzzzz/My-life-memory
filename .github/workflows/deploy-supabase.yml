@@ -56,6 +56,7 @@ jobs:
       - name: Deploy Edge Functions
         run: |
           supabase functions deploy register-with-invite --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy delete-account --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy memory-api --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy mcp-token --project-ref "$SUPABASE_PROJECT_REF"
           supabase functions deploy mcp --project-ref "$SUPABASE_PROJECT_REF"

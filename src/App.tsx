@@ -18,6 +18,7 @@ import { ReaderScreen } from './ReaderScreen';
 import { useMemoryDerivedData } from './hooks/useMemoryDerivedData';
 import { useMcpTokens } from './hooks/useMcpTokens';
 import { usePasswordChange } from './hooks/usePasswordChange';
+import { useAccountDeletion } from './hooks/useAccountDeletion';
 import { useGalleryActions } from './hooks/useGalleryActions';
 import { usePhotoLocationImport } from './hooks/usePhotoLocationImport';
 import { useReaderController } from './hooks/useReaderController';
@@ -33,7 +34,10 @@ import {
   buildStorageImageSrc,
   storagePlaceholderSrc,
 } from './lib/mediaStorage';
-import { exportReadableUserData } from './lib/userDataExport';
+import {
+  exportReadableUserData,
+  getUserDataExportProgressPercent,
+} from './lib/userDataExport';
 import {
   dateFromCalendarDateKey,
   formatRecordMonth,
@@ -141,6 +145,7 @@ export default function App() {
   const [mediaRefreshKey, setMediaRefreshKey] = useState(0);
   const [isExportingData, setIsExportingData] = useState(false);
   const [exportDataStatus, setExportDataStatus] = useState('');
+  const [exportDataProgress, setExportDataProgress] = useState<number | null>(null);
   const [isPasswordChangeOpen, setIsPasswordChangeOpen] = useState(false);
   const [language, setLanguage] = useState(() => (
     initialLanguage
@@ -376,6 +381,25 @@ export default function App() {
     buildDefaultProfileName,
     syncDefaultStarNearUser,
     getLastGpsLocation,
+  });
+  const {
+    accountDeletePassword,
+    accountDeleteStatus,
+    isDeletingAccount,
+    setAccountDeletePassword,
+    setAccountDeleteStatus,
+    handleDeleteAccount,
+  } = useAccountDeletion({
+    account: profile.account,
+    isSignedIn,
+    active: activeHomePanel === 'deleteAccount',
+    copy: {
+      passwordRequired: homeCopy.passwordRequired,
+      currentPasswordWrong: homeCopy.currentPasswordWrong,
+      accountDeleteFailed: homeCopy.accountDeleteFailed,
+      accountDeleteStorageFailed: homeCopy.accountDeleteStorageFailed,
+    },
+    onDeleted: handleSignOut,
   });
   const handleCloudMediaReady = React.useCallback(() => {
     setMediaRefreshKey(key => key + 1);
@@ -639,6 +663,7 @@ export default function App() {
 
     setIsExportingData(true);
     setExportDataStatus('');
+    setExportDataProgress(0);
 
     try {
       const result = await exportReadableUserData({
@@ -649,6 +674,7 @@ export default function App() {
           noteLabel: homeCopy.noteLabel,
         },
         onProgress: progress => {
+          setExportDataProgress(getUserDataExportProgressPercent(progress));
           if (progress.stage === 'preparing') {
             setExportDataStatus(homeCopy.exportPreparing);
           } else if (progress.stage === 'images') {
@@ -662,6 +688,7 @@ export default function App() {
           }
         },
       });
+      setExportDataProgress(100);
       setExportDataStatus(
         result.failedImageCount > 0
           ? homeCopy.exportImagesMissing.replace('{count}', String(result.failedImageCount))
@@ -671,6 +698,7 @@ export default function App() {
       );
     } catch (error) {
       console.error('Could not export user data:', error);
+      setExportDataProgress(null);
       setExportDataStatus(homeCopy.exportDataFailed);
     } finally {
       setIsExportingData(false);
@@ -930,9 +958,18 @@ export default function App() {
         isMcpTokenBusy={isMcpTokenBusy}
         isExportingData={isExportingData}
         exportDataStatus={exportDataStatus}
+        exportDataProgress={exportDataProgress}
+        accountDeletePassword={accountDeletePassword}
+        accountDeleteStatus={accountDeleteStatus}
+        isDeletingAccount={isDeletingAccount}
         onOpenPermissions={handleOpenPermissions}
         onSignOut={handleSignOut}
         onExportUserData={handleExportUserData}
+        onAccountDeletePasswordChange={value => {
+          setAccountDeletePassword(value);
+          setAccountDeleteStatus('');
+        }}
+        onDeleteAccount={() => { void handleDeleteAccount(); }}
         onCopyMcpText={handleCopyMcpText}
         onCreateMcpToken={handleCreateMcpToken}
         onRevokeMcpToken={handleRevokeMcpToken}

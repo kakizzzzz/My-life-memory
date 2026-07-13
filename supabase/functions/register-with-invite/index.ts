@@ -59,6 +59,8 @@ const getString = (value: unknown) => (
   typeof value === 'string' ? value : ''
 );
 
+const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
+
 serve(async request => {
   if (!isOriginAllowed(request)) {
     return forbiddenOriginResponse();
@@ -125,6 +127,39 @@ serve(async request => {
       persistSession: false,
     },
   });
+  const findAuthUserByEmail = async (email: string) => {
+    const perPage = 1000;
+    for (let page = 1; page <= 100; page += 1) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+      if (error) throw error;
+      const match = data.users.find(user => user.email?.toLowerCase() === email.toLowerCase());
+      if (match) return match;
+      if (data.users.length < perPage) return null;
+    }
+    throw new Error('Auth user lookup exceeded the safe pagination limit.');
+  };
+  const rollbackAuthUser = async (userId: string) => {
+    let lastError = '';
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const deletion = await admin.auth.admin.deleteUser(userId, false);
+      const verification = await admin.auth.admin.getUserById(userId);
+      const verificationMessage = verification.error?.message || '';
+      const isConfirmedMissing = !verification.data.user && (
+        !verification.error || /not found|does not exist/i.test(verificationMessage)
+      );
+      if (isConfirmedMissing) return true;
+
+      lastError = deletion.error?.message || verificationMessage || 'Auth user still exists.';
+      if (attempt < 2) await wait(250 * (attempt + 1));
+    }
+
+    console.error(JSON.stringify({
+      event: 'registration_rollback_failed',
+      userId,
+      message: lastError || 'Auth user still exists after rollback attempts.',
+    }));
+    return false;
+  };
 
   const { data: existingProfile, error: existingProfileError } = await admin
     .from('profiles')
@@ -143,39 +178,84 @@ serve(async request => {
   const email = accountIdToAuthEmail(normalizedAccount);
   const name = getString(initialProfile.name);
   const avatarUrl = getString(initialProfile.avatarUrl);
-  const { data: createdUser, error: createUserError } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: {
-      account_id: normalizedAccount,
-      name,
-    },
-  });
-
-  if (createUserError || !createdUser.user) {
-    const message = createUserError?.message?.toLowerCase() || '';
-    if (
-      message.includes('already') ||
-      message.includes('exists') ||
-      message.includes('registered') ||
-      message.includes('duplicate')
-    ) {
-      return json({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
-    }
-    if (message.includes('password')) {
-      return json({ error: { code: 'weak_password', message: 'Password must be at least 6 characters.' } }, 422);
-    }
-    return json({ error: { code: 'setup_required', message: 'Could not create account.' } }, 500);
+  let authUser: Awaited<ReturnType<typeof findAuthUserByEmail>> = null;
+  try {
+    authUser = await findAuthUserByEmail(email);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'registration_auth_lookup_failed',
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    return json({ error: { code: 'setup_required', message: 'Could not check account authentication state.' } }, 500);
   }
 
-  const userId = createdUser.user.id;
+  if (authUser) {
+    const { data: authProfile, error: authProfileError } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('id', authUser.id)
+      .maybeSingle();
+    if (authProfileError) {
+      return json({ error: { code: 'setup_required', message: 'Could not check incomplete account state.' } }, 500);
+    }
+    if (authProfile) {
+      return json({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
+    }
+
+    const { data: recovered, error: recoverError } = await admin.auth.admin.updateUserById(authUser.id, {
+      password,
+      email_confirm: true,
+      user_metadata: {
+        ...authUser.user_metadata,
+        account_id: normalizedAccount,
+        name,
+        registration_pending: true,
+      },
+    });
+    if (recoverError || !recovered.user) {
+      return json({ error: { code: 'registration_recovery_failed', message: 'Could not recover the incomplete account.' } }, 500);
+    }
+    authUser = recovered.user;
+  } else {
+    const { data: createdUser, error: createUserError } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        account_id: normalizedAccount,
+        name,
+        registration_pending: true,
+      },
+    });
+
+    if (createUserError || !createdUser.user) {
+      const message = createUserError?.message?.toLowerCase() || '';
+      if (
+        message.includes('already') ||
+        message.includes('exists') ||
+        message.includes('registered') ||
+        message.includes('duplicate')
+      ) {
+        return json({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
+      }
+      if (message.includes('password')) {
+        return json({ error: { code: 'weak_password', message: 'Password must be at least 6 characters.' } }, 422);
+      }
+      return json({ error: { code: 'setup_required', message: 'Could not create account.' } }, 500);
+    }
+    authUser = createdUser.user;
+  }
+
+  const userId = authUser.id;
   const initialStars = Array.isArray(initialState.stars)
     ? initialState.stars.filter(star => star && typeof star === 'object') as Record<string, unknown>[]
     : [];
   const defaultStar = initialStars[0];
   if (!defaultStar) {
-    await admin.auth.admin.deleteUser(userId).catch(() => {});
+    const rolledBack = await rollbackAuthUser(userId);
+    if (!rolledBack) {
+      return json({ error: { code: 'registration_rollback_failed', message: 'Account initialization failed and requires recovery.' } }, 500);
+    }
     return json({ error: { code: 'setup_required', message: 'Could not create the default memory location.' } }, 500);
   }
 
@@ -199,12 +279,31 @@ serve(async request => {
   });
 
   if (initializeError) {
-    await admin.auth.admin.deleteUser(userId).catch(() => {});
+    const rolledBack = await rollbackAuthUser(userId);
+    if (!rolledBack) {
+      return json({ error: { code: 'registration_rollback_failed', message: 'Account initialization failed and requires recovery.' } }, 500);
+    }
     const message = initializeError.message.toLowerCase();
     if (message.includes('duplicate') || message.includes('unique')) {
       return json({ error: { code: 'account_exists', message: 'Account already exists.' } }, 409);
     }
     return json({ error: { code: 'setup_required', message: 'Could not initialize normalized memory storage.' } }, 500);
+  }
+
+  const { error: finalizeMetadataError } = await admin.auth.admin.updateUserById(userId, {
+    user_metadata: {
+      ...authUser.user_metadata,
+      account_id: normalizedAccount,
+      name,
+      registration_pending: false,
+    },
+  });
+  if (finalizeMetadataError) {
+    console.warn(JSON.stringify({
+      event: 'registration_metadata_finalize_failed',
+      userId,
+      message: finalizeMetadataError.message,
+    }));
   }
 
   return json({

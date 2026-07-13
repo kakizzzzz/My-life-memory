@@ -193,6 +193,20 @@ export const clearMemoryMutationOutbox = async (userId: string) => {
   }
 };
 
+export const clearUserMemorySyncStorage = async (userId: string) => {
+  const database = await openDatabase();
+  if (!database) return;
+  try {
+    const transaction = database.transaction([LEGACY_STORE_NAME, OUTBOX_STORE_NAME], 'readwrite');
+    const done = transactionDone(transaction);
+    transaction.objectStore(LEGACY_STORE_NAME).delete(userId);
+    transaction.objectStore(OUTBOX_STORE_NAME).delete(userId);
+    await done;
+  } finally {
+    database.close();
+  }
+};
+
 export const markLegacyPendingSnapshotResolved = async (userId: string) => {
   const database = await openDatabase();
   if (!database) return;

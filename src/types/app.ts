@@ -46,7 +46,7 @@ export type TrackDraftData = {
 
 export type MapStyle = 'light' | 'dark' | 'aerial';
 export type AppView = 'map' | 'stats' | 'records' | 'home' | 'reader' | 'searchResults';
-export type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'apiSecurity' | 'mcp' | 'export' | null;
+export type HomePanel = 'profile' | 'theme' | 'gallery' | 'settings' | 'language' | 'permissions' | 'manual' | 'privacy' | 'apiSecurity' | 'mcp' | 'export' | 'deleteAccount' | null;
 export type SearchField = 'coordinate' | 'text';
 export type RecordsFilter = 'all' | 'monthly' | 'annual';
 export type RecordsCalendarMode = 'month' | 'year';

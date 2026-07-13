@@ -11,6 +11,7 @@ import {
   StoredImageDownloadError,
   type StoredImageMetadata,
 } from '../src/lib/mediaStorage';
+import { getUserDataExportProgressPercent } from '../src/lib/userDataExport';
 
 const metadata = (path: string): StoredImageMetadata => ({
   provider: 'supabase',
@@ -20,6 +21,16 @@ const metadata = (path: string): StoredImageMetadata => ({
   mimeType: 'image/jpeg',
   size: 4,
   createdAt: 1,
+});
+
+test('maps real export stages and completed image counts to monotonic progress', () => {
+  assert.equal(getUserDataExportProgressPercent({ stage: 'preparing' }), 8);
+  assert.equal(getUserDataExportProgressPercent({ stage: 'images', completed: 0, total: 4 }), 10);
+  assert.equal(getUserDataExportProgressPercent({ stage: 'images', completed: 1, total: 4 }), 30);
+  assert.equal(getUserDataExportProgressPercent({ stage: 'images', completed: 2, total: 4 }), 50);
+  assert.equal(getUserDataExportProgressPercent({ stage: 'images', completed: 4, total: 4 }), 90);
+  assert.equal(getUserDataExportProgressPercent({ stage: 'images', completed: 6, total: 4 }), 90);
+  assert.equal(getUserDataExportProgressPercent({ stage: 'generating' }), 96);
 });
 
 test('authenticated Storage download succeeds without generating a signed URL', async () => {

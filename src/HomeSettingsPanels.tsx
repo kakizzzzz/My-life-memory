@@ -1,17 +1,17 @@
 import React from 'react';
-import { BookOpen, ChevronRight, Download, KeyRound, Languages, Lock, MapPin, ShieldCheck } from 'lucide-react';
+import { BookOpen, ChevronRight, Download, KeyRound, Languages, Lock, MapPin, ShieldCheck, Trash2 } from 'lucide-react';
 import type { CloudMcpTokenInfo } from './lib/cloudBackend';
 import { LANGUAGE_OPTIONS } from './constants/language';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE, UI_ICON_STROKE } from './constants/ui';
 import { HOME_COPY } from './copy/homeCopy';
 import type { HomePanel } from './types/app';
 
-export type HomeSettingsPanel = Extract<HomePanel, 'settings' | 'language' | 'permissions' | 'manual' | 'apiSecurity' | 'mcp' | 'export'>;
+export type HomeSettingsPanel = Extract<HomePanel, 'settings' | 'language' | 'permissions' | 'manual' | 'privacy' | 'apiSecurity' | 'mcp' | 'export' | 'deleteAccount'>;
 
 type HomeCopy = typeof HOME_COPY.en;
 
 export type SettingsMenuItem = {
-  panel: Extract<HomePanel, 'language' | 'permissions' | 'manual' | 'apiSecurity' | 'mcp' | 'export'>;
+  panel: Extract<HomePanel, 'language' | 'permissions' | 'manual' | 'privacy' | 'apiSecurity' | 'mcp' | 'export' | 'deleteAccount'>;
   label: string;
   icon: React.ReactNode;
   hidden?: boolean;
@@ -46,11 +46,17 @@ type HomeSettingsPanelsProps = {
   isMcpTokenBusy: boolean;
   isExportingData: boolean;
   exportDataStatus: string;
+  exportDataProgress: number | null;
+  accountDeletePassword: string;
+  accountDeleteStatus: string;
+  isDeletingAccount: boolean;
   onOpenPanel: (panel: SettingsMenuItem['panel']) => void;
   onLanguageChange: (language: string) => void;
   onOpenPermissions: () => void;
   onSignOut: () => void;
   onExportUserData: () => void;
+  onAccountDeletePasswordChange: (value: string) => void;
+  onDeleteAccount: () => void;
   onCopyMcpText: (text: string) => void;
   onCreateMcpToken: () => void;
   onRevokeMcpToken: (tokenId: string) => void;
@@ -61,10 +67,38 @@ export const isHomeSettingsPanel = (panel: HomePanel): panel is HomeSettingsPane
   panel === 'language' ||
   panel === 'permissions' ||
   panel === 'manual' ||
+  panel === 'privacy' ||
   panel === 'apiSecurity' ||
   panel === 'mcp' ||
-  panel === 'export'
+  panel === 'export' ||
+  panel === 'deleteAccount'
 );
+
+export function PrivacyNoticeContent({ homeCopy }: { homeCopy: HomeCopy }) {
+  return (
+    <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+      <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-black/60">
+        <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+        {homeCopy.privacyNotice}
+      </div>
+      <div className="text-[13px] font-medium leading-snug text-black/55">
+        {homeCopy.privacyIntro}
+      </div>
+      <div className="mt-4 space-y-3">
+        {homeCopy.privacySections.map(section => (
+          <div key={section.title}>
+            <div className="text-[13px] font-semibold leading-tight text-black">
+              {section.title}
+            </div>
+            <div className="mt-1 text-[12px] font-medium leading-snug text-black/50">
+              {section.body}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function HomeSettingsPanels({
   activeHomePanel,
@@ -84,11 +118,17 @@ export function HomeSettingsPanels({
   isMcpTokenBusy,
   isExportingData,
   exportDataStatus,
+  exportDataProgress,
+  accountDeletePassword,
+  accountDeleteStatus,
+  isDeletingAccount,
   onOpenPanel,
   onLanguageChange,
   onOpenPermissions,
   onSignOut,
   onExportUserData,
+  onAccountDeletePasswordChange,
+  onDeleteAccount,
   onCopyMcpText,
   onCreateMcpToken,
   onRevokeMcpToken,
@@ -228,6 +268,14 @@ export function HomeSettingsPanels({
     );
   }
 
+  if (activeHomePanel === 'privacy') {
+    return (
+      <div className="mt-4 pb-4">
+        <PrivacyNoticeContent homeCopy={homeCopy} />
+      </div>
+    );
+  }
+
   if (activeHomePanel === 'apiSecurity') {
     return (
       <div className="mt-4 space-y-3">
@@ -286,9 +334,73 @@ export function HomeSettingsPanels({
           >
             {isExportingData ? homeCopy.exportingData : homeCopy.exportJson}
           </button>
+          {exportDataProgress !== null && (
+            <div
+              className="mt-3"
+              role="progressbar"
+              aria-label={exportDataStatus || homeCopy.exportingData}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={exportDataProgress}
+            >
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/10">
+                <div
+                  className="h-full rounded-full bg-[var(--app-dark)] transition-[width] duration-200 ease-out"
+                  style={{ width: `${exportDataProgress}%` }}
+                />
+              </div>
+              <div className="mt-1 text-right text-[11px] font-medium tabular-nums text-black/38">
+                {exportDataProgress}%
+              </div>
+            </div>
+          )}
           {exportDataStatus && (
             <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
               {exportDataStatus}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (activeHomePanel === 'deleteAccount') {
+    return (
+      <div className="mt-4">
+        <div className="rounded-[14px] bg-[var(--app-card)] p-3">
+          <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
+            <Trash2 size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
+            {homeCopy.accountDelete}
+          </div>
+          <div className="text-[12px] font-medium leading-snug text-black/52">
+            {homeCopy.accountDeleteIntro}
+          </div>
+          <div className="mt-2 text-[12px] font-medium leading-snug text-black/68">
+            {homeCopy.accountDeleteWarning}
+          </div>
+          <label className="mt-4 flex h-11 items-center gap-3 rounded-[12px] bg-[var(--app-soft-surface)] px-3 text-black">
+            <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
+            <input
+              value={accountDeletePassword}
+              onChange={event => onAccountDeletePasswordChange(event.target.value)}
+              type="password"
+              autoComplete="current-password"
+              disabled={isDeletingAccount}
+              className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/30 disabled:opacity-60"
+              placeholder={homeCopy.accountDeletePassword}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={onDeleteAccount}
+            disabled={isDeletingAccount || !accountDeletePassword}
+            className="mt-3 h-10 w-full rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-45"
+          >
+            {isDeletingAccount ? homeCopy.accountDeleting : homeCopy.accountDeleteConfirm}
+          </button>
+          {accountDeleteStatus && (
+            <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/55">
+              {accountDeleteStatus}
             </div>
           )}
         </div>

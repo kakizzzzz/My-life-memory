@@ -163,3 +163,14 @@ export const clearTrackDraft = (account: string) => {
     // Ignore local cleanup failures.
   }
 };
+
+export const clearDeletedAccountLocalState = (account: string) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.removeItem(getTrackDraftStorageKey(account));
+    window.localStorage.removeItem(getAutoUserManualStorageKey(account));
+  } catch {
+    // Server deletion has already completed; local convenience data must not block sign-out.
+  }
+};

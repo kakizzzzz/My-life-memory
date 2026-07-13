@@ -27,6 +27,16 @@ export type UserDataExportProgress = (
   { stage: 'generating' }
 );
 
+export const getUserDataExportProgressPercent = (progress: UserDataExportProgress) => {
+  if (progress.stage === 'preparing') return 8;
+  if (progress.stage === 'generating') return 96;
+
+  const total = Math.max(0, progress.total);
+  if (total === 0) return 90;
+  const completed = Math.min(total, Math.max(0, progress.completed));
+  return Math.round(10 + (completed / total) * 80);
+};
+
 export const exportReadableUserData = async ({
   stars,
   profile,
