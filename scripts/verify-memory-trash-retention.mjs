@@ -17,6 +17,10 @@ const serverMediaRetentionMigration = await readFile(
   'supabase/migrations/20260718_server_media_deletion_queue.sql',
   'utf8'
 );
+const mediaQueueHardeningMigration = await readFile(
+  'supabase/migrations/20260719_harden_media_deletion_enqueue.sql',
+  'utf8'
+);
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const otherUserId = '22222222-2222-4222-8222-222222222222';
@@ -31,7 +35,13 @@ const bootstrap = async db => {
     create role authenticated nologin;
     create role service_role nologin;
     create schema auth;
+    create schema storage;
     create table auth.users (id uuid primary key);
+    create table storage.objects (
+      bucket_id text not null,
+      name text not null,
+      primary key (bucket_id, name)
+    );
     create function auth.uid() returns uuid language sql stable as $$
       select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
     $$;
@@ -132,6 +142,25 @@ await db.exec(serverRetentionMigration);
 await db.exec(serverMediaRetentionMigration);
 await db.exec(serverMediaRetentionMigration);
 
+const legacyFarFuturePath = `${userId}/notes/legacy/far-future.jpg`;
+await db.query(`
+  insert into public.memory_media_deletion_queue (user_id, bucket, path, not_before)
+  values ($1, 'life-media', $2, timestamptz '2035-01-01 00:00:00+00')
+`, [userId, legacyFarFuturePath]);
+
+await db.exec(mediaQueueHardeningMigration);
+await db.exec(mediaQueueHardeningMigration);
+
+const legacyDeadline = await db.query(`
+  select
+    not_before <= now() + interval '7 days' as capped,
+    not_before >= now() + interval '6 days 23 hours' as near_cap
+  from public.memory_media_deletion_queue
+  where user_id = $1 and path = $2
+`, [userId, legacyFarFuturePath]);
+assert(legacyDeadline.rows[0]?.capped === true && legacyDeadline.rows[0]?.near_cap === true,
+  'The hardening migration did not cap an existing far-future queue deadline to seven days.');
+
 const sanitizedArchives = await db.query(`
   select
     public.memory_json_has_sensitive_keys(state) as has_sensitive,
@@ -170,6 +199,49 @@ await db.query(`
     ($1,'blocked-star',3,31.2,121.4,1,now() - interval '8 days'),
     ($1,'recent-deleted-star',4,31.2,121.4,1,now() - interval '6 days')
 `, [userId]);
+
+const authoritativeTriggerPath = `${userId}/notes/authoritative/trigger-only.jpg`;
+await db.query(`
+  insert into public.memory_media_deletion_queue (
+    user_id, bucket, path, reason, not_before
+  ) values (
+    $1, 'life-media', $2, 'legacy_client', timestamptz '2035-01-01 00:00:00+00'
+  )
+`, [userId, authoritativeTriggerPath]);
+await db.query(`
+  insert into public.memory_notes (
+    user_id,star_id,id,sort_order,content,content_html,images,changed_revision,deleted_at
+  ) values (
+    $1,'note-host','authoritative-note',99,'authoritative',
+    $2,$3::jsonb,1,now() - interval '8 days'
+  )
+`, [
+  userId,
+  `<figure data-media-path="${authoritativeTriggerPath}"><img></figure>`,
+  JSON.stringify([metadata(authoritativeTriggerPath)]),
+]);
+await db.query(`
+  delete from public.memory_notes
+  where user_id = $1 and star_id = 'note-host' and id = 'authoritative-note'
+`, [userId]);
+
+const authoritativeQueue = await db.query(`
+  select
+    not_before <= now() + interval '1 minute' as due_soon,
+    reason
+  from public.memory_media_deletion_queue
+  where user_id = $1 and path = $2
+`, [userId, authoritativeTriggerPath]);
+const authoritativeStorageObject = await db.query(`
+  select count(*) as count
+  from storage.objects
+  where bucket_id = 'life-media' and name = $1
+`, [authoritativeTriggerPath]);
+assert(authoritativeQueue.rows[0]?.due_soon === true
+  && authoritativeQueue.rows[0]?.reason === 'expired_note',
+  'An authoritative database trigger remained locked behind an old far-future deadline.');
+assert(Number(authoritativeStorageObject.rows[0].count) === 0,
+  'The authoritative trigger fixture unexpectedly depended on a Storage object.');
 
 const insertNote = async ({ starId, id, path, ageDays }) => {
   await db.query(`
@@ -292,17 +364,57 @@ try {
 }
 assert(unauthenticatedRejected, 'Trash purge accepted an unauthenticated request.');
 
+const clientQueuedPath = `${userId}/notes/manual/manual.jpg`;
+const clientPastPath = `${userId}/notes/manual/past.jpg`;
+const missingStoragePath = `${userId}/notes/manual/missing.jpg`;
+await db.query(`
+  insert into storage.objects (bucket_id, name)
+  values ('life-media', $1), ('life-media', $2)
+`, [clientQueuedPath, clientPastPath]);
+
 await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
 await db.query("select set_config('request.jwt.claim.role', 'authenticated', false)");
 await db.exec('set role authenticated');
 
-const clientQueuedPath = `${userId}/notes/manual/manual.jpg`;
 const clientQueueResult = await db.query(
-  "select public.enqueue_memory_media_deletion('life-media',$1,now() + interval '7 days') as queued",
+  "select public.enqueue_memory_media_deletion('life-media',$1,timestamptz '2035-01-01 00:00:00+00') as queued",
   [clientQueuedPath]
 );
 assert(clientQueueResult.rows[0].queued === true,
   'Authenticated client could not hand an offline deletion to the server queue.');
+
+const pastDeadlineResult = await db.query(
+  "select public.enqueue_memory_media_deletion('life-media',$1,timestamptz '2000-01-01 00:00:00+00') as queued",
+  [clientPastPath]
+);
+assert(pastDeadlineResult.rows[0].queued === true,
+  'Authenticated client could not queue a deletion whose stale deadline needed normalization.');
+
+const missingStorageResult = await db.query(
+  "select public.enqueue_memory_media_deletion('life-media',$1,now()) as queued",
+  [missingStoragePath]
+);
+assert(missingStorageResult.rows[0].queued === false,
+  'A nonexistent Storage object was accepted into the server deletion queue.');
+
+const expectInvalidClientPath = async (path, label) => {
+  let rejected = false;
+  try {
+    await db.query(
+      "select public.enqueue_memory_media_deletion('life-media',$1,now())",
+      [path]
+    );
+  } catch (error) {
+    rejected = /invalid media path/i.test(String(error));
+  }
+  assert(rejected, `${label} was not rejected by the authenticated deletion RPC.`);
+};
+
+await expectInvalidClientPath(`${userId}/${'a'.repeat(1024)}`, 'An overlong path');
+await expectInvalidClientPath(`${userId}/notes/../foreign.jpg`, 'A parent-directory segment');
+await expectInvalidClientPath(`${userId}/notes/./image.jpg`, 'A current-directory segment');
+await expectInvalidClientPath(`${userId}//notes/image.jpg`, 'A double slash');
+await expectInvalidClientPath(`${userId}/notes/not allowed.jpg`, 'A disallowed character');
 
 let crossAccountQueueRejected = false;
 try {
@@ -322,6 +434,38 @@ try {
   directQueueReadRejected = /permission denied/i.test(String(error));
 }
 assert(directQueueReadRejected, 'Authenticated client can directly inspect the server deletion queue.');
+
+await db.exec('reset role');
+const clientDeadline = await db.query(`
+  select
+    not_before >= now() as not_in_past,
+    not_before <= now() + interval '7 days' as capped
+  from public.memory_media_deletion_queue
+  where user_id = $1 and path = $2
+`, [userId, clientQueuedPath]);
+const clientPastDeadline = await db.query(`
+  select
+    not_before >= created_at as raised_to_now,
+    not_before <= created_at + interval '1 minute' as near_creation
+  from public.memory_media_deletion_queue
+  where user_id = $1 and path = $2
+`, [userId, clientPastPath]);
+const missingQueueRows = await db.query(`
+  select count(*) as count
+  from public.memory_media_deletion_queue
+  where user_id = $1 and path = $2
+`, [userId, missingStoragePath]);
+assert(clientDeadline.rows[0]?.not_in_past === true && clientDeadline.rows[0]?.capped === true,
+  'A client-supplied 2035 deletion deadline was not capped to seven days.');
+assert(clientPastDeadline.rows[0]?.raised_to_now === true
+  && clientPastDeadline.rows[0]?.near_creation === true,
+  'A client-supplied past deletion deadline was not raised to the current time.');
+assert(Number(missingQueueRows.rows[0].count) === 0,
+  'A missing Storage object still created a private queue row.');
+
+await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
+await db.query("select set_config('request.jwt.claim.role', 'authenticated', false)");
+await db.exec('set role authenticated');
 
 let systemPurgeRejected = false;
 try {
@@ -492,10 +636,16 @@ console.log(JSON.stringify({
   retentionMigrationIdempotent: true,
   serverRetentionMigrationIdempotent: true,
   serverMediaRetentionMigrationIdempotent: true,
+  mediaQueueHardeningMigrationIdempotent: true,
   scheduledPurgeFunctionVerified: true,
   serverMediaDeletionQueueVerified: true,
   serverMediaProtectionRecheckVerified: true,
   clientQueueHandoffVerified: true,
+  clientDeadlineCappedAtSevenDays: true,
+  clientPastDeadlineRaisedToNow: true,
+  invalidClientPathsRejected: true,
+  missingStorageObjectIgnored: true,
+  authoritativeTriggerDeadlineRecovered: true,
   crossAccountQueueRejected: true,
   directQueueReadRejected: true,
   systemPurgeDeniedToAuthenticated: true,
