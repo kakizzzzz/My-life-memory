@@ -5,12 +5,14 @@ import test from 'node:test';
 const migrationPath = 'supabase/migrations/20260718_server_media_deletion_queue.sql';
 const hardeningMigrationPath = 'supabase/migrations/20260719_harden_media_deletion_enqueue.sql';
 const schedulingMigrationPath = 'supabase/migrations/20260720_schedule_media_retention_with_supabase_cron.sql';
+const prerequisiteMigrationPath = 'supabase/migrations/20260721_require_media_retention_prerequisites.sql';
 
 test('server media retention queues expired references and keeps service operations private', async () => {
   const [
     migration,
     hardeningMigration,
     schedulingMigration,
+    prerequisiteMigration,
     edgeFunction,
     workflow,
     ci,
@@ -19,6 +21,7 @@ test('server media retention queues expired references and keeps service operati
     readFile(migrationPath, 'utf8'),
     readFile(hardeningMigrationPath, 'utf8'),
     readFile(schedulingMigrationPath, 'utf8'),
+    readFile(prerequisiteMigrationPath, 'utf8'),
     readFile('supabase/functions/media-retention/index.ts', 'utf8'),
     readFile('.github/workflows/media-retention.yml', 'utf8'),
     readFile('.github/workflows/ci.yml', 'utf8'),
@@ -68,10 +71,29 @@ test('server media retention queues expired references and keeps service operati
     /revoke all on function public\.invoke_memory_media_retention\(\)[\s\S]+from public, anon, authenticated, service_role/i);
   assert.doesNotMatch(schedulingMigration, /sbp_|service_role_key|sb_secret_/i);
 
+  assert.match(prerequisiteMigration, /v_project_count <> 1/i);
+  assert.match(prerequisiteMigration, /v_retention_count <> 1/i);
+  assert.match(prerequisiteMigration, /Vault project URL must exist exactly once/i);
+  assert.match(prerequisiteMigration, /Vault media retention secret must exist exactly once/i);
+  assert.match(prerequisiteMigration, /\^https:\/\/\[a-z0-9-\]\+\[\.\]supabase\[\.\]co\$/i);
+  assert.match(prerequisiteMigration, /char_length\(v_retention_secret\) < 32/i);
+  assert.match(prerequisiteMigration, /raise exception 'pg_cron is unavailable'/i);
+  assert.match(prerequisiteMigration, /raise exception 'pg_net is unavailable'/i);
+  assert.match(prerequisiteMigration, /select cron\.unschedule\(\$1\)/i);
+  assert.match(prerequisiteMigration, /select cron\.schedule\(/i);
+  assert.ok(
+    prerequisiteMigration.indexOf('v_project_count <> 1')
+      < prerequisiteMigration.lastIndexOf('select cron.schedule('),
+  );
+  assert.match(prerequisiteMigration,
+    /revoke all on function public\.invoke_memory_media_retention\(\)[\s\S]+from public, anon, authenticated, service_role/i);
+  assert.doesNotMatch(prerequisiteMigration, /sbp_|service_role_key|sb_secret_/i);
+
   assert.match(edgeFunction, /MEDIA_RETENTION_CRON_SECRET/);
   assert.match(edgeFunction, /runMediaRetentionCycle/);
   assert.match(edgeFunction, /admin\.storage\.from\(item\.bucket\)\.remove/);
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /name: Manual Media Retention/);
   assert.doesNotMatch(workflow, /schedule:/);
   assert.match(workflow, /MEDIA_RETENTION_CRON_SECRET/);
   assert.match(mediaStorage, /supabase\.rpc\('enqueue_memory_media_deletion'/);

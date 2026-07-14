@@ -1,4 +1,4 @@
-name: Media Retention
+name: Manual Media Retention
 
 on:
   workflow_dispatch:

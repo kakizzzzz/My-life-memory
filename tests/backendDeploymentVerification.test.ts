@@ -19,6 +19,21 @@ test('deployment documentation includes the latest hardening migration', () => {
   assert.match(productionChecklist, /20260719_harden_media_deletion_enqueue\.sql/);
   assert.match(setupSection, /20260720_schedule_media_retention_with_supabase_cron\.sql/);
   assert.match(productionChecklist, /20260720_schedule_media_retention_with_supabase_cron\.sql/);
+  assert.match(setupSection, /20260721_require_media_retention_prerequisites\.sql/);
+  assert.match(productionChecklist, /20260721_require_media_retention_prerequisites\.sql/);
+});
+
+test('deployment order configures the Function and Vault before strict Cron scheduling', () => {
+  const deployIndex = setupSection.indexOf('Deploy the Supabase Edge Functions');
+  const vaultIndex = setupSection.indexOf('Generate one random media-retention value');
+  const strictMigrationIndex = setupSection.indexOf('20260721_require_media_retention_prerequisites.sql');
+  const bridgeCheckIndex = setupSection.indexOf('select public.invoke_memory_media_retention();');
+
+  assert.ok(deployIndex >= 0);
+  assert.ok(vaultIndex > deployIndex);
+  assert.ok(strictMigrationIndex > vaultIndex);
+  assert.ok(bridgeCheckIndex > strictMigrationIndex);
+  assert.match(setupSection, /require HTTP `200`/);
 });
 
 test('production checklist includes media retention and mobile e2e verification', () => {
