@@ -173,9 +173,10 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 8. Run `supabase/migrations/20260717_server_retention_and_archive_redaction.sql`. It strips credential-like keys from the legacy archive, installs the owner-only all-user retention function, and schedules it daily with Supabase Cron when `pg_cron` is available.
 9. Run `supabase/migrations/20260718_server_media_deletion_queue.sql`. It creates the server-owned media deletion queue, deletion triggers, protected-reference check, service-only queue RPCs, and the authenticated offline-fallback enqueue RPC.
 10. Run `supabase/migrations/20260719_harden_media_deletion_enqueue.sql`. It caps authenticated deletion requests at seven days, validates user-scoped paths, ignores missing Storage objects, and preserves the private trigger path for authoritative database cleanup.
-11. Generate one random media-retention value of at least 32 bytes. Store it as the Edge Function secret `MEDIA_RETENTION_CRON_SECRET`, and store the same value in Supabase Vault as `my_life_memory_media_retention_secret`. Store the exact project URL in Vault as `my_life_memory_project_url`. Never commit either value. If you want to retain the manual GitHub fallback, also store the retention value as the GitHub Actions secret `MEDIA_RETENTION_CRON_SECRET` and the project URL as `VITE_SUPABASE_URL`.
-12. Run `supabase/migrations/20260720_schedule_media_retention_with_supabase_cron.sql`. It enables `pg_cron` and `pg_net` when available, installs a private Vault-backed Edge Function bridge, and schedules daily media cleanup inside Supabase. The migration contains secret names only, never secret values.
-13. Confirm these objects exist:
+11. Deploy the Supabase Edge Functions `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, `mcp`, and `media-retention`. Confirm `media-retention` is reachable before scheduling it.
+12. Generate one random media-retention value of at least 32 bytes. Store it as the Edge Function secret `MEDIA_RETENTION_CRON_SECRET`, and store the same value in Supabase Vault as `my_life_memory_media_retention_secret`. Store the exact project URL in Vault as `my_life_memory_project_url`. Never commit either value. If you want to retain the manual GitHub fallback, also store the retention value as the GitHub Actions secret `MEDIA_RETENTION_CRON_SECRET` and the project URL as `VITE_SUPABASE_URL`.
+13. Run `supabase/migrations/20260720_schedule_media_retention_with_supabase_cron.sql`, then `supabase/migrations/20260721_require_media_retention_prerequisites.sql`. The follow-up migration removes the existing named job first, requires exactly one valid value for each Vault secret, and recreates the daily job only after validation succeeds. If validation fails, fix the Edge Function or Vault configuration and rerun only `20260721`; no unusable scheduled job remains.
+14. Confirm these objects exist:
    - `public.profiles`
    - read-only archive `public.app_states`
    - `public.mcp_tokens`
@@ -193,8 +194,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
    - owner-only Cron bridge `public.invoke_memory_media_retention`
    - private Storage bucket `life-media`
    - own-user SELECT RLS policies for every normalized table and existing policies for `storage.objects`
-14. Verify `cron.job` contains both `my-life-memory-expired-trash-daily` and `my-life-memory-media-retention-daily`. Confirm the two required Vault secret names exist without printing their values. If Supabase Cron or `pg_net` is unavailable, enable the corresponding integration and rerun only the migration that owns the missing job.
-15. Deploy the Supabase Edge Functions `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, `mcp`, and `media-retention`.
+15. Verify `cron.job` contains both `my-life-memory-expired-trash-daily` and `my-life-memory-media-retention-daily`. Confirm the two required Vault secret names exist without printing their values. Manually run `select public.invoke_memory_media_retention();`, then inspect the matching `net._http_response` row and require HTTP `200`. If the bridge fails, leave the job disabled until the Function, Vault, and network configuration are corrected.
 16. Keep `.github/workflows/media-retention.yml` as a manual `workflow_dispatch` fallback only. Daily cleanup is owned by Supabase Cron and does not depend on GitHub scheduled-workflow activity.
 17. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
 18. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
@@ -217,15 +217,15 @@ Before migration:
 2. Create a database backup and separately export `public.app_states` with `user_id`, `state`, and `revision`. Do not edit the export.
 3. Record the deployed frontend and Edge Function commit SHA. Confirm that production still runs the v1 code until the database migration is verified.
 4. Run all local checks from the exact release commit: `npm ci`, `npm run lint`, `npm run lint:edge`, `npm test`, `npm run test:e2e`, and `npm run build`.
-5. Confirm the release contains every migration through `20260720_schedule_media_retention_with_supabase_cron.sql`, including `20260719_harden_media_deletion_enqueue.sql`, plus the read-only verification script and the same-account recovery script.
+5. Confirm the release contains every migration through `20260721_require_media_retention_prerequisites.sql`, including `20260719_harden_media_deletion_enqueue.sql` and `20260720_schedule_media_retention_with_supabase_cron.sql`, plus the read-only verification script and the same-account recovery script.
 
 Migration and deployment order:
 
 1. Run `supabase/migrations/20260713_normalized_memory_storage_v2.sql` as one transaction. A checksum or structural mismatch must abort the transaction.
 2. Immediately run `supabase/verify-normalized-memory.sql` before any v2 edits occur. Every legacy account must report `migration_verified = true`; the report is an archive-to-migration comparison and is not expected to remain equal after normal v2 editing begins.
-3. Run migrations `20260714_memory_trash_retention.sql` through `20260720_schedule_media_retention_with_supabase_cron.sql` in filename order. Before `20260720`, create the two named Vault secrets described in Supabase Setup. Do not skip the registration, account lifecycle, server retention, media queue, authenticated enqueue hardening, or Supabase Cron scheduling migrations.
+3. Run migrations `20260714_memory_trash_retention.sql` through `20260719_harden_media_deletion_enqueue.sql` in filename order. Deploy `media-retention`, configure its Edge secret, and create the two named Vault secrets described in Supabase Setup. Only then run `20260720_schedule_media_retention_with_supabase_cron.sql` and `20260721_require_media_retention_prerequisites.sql`. Do not skip the registration, account lifecycle, server retention, media queue, authenticated enqueue hardening, or strict Supabase Cron prerequisite migration.
 4. Run `supabase/verify-cloud-backend.sql`. Confirm every required table and RPC reports `object_exists = true`, `app_states` has no authenticated privilege, and no authenticated `INSERT`, `UPDATE`, or `DELETE` grants exist on `profiles` or the normalized tables.
-5. Verify both daily Supabase Cron jobs, `my-life-memory-expired-trash-daily` and `my-life-memory-media-retention-daily`, the two Vault secret names, and the private Cron bridge. Deploy `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, `mcp`, and `media-retention` from the same commit. Keep the GitHub media-retention workflow as a manual fallback only.
+5. Verify both daily Supabase Cron jobs, `my-life-memory-expired-trash-daily` and `my-life-memory-media-retention-daily`, the two Vault secret names, and the private Cron bridge. Manually invoke the bridge once and require an HTTP `200` response from `media-retention`. Keep the GitHub media-retention workflow as a manual fallback only.
 6. Deploy the v2 frontend and bumped service worker. Do not deploy a v2 frontend against a v1 database.
 
 After deployment:
