@@ -1,8 +1,6 @@
 name: Media Retention
 
 on:
-  schedule:
-    - cron: '47 3 * * *'
   workflow_dispatch:
 
 permissions:

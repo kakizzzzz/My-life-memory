@@ -62,7 +62,7 @@ Screenshots are kept in `docs/screenshots/` after local or Pages preview capture
 - The production build registers a same-origin app-shell service worker. It caches only public application assets; Supabase responses, private signed media, map tiles, and memory data are excluded. This improves launch reliability without creating a second plaintext cache of private memories, but it is not a promise of full offline cloud editing.
 - Photo-GPS star creation uploads the selected photo through the same Storage flow, then creates a star and a note at the embedded photo coordinates. If the photo has no usable GPS metadata, no star is created.
 - Deleting a star or note soft-deletes database rows and does not immediately remove its files. After seven days, database deletion triggers copy released Storage paths into `memory_media_deletion_queue` before expired rows and history disappear.
-- The scheduled `media-retention` Edge Function runs database retention, leases due queue items, rechecks every path against active rows and retained history, and only then removes the object through the private Storage API. Failed removals stay queued with bounded retry backoff. This remains effective even if the user never opens the app again.
+- The Supabase Cron-scheduled `media-retention` Edge Function runs database retention, leases due queue items, rechecks every path against active rows and retained history, and only then removes the object through the private Storage API. Failed removals stay queued with bounded retry backoff. This remains effective even if the user never opens the app again.
 - Browser media maintenance scans only the authenticated user's UUID folder and still accelerates cleanup after a conflict-free cloud sync. Its local pending queue is an offline compatibility fallback; the database queue and scheduled Edge Function are the server-side source of truth for final deletion.
 - Rich note HTML is sanitized before save/load so only the note editor's small allowlist is stored.
 - Normalized rows are loaded with pagination loops and assembled into the existing React state shape. A revision check before and after the multi-table read prevents a mixed old/new result during concurrent writes.
@@ -172,9 +172,14 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 7. Run `supabase/migrations/20260715_registration_integrity.sql` and `supabase/migrations/20260716_account_lifecycle_hardening.sql` to install atomic registration claims, versioned privacy consent, and the deleted-account Storage guard.
 8. Run `supabase/migrations/20260717_server_retention_and_archive_redaction.sql`. It strips credential-like keys from the legacy archive, installs the owner-only all-user retention function, and schedules it daily with Supabase Cron when `pg_cron` is available.
 9. Run `supabase/migrations/20260718_server_media_deletion_queue.sql`. It creates the server-owned media deletion queue, deletion triggers, protected-reference check, service-only queue RPCs, and the authenticated offline-fallback enqueue RPC.
-10. Confirm these objects exist:
+10. Run `supabase/migrations/20260719_harden_media_deletion_enqueue.sql`. It caps authenticated deletion requests at seven days, validates user-scoped paths, ignores missing Storage objects, and preserves the private trigger path for authoritative database cleanup.
+11. Generate one random media-retention value of at least 32 bytes. Store it as the Edge Function secret `MEDIA_RETENTION_CRON_SECRET`, and store the same value in Supabase Vault as `my_life_memory_media_retention_secret`. Store the exact project URL in Vault as `my_life_memory_project_url`. Never commit either value. If you want to retain the manual GitHub fallback, also store the retention value as the GitHub Actions secret `MEDIA_RETENTION_CRON_SECRET` and the project URL as `VITE_SUPABASE_URL`.
+12. Run `supabase/migrations/20260720_schedule_media_retention_with_supabase_cron.sql`. It enables `pg_cron` and `pg_net` when available, installs a private Vault-backed Edge Function bridge, and schedules daily media cleanup inside Supabase. The migration contains secret names only, never secret values.
+13. Confirm these objects exist:
    - `public.profiles`
    - read-only archive `public.app_states`
+   - `public.mcp_tokens`
+   - `public.edge_rate_limits`
    - `public.memory_settings`
    - `public.memory_stars`
    - `public.memory_notes`
@@ -183,20 +188,22 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
    - `public.memory_registration_claims`
    - `public.memory_privacy_consents`
    - `public.memory_media_deletion_queue`
-   - RPCs `public.apply_memory_mutations`, `public.list_protected_memory_media_paths`, `public.purge_expired_memory_trash`, the owner-only `public.purge_expired_memory_trash_all_users`, and service-only `public.summarize_normalized_memory_range`, `public.run_server_memory_retention`, `public.claim_due_memory_media_deletions`, and `public.memory_media_path_is_protected`
+   - registration RPCs `public.claim_memory_registration`, `public.bind_memory_registration_claim`, `public.release_memory_registration_claim`, and `public.initialize_claimed_memory_account`
+   - data RPCs `public.apply_memory_mutations`, `public.list_protected_memory_media_paths`, `public.purge_expired_memory_trash`, the owner-only `public.purge_expired_memory_trash_all_users`, and service-only `public.summarize_normalized_memory_range`, `public.run_server_memory_retention`, `public.claim_due_memory_media_deletions`, and `public.memory_media_path_is_protected`
+   - owner-only Cron bridge `public.invoke_memory_media_retention`
    - private Storage bucket `life-media`
    - own-user SELECT RLS policies for every normalized table and existing policies for `storage.objects`
-11. Verify `cron.job` contains `my-life-memory-expired-trash-daily`. If Supabase Cron is unavailable, enable the Cron integration and rerun only the `20260717` migration.
-12. Deploy the Supabase Edge Functions `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, `mcp`, and `media-retention`.
-13. Generate one random value of at least 32 bytes and store it as `MEDIA_RETENTION_CRON_SECRET` in both Supabase Edge Function Secrets and GitHub Actions Secrets. The public repository must contain neither value. The daily `Media Retention` workflow uses it only as a bearer credential for `media-retention`.
-14. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
-15. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
-16. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
-17. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
-18. The functions also require Supabase server environment variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
-19. If permissions look wrong, run the read-only `supabase/verify-cloud-backend.sql` to inspect the project.
-20. Only after the v2 migration exists, use `supabase/fix-permissions.sql` to restore the v2 grants. It gives authenticated clients own-row SELECT on profiles/normalized tables, no `app_states` access, and no direct writes; do not reuse an older script that grants legacy access.
-21. Keep `app_states` as the rollback archive. The `20260717` migration may redact only credential-like keys; do not otherwise clear it after verification.
+14. Verify `cron.job` contains both `my-life-memory-expired-trash-daily` and `my-life-memory-media-retention-daily`. Confirm the two required Vault secret names exist without printing their values. If Supabase Cron or `pg_net` is unavailable, enable the corresponding integration and rerun only the migration that owns the missing job.
+15. Deploy the Supabase Edge Functions `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, `mcp`, and `media-retention`.
+16. Keep `.github/workflows/media-retention.yml` as a manual `workflow_dispatch` fallback only. Daily cleanup is owned by Supabase Cron and does not depend on GitHub scheduled-workflow activity.
+17. Store the invite code only as the Edge Function secret named `INVITE_CODE`. Do not put the code in frontend env vars, source files, README examples, localStorage, app state, or export data.
+18. Store `MEMORY_API_INTERNAL_TOKEN` as a long random Edge Function secret. The cloud MCP function uses it only to call `memory-api` internally.
+19. Store `ALLOWED_ORIGINS` as a comma-separated list of browser origins allowed to call the browser-facing Edge Functions, for example `https://yourname.github.io,http://localhost:3000`. The token-protected cloud `mcp` endpoint accepts native-client origins separately so mobile MCP transports are not blocked by browser-origin rules.
+20. Keep `ENABLE_MEMORY_API_WRITES` unset unless you intentionally want to test API write/delete actions.
+21. The functions also require Supabase server environment variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
+22. If permissions look wrong, run the read-only `supabase/verify-cloud-backend.sql` to inspect the project.
+23. Only after the v2 migration exists, use `supabase/fix-permissions.sql` to restore the v2 grants. It gives authenticated clients own-row SELECT on profiles/normalized tables, no `app_states` access, and no direct writes; do not reuse an older script that grants legacy access.
+24. Keep `app_states` as the rollback archive. The `20260717` migration may redact only credential-like keys; do not otherwise clear it after verification.
 
 `20260713_normalized_memory_storage_v2.sql` is idempotent and transactional. It decomposes each existing archive, preserves original IDs and ordering, compares stable content checksums, and marks a user verified only after all checks pass. A mismatch raises an exception and rolls the transaction back. New registrations atomically create `profiles`, `memory_settings`, and the default star without creating a new app-state snapshot.
 
@@ -209,16 +216,17 @@ Before migration:
 1. Put the app in a maintenance window and stop old clients from writing. Ask users to finish or pause active edits and sign out other devices.
 2. Create a database backup and separately export `public.app_states` with `user_id`, `state`, and `revision`. Do not edit the export.
 3. Record the deployed frontend and Edge Function commit SHA. Confirm that production still runs the v1 code until the database migration is verified.
-4. Run all local checks from the exact release commit: `npm ci`, `npm run lint`, `npm run lint:edge`, `npm test`, and `npm run build`.
-5. Confirm the release contains `20260713_normalized_memory_storage_v2.sql`, the read-only verification script, and the same-account recovery script.
+4. Run all local checks from the exact release commit: `npm ci`, `npm run lint`, `npm run lint:edge`, `npm test`, `npm run test:e2e`, and `npm run build`.
+5. Confirm the release contains every migration through `20260720_schedule_media_retention_with_supabase_cron.sql`, including `20260719_harden_media_deletion_enqueue.sql`, plus the read-only verification script and the same-account recovery script.
 
 Migration and deployment order:
 
 1. Run `supabase/migrations/20260713_normalized_memory_storage_v2.sql` as one transaction. A checksum or structural mismatch must abort the transaction.
 2. Immediately run `supabase/verify-normalized-memory.sql` before any v2 edits occur. Every legacy account must report `migration_verified = true`; the report is an archive-to-migration comparison and is not expected to remain equal after normal v2 editing begins.
-3. Run `supabase/verify-cloud-backend.sql`. Confirm `app_states` has no authenticated privilege, and no authenticated `INSERT`, `UPDATE`, or `DELETE` grants exist on `profiles` or the normalized tables.
-4. Deploy `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, and `mcp` from the same commit.
-5. Deploy the v2 frontend and bumped service worker. Do not deploy a v2 frontend against a v1 database.
+3. Run migrations `20260714_memory_trash_retention.sql` through `20260720_schedule_media_retention_with_supabase_cron.sql` in filename order. Before `20260720`, create the two named Vault secrets described in Supabase Setup. Do not skip the registration, account lifecycle, server retention, media queue, authenticated enqueue hardening, or Supabase Cron scheduling migrations.
+4. Run `supabase/verify-cloud-backend.sql`. Confirm every required table and RPC reports `object_exists = true`, `app_states` has no authenticated privilege, and no authenticated `INSERT`, `UPDATE`, or `DELETE` grants exist on `profiles` or the normalized tables.
+5. Verify both daily Supabase Cron jobs, `my-life-memory-expired-trash-daily` and `my-life-memory-media-retention-daily`, the two Vault secret names, and the private Cron bridge. Deploy `register-with-invite`, `delete-account`, `memory-api`, `mcp-token`, `mcp`, and `media-retention` from the same commit. Keep the GitHub media-retention workflow as a manual fallback only.
+6. Deploy the v2 frontend and bumped service worker. Do not deploy a v2 frontend against a v1 database.
 
 After deployment:
 
@@ -308,7 +316,7 @@ Database backups and Storage backups are separate. Supabase database backups do 
 - Mutation sanitization strips password-like fields before cloud save. Production builds do not allow local account/password fallback when Supabase is not configured.
 - Supabase Auth passwords cannot be viewed by the app. The app supports changing passwords, not revealing saved passwords.
 - Synthetic account emails cannot receive Supabase reset mail. A secure self-service recovery-code flow is not implemented yet; do not add security questions or an administrator password-reset shortcut as a substitute.
-- Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`. Previously referenced media enters a seven-day database queue. The owner-only Supabase Cron task releases expired normalized rows and history, and the separately authenticated scheduled `media-retention` Edge Function rechecks references before deleting Storage objects. Client maintenance remains an accelerator and offline fallback, not the only cleanup executor.
+- Explicit media deletion is user scoped by the authenticated user UUID folder, for example `authUserId/notes/noteId/imageId.jpg`. Previously referenced media enters a seven-day database queue. Owner-only Supabase Cron jobs release expired normalized rows and invoke the separately authenticated `media-retention` Edge Function, which rechecks references before deleting Storage objects. The Function URL and bearer secret are read from encrypted Supabase Vault entries; client maintenance and the manual GitHub workflow remain fallbacks, not the only cleanup executors.
 - Legacy data URL images are kept only as compatibility fallback and are automatically migrated to private Storage after login or network recovery.
 - If GitHub Pages is used as a live demo, configure Supabase environment variables in GitHub Actions secrets before building.
 
