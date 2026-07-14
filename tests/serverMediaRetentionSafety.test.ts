@@ -4,11 +4,21 @@ import test from 'node:test';
 
 const migrationPath = 'supabase/migrations/20260718_server_media_deletion_queue.sql';
 const hardeningMigrationPath = 'supabase/migrations/20260719_harden_media_deletion_enqueue.sql';
+const schedulingMigrationPath = 'supabase/migrations/20260720_schedule_media_retention_with_supabase_cron.sql';
 
 test('server media retention queues expired references and keeps service operations private', async () => {
-  const [migration, hardeningMigration, edgeFunction, workflow, ci, mediaStorage] = await Promise.all([
+  const [
+    migration,
+    hardeningMigration,
+    schedulingMigration,
+    edgeFunction,
+    workflow,
+    ci,
+    mediaStorage,
+  ] = await Promise.all([
     readFile(migrationPath, 'utf8'),
     readFile(hardeningMigrationPath, 'utf8'),
+    readFile(schedulingMigrationPath, 'utf8'),
     readFile('supabase/functions/media-retention/index.ts', 'utf8'),
     readFile('.github/workflows/media-retention.yml', 'utf8'),
     readFile('.github/workflows/ci.yml', 'utf8'),
@@ -45,10 +55,24 @@ test('server media retention queues expired references and keeps service operati
     /grant execute on function public\.memory_enqueue_media_paths_for_user[\s\S]+to authenticated/i);
   assert.doesNotMatch(hardeningMigration, /delete\s+from\s+public\.app_states/i);
 
+  assert.match(schedulingMigration, /create extension if not exists pg_net/i);
+  assert.match(schedulingMigration, /create extension if not exists pg_cron/i);
+  assert.match(schedulingMigration, /vault\.decrypted_secrets/i);
+  assert.match(schedulingMigration, /my_life_memory_project_url/i);
+  assert.match(schedulingMigration, /my_life_memory_media_retention_secret/i);
+  assert.match(schedulingMigration, /net\.http_post/i);
+  assert.match(schedulingMigration, /Authorization', 'Bearer ' \|\| v_retention_secret/i);
+  assert.match(schedulingMigration, /my-life-memory-media-retention-daily/i);
+  assert.match(schedulingMigration, /select public\.invoke_memory_media_retention\(\);/i);
+  assert.match(schedulingMigration,
+    /revoke all on function public\.invoke_memory_media_retention\(\)[\s\S]+from public, anon, authenticated, service_role/i);
+  assert.doesNotMatch(schedulingMigration, /sbp_|service_role_key|sb_secret_/i);
+
   assert.match(edgeFunction, /MEDIA_RETENTION_CRON_SECRET/);
   assert.match(edgeFunction, /runMediaRetentionCycle/);
   assert.match(edgeFunction, /admin\.storage\.from\(item\.bucket\)\.remove/);
-  assert.match(workflow, /schedule:/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /schedule:/);
   assert.match(workflow, /MEDIA_RETENTION_CRON_SECRET/);
   assert.match(mediaStorage, /supabase\.rpc\('enqueue_memory_media_deletion'/);
   assert.match(mediaStorage, /Could not queue server-side media deletion/);
