@@ -56,7 +56,7 @@ where relnamespace = 'public'::regnamespace
   and relname in (
     'profiles',
     'memory_settings', 'memory_stars', 'memory_notes',
-    'memory_tracks', 'memory_entity_history'
+    'memory_tracks', 'memory_entity_history', 'memory_media_deletion_queue'
   )
 order by relname;
 
@@ -88,11 +88,27 @@ where routine_schema = 'public'
     'initialize_normalized_memory_account',
     'list_protected_memory_media_paths',
     'purge_expired_memory_trash',
+    'enqueue_memory_media_deletion',
+    'run_server_memory_retention',
+    'claim_due_memory_media_deletions',
+    'memory_media_path_is_protected',
+    'complete_memory_media_deletion',
+    'fail_memory_media_deletion',
     'summarize_normalized_memory_range',
     'save_app_snapshot',
     'load_app_snapshot'
   )
 order by routine_name;
+
+-- Server media deletion queue should normally be small. Repeated failures stay
+-- visible here without exposing the queue to authenticated clients.
+select
+  count(*) as queued_media,
+  count(*) filter (where not_before <= now()) as due_media,
+  count(*) filter (where last_error is not null) as failed_media,
+  max(attempts) as maximum_attempts,
+  min(created_at) as oldest_queue_item
+from public.memory_media_deletion_queue;
 
 -- 7) Confirm Storage object policies remain user-scoped.
 select

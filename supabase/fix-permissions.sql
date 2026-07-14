@@ -21,6 +21,7 @@ revoke all on public.memory_stars from anon, authenticated;
 revoke all on public.memory_notes from anon, authenticated;
 revoke all on public.memory_tracks from anon, authenticated;
 revoke all on public.memory_entity_history from anon, authenticated;
+revoke all on public.memory_media_deletion_queue from public, anon, authenticated, service_role;
 
 grant select on public.memory_settings to authenticated;
 grant select on public.memory_stars to authenticated;
@@ -34,6 +35,20 @@ revoke all on function public.list_protected_memory_media_paths() from public, a
 grant execute on function public.list_protected_memory_media_paths() to authenticated;
 revoke all on function public.purge_expired_memory_trash() from public, anon, service_role;
 grant execute on function public.purge_expired_memory_trash() to authenticated;
+revoke all on function public.enqueue_memory_media_deletion(text, text, timestamptz)
+  from public, anon, service_role;
+grant execute on function public.enqueue_memory_media_deletion(text, text, timestamptz)
+  to authenticated;
+revoke all on function public.run_server_memory_retention() from public, anon, authenticated;
+grant execute on function public.run_server_memory_retention() to service_role;
+revoke all on function public.claim_due_memory_media_deletions(integer) from public, anon, authenticated;
+grant execute on function public.claim_due_memory_media_deletions(integer) to service_role;
+revoke all on function public.memory_media_path_is_protected(uuid, text) from public, anon, authenticated;
+grant execute on function public.memory_media_path_is_protected(uuid, text) to service_role;
+revoke all on function public.complete_memory_media_deletion(bigint) from public, anon, authenticated;
+grant execute on function public.complete_memory_media_deletion(bigint) to service_role;
+revoke all on function public.fail_memory_media_deletion(bigint, text, integer) from public, anon, authenticated;
+grant execute on function public.fail_memory_media_deletion(bigint, text, integer) to service_role;
 revoke all on function public.summarize_normalized_memory_range(uuid, date, date, text)
   from public, anon, authenticated;
 grant execute on function public.summarize_normalized_memory_range(uuid, date, date, text)
