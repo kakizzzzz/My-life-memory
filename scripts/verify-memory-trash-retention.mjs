@@ -13,6 +13,10 @@ const serverRetentionMigration = await readFile(
   'supabase/migrations/20260717_server_retention_and_archive_redaction.sql',
   'utf8'
 );
+const serverMediaRetentionMigration = await readFile(
+  'supabase/migrations/20260718_server_media_deletion_queue.sql',
+  'utf8'
+);
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const otherUserId = '22222222-2222-4222-8222-222222222222';
@@ -125,6 +129,8 @@ await db.exec(retentionMigration);
 await db.exec(retentionMigration);
 await db.exec(serverRetentionMigration);
 await db.exec(serverRetentionMigration);
+await db.exec(serverMediaRetentionMigration);
+await db.exec(serverMediaRetentionMigration);
 
 const sanitizedArchives = await db.query(`
   select
@@ -290,6 +296,33 @@ await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]
 await db.query("select set_config('request.jwt.claim.role', 'authenticated', false)");
 await db.exec('set role authenticated');
 
+const clientQueuedPath = `${userId}/notes/manual/manual.jpg`;
+const clientQueueResult = await db.query(
+  "select public.enqueue_memory_media_deletion('life-media',$1,now() + interval '7 days') as queued",
+  [clientQueuedPath]
+);
+assert(clientQueueResult.rows[0].queued === true,
+  'Authenticated client could not hand an offline deletion to the server queue.');
+
+let crossAccountQueueRejected = false;
+try {
+  await db.query(
+    "select public.enqueue_memory_media_deletion('life-media',$1,now())",
+    [`${otherUserId}/notes/foreign/image.jpg`]
+  );
+} catch (error) {
+  crossAccountQueueRejected = /outside the current account/i.test(String(error));
+}
+assert(crossAccountQueueRejected, 'Authenticated client queued another user\'s Storage path.');
+
+let directQueueReadRejected = false;
+try {
+  await db.query('select count(*) from public.memory_media_deletion_queue');
+} catch (error) {
+  directQueueReadRejected = /permission denied/i.test(String(error));
+}
+assert(directQueueReadRejected, 'Authenticated client can directly inspect the server deletion queue.');
+
 let systemPurgeRejected = false;
 try {
   await db.query('select public.purge_expired_memory_trash_all_users()');
@@ -318,6 +351,19 @@ assert(!protectedAfter.has(staleHistoryPath), 'Expired history image remained pr
 assert(protectedAfter.has(activePath), 'Active note image lost protection.');
 assert(protectedAfter.has(recentDeletedPath), 'Recent soft-deleted note image lost protection early.');
 assert(protectedAfter.has(recentHistoryPath), 'Recent history image lost protection early.');
+
+await db.exec('reset role');
+const queuedAfterPurge = new Set(
+  (await db.query('select path from public.memory_media_deletion_queue where user_id = $1', [userId]))
+    .rows.map(row => row.path)
+);
+assert(queuedAfterPurge.has(expiredPath), 'Expired note image was not added to the server deletion queue.');
+assert(queuedAfterPurge.has(staleHistoryPath), 'Expired history image was not added to the server deletion queue.');
+assert(!queuedAfterPurge.has(activePath), 'Active note image was incorrectly queued for deletion.');
+assert(!queuedAfterPurge.has(recentDeletedPath), 'Recent soft-deleted note image was queued too early.');
+await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
+await db.query("select set_config('request.jwt.claim.role', 'authenticated', false)");
+await db.exec('set role authenticated');
 
 const retained = await db.query(`
   select
@@ -359,6 +405,35 @@ assert(Number(versionCount.rows[0].count) === 20, 'Per-entity history cap no lon
 
 await db.exec('reset role');
 
+await db.query("select set_config('request.jwt.claim.role', 'service_role', false)");
+await db.exec('set role service_role');
+const staleHistoryProtected = await db.query(
+  'select public.memory_media_path_is_protected($1,$2) as protected',
+  [userId, staleHistoryPath]
+);
+const activeMediaProtected = await db.query(
+  'select public.memory_media_path_is_protected($1,$2) as protected',
+  [userId, activePath]
+);
+assert(staleHistoryProtected.rows[0].protected === false,
+  'Released history media path is still protected from server deletion.');
+assert(activeMediaProtected.rows[0].protected === true,
+  'Active media path is not protected from server deletion.');
+
+const claimedMedia = await db.query(
+  'select * from public.claim_due_memory_media_deletions(100)'
+);
+const staleQueueItem = claimedMedia.rows.find(item => item.path === staleHistoryPath);
+assert(Boolean(staleQueueItem), 'Due media queue item could not be claimed by the service role.');
+await db.query('select public.complete_memory_media_deletion($1)', [staleQueueItem.queue_id]);
+await db.exec('reset role');
+const completedQueueItem = await db.query(
+  'select count(*) as count from public.memory_media_deletion_queue where id = $1',
+  [staleQueueItem.queue_id]
+);
+assert(Number(completedQueueItem.rows[0].count) === 0,
+  'Completed server media deletion queue item was not removed.');
+
 const otherUserRows = await db.query(`
   select
     (select count(*) from public.memory_notes where user_id = $1 and id = 'active-note-other') as note_count,
@@ -384,6 +459,16 @@ const archiveAfter = await db.query(
 );
 assert(JSON.stringify(archiveBefore.rows) === JSON.stringify(archiveAfter.rows), 'Trash purge changed app_states.');
 
+await db.query('delete from auth.users where id = $1', [otherUserId]);
+const deletedAccountRows = await db.query(`
+  select
+    (select count(*) from public.memory_settings where user_id = $1) as settings_count,
+    (select count(*) from public.memory_media_deletion_queue where user_id = $1) as queue_count
+`, [otherUserId]);
+assert(Number(deletedAccountRows.rows[0].settings_count) === 0
+  && Number(deletedAccountRows.rows[0].queue_count) === 0,
+  'Auth account cascade was blocked or left a server media queue behind.');
+
 await insertHistory({
   entityType: 'note',
   entityKey: 'active-star/active-note',
@@ -406,7 +491,13 @@ console.log(JSON.stringify({
   retentionMigrationExecuted: true,
   retentionMigrationIdempotent: true,
   serverRetentionMigrationIdempotent: true,
+  serverMediaRetentionMigrationIdempotent: true,
   scheduledPurgeFunctionVerified: true,
+  serverMediaDeletionQueueVerified: true,
+  serverMediaProtectionRecheckVerified: true,
+  clientQueueHandoffVerified: true,
+  crossAccountQueueRejected: true,
+  directQueueReadRejected: true,
   systemPurgeDeniedToAuthenticated: true,
   legacyCredentialKeysRedacted: true,
   unauthenticatedRejected: true,
@@ -417,6 +508,7 @@ console.log(JSON.stringify({
   protectedPathsReleased: true,
   activeRowsUnaffected: true,
   otherUserUnaffected: true,
+  accountDeletionCascadeVerified: true,
   appStateArchiveUnchanged: true,
   sevenDayHistoryTtlVerified: true,
   twentyVersionCapVerified: true,

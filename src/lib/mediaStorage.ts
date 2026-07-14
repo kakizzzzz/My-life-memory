@@ -136,10 +136,42 @@ const writePendingDeletes = (userId: string, metadataList: PendingMediaDelete[])
   }
 };
 
+const enqueueServerMediaDeletion = async (
+  userId: string,
+  metadata: PendingMediaDelete,
+) => {
+  if (!supabase || !metadata.path.startsWith(`${userId}/`)) return false;
+  const deleteAfter = metadata.deleteAfter
+    ?? (metadata.immediate ? Date.now() : metadata.createdAt + DEFERRED_MEDIA_DELETE_MS);
+
+  try {
+    const { error } = await supabase.rpc('enqueue_memory_media_deletion', {
+      p_bucket: metadata.bucket || MEDIA_BUCKET,
+      p_path: metadata.path,
+      p_not_before: new Date(deleteAfter).toISOString(),
+    });
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.warn('Could not queue server-side media deletion:', error);
+    return false;
+  }
+};
+
 const queueImageDeletion = async (metadata: PendingMediaDelete) => {
   const userId = await getCurrentUserId().catch(() => '');
-  if (!userId || !metadata.path.startsWith(`${userId}/`)) return;
+  if (!userId || !metadata.path.startsWith(`${userId}/`)) return false;
+
+  if (await enqueueServerMediaDeletion(userId, metadata)) {
+    writePendingDeletes(
+      userId,
+      readPendingDeletes(userId).filter(item => !sameStoredImage(item, metadata)),
+    );
+    return true;
+  }
+
   writePendingDeletes(userId, [...readPendingDeletes(userId), metadata]);
+  return true;
 };
 
 const removeQueuedImageDeletion = async (metadata: StoredImageMetadata) => {
@@ -465,12 +497,12 @@ export const scheduleImageDeletion = async (
 ) => {
   const userId = await getCurrentUserId().catch(() => '');
   if (!userId || !metadata.path.startsWith(`${userId}/`)) return false;
-  await queueImageDeletion({
+  const queued = await queueImageDeletion({
     ...metadata,
     deleteAfter: Date.now() + Math.max(0, delayMs),
   });
   requestCloudMediaMaintenance();
-  return true;
+  return queued;
 };
 
 export const retryPendingImageDeletions = async (
@@ -499,11 +531,19 @@ export const retryPendingImageDeletions = async (
     }
     const deleteAfter = metadata.deleteAfter ?? metadata.createdAt + DEFERRED_MEDIA_DELETE_MS;
     if (!metadata.immediate && deleteAfter > Date.now()) {
-      remainingDeletes.push(metadata);
+      const queued = await enqueueServerMediaDeletion(userId, metadata);
+      if (!queued) remainingDeletes.push(metadata);
       continue;
     }
     const deleted = await deleteImageFromStorage(metadata);
-    if (!deleted) remainingDeletes.push(metadata);
+    if (!deleted) {
+      const queued = await enqueueServerMediaDeletion(userId, {
+        ...metadata,
+        immediate: true,
+        deleteAfter: Date.now(),
+      });
+      if (!queued) remainingDeletes.push(metadata);
+    }
   }
   writePendingDeletes(userId, remainingDeletes);
 };
