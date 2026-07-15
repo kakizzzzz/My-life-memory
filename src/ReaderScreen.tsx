@@ -37,6 +37,7 @@ type ReaderScreenProps = {
   onReaderEditorsReady: () => boolean;
   onBackToRecords: () => void;
   onReaderBeforeInput: (target: 'title' | 'content', event: React.FormEvent<HTMLElement>) => void;
+  onReaderKeyDown: (target: 'title' | 'content', event: React.KeyboardEvent<HTMLElement>) => void;
   onReaderInput: () => void;
   onReaderPaste: (target: 'title' | 'content', event: React.ClipboardEvent<HTMLElement>) => void | Promise<void>;
   onSaveReaderSelection: () => void;
@@ -77,6 +78,7 @@ export function ReaderScreen({
   onReaderEditorsReady,
   onBackToRecords,
   onReaderBeforeInput,
+  onReaderKeyDown,
   onReaderInput,
   onReaderPaste,
   onSaveReaderSelection,
@@ -289,6 +291,7 @@ export function ReaderScreen({
                     className="note-reader-title mb-7 text-[36px] font-medium leading-tight"
                     style={{ color: readerRecord.note.color || '#D2936D' }}
                     onBeforeInput={event => onReaderBeforeInput('title', event)}
+                    onKeyDown={event => onReaderKeyDown('title', event)}
                     onInput={onReaderInput}
                     onPaste={event => onReaderPaste('title', event)}
                     onFocus={onSaveReaderSelection}
@@ -304,6 +307,7 @@ export function ReaderScreen({
                     className="note-reader-content pb-10 text-[#7E9FBA]"
                     style={{ fontSize: `${readerRecord.note.fontSize || 20}px` }}
                     onBeforeInput={event => onReaderBeforeInput('content', event)}
+                    onKeyDown={event => onReaderKeyDown('content', event)}
                     onInput={onReaderInput}
                     onPaste={event => onReaderPaste('content', event)}
                     onFocus={onSaveReaderSelection}

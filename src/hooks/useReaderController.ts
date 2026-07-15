@@ -42,6 +42,10 @@ import {
 import { HOME_COPY } from '../copy/homeCopy';
 import { isReaderEditorReadyForSave } from '../lib/readerDraftSafety';
 import {
+  getBoundaryInheritedTextStyles,
+  removeAdjacentNoteImageForInput,
+} from '../lib/richTextEditing';
+import {
   applyRichTextStyleSession,
   createRichTextStyleSession,
   type RichTextStyleSession,
@@ -367,17 +371,55 @@ export const useReaderController = ({
     return insertStyledReaderDomText(element, range, text, styles, readerSavedRangeRef);
   }, []);
 
+  const removeReaderImageAtCaret = React.useCallback((inputType: string) => {
+    const element = readerContentRef.current;
+    const range = getReaderSelectionRange('content');
+    const nextRange = removeAdjacentNoteImageForInput(element, range, inputType);
+    if (!nextRange || !element) return false;
+
+    readerColorStyleSessionRef.current = null;
+    readerPendingContentStylesRef.current = {};
+    ensureReaderEditableTailAfterMedia(element);
+    const selection = window.getSelection();
+    element.focus();
+    selection?.removeAllRanges();
+    selection?.addRange(nextRange);
+    readerSavedRangeRef.current = nextRange.cloneRange();
+    return true;
+  }, [getReaderSelectionRange]);
+
   const handleReaderBeforeInput = React.useCallback((target: ReaderTextTarget, event: React.FormEvent<HTMLElement>) => {
     const inputEvent = event.nativeEvent as InputEvent;
+    const element = getReaderElementForTarget(target);
+    const range = getReaderSelectionRange(target);
+
+    if (target === 'content' && removeReaderImageAtCaret(inputEvent.inputType)) {
+      event.preventDefault();
+      return;
+    }
+
     if (inputEvent.inputType !== 'insertText' || !inputEvent.data) return;
     const pendingRef = target === 'title' ? readerPendingTitleStylesRef : readerPendingContentStylesRef;
     const pendingStyles = pendingRef.current;
-    if (Object.keys(pendingStyles).length === 0) return;
-    const element = getReaderElementForTarget(target);
-    if (element && insertStyledReaderText(element, getReaderSelectionRange(target), inputEvent.data, pendingStyles)) {
+    const contextualStyles = getBoundaryInheritedTextStyles(element, range);
+    const styles = { ...contextualStyles, ...pendingStyles };
+    if (Object.keys(styles).length === 0) return;
+    if (element && insertStyledReaderText(element, range, inputEvent.data, styles)) {
+      pendingRef.current = {};
       event.preventDefault();
     }
-  }, [getReaderElementForTarget, getReaderSelectionRange, insertStyledReaderText]);
+  }, [getReaderElementForTarget, getReaderSelectionRange, insertStyledReaderText, removeReaderImageAtCaret]);
+
+  const handleReaderKeyDown = React.useCallback((target: ReaderTextTarget, event: React.KeyboardEvent<HTMLElement>) => {
+    if (target !== 'content') return;
+    const inputType = event.key === 'Backspace'
+      ? 'deleteContentBackward'
+      : event.key === 'Delete'
+        ? 'deleteContentForward'
+        : null;
+    if (!inputType || !removeReaderImageAtCaret(inputType)) return;
+    event.preventDefault();
+  }, [removeReaderImageAtCaret]);
 
   const handleReaderInput = React.useCallback(() => {
     readerColorStyleSessionRef.current = null;
@@ -523,6 +565,7 @@ export const useReaderController = ({
     handleReaderTextColor,
     handleReaderUnderline,
     handleReaderBeforeInput,
+    handleReaderKeyDown,
     handleReaderInput,
     handleReaderContentClick,
     handleReaderPaste,

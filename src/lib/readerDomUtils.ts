@@ -5,6 +5,7 @@ import {
   readerNodeHasMeaningfulContent,
 } from './noteHtmlUtils';
 import { cssColorToHex } from './generalUtils';
+import { insertStyledTextAtRange } from './richTextEditing';
 import { applyRichTextStyleToRange } from './richTextStyleSession';
 
 export type ReaderTextTarget = 'title' | 'content';
@@ -278,19 +279,10 @@ export const insertStyledReaderText = (
   styles: Record<string, string>,
   savedRangeRef: MutableRef<Range | null>
 ) => {
-  if (!element || !range || !range.collapsed || !readerRangeIsInsideElement(range, element)) return false;
-  const span = document.createElement('span');
-  Object.entries(styles).forEach(([property, value]) => {
-    span.style.setProperty(property, value);
-  });
-  span.textContent = text;
-  range.deleteContents();
-  range.insertNode(span);
+  const nextRange = insertStyledTextAtRange(element, range, text, styles);
+  if (!element || !nextRange) return false;
   const selection = window.getSelection();
   if (selection) {
-    const nextRange = document.createRange();
-    nextRange.setStartAfter(span);
-    nextRange.collapse(true);
     selection.removeAllRanges();
     selection.addRange(nextRange);
     savedRangeRef.current = nextRange.cloneRange();

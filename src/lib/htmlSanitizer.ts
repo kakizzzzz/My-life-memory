@@ -47,7 +47,10 @@ const sanitizeTextDecorationLine = (value: string) => {
 };
 
 const copySafeStyle = (source: HTMLElement, target: HTMLElement) => {
-  const color = sanitizeCssColor(source.style.color);
+  const legacyColor = source.tagName.toUpperCase() === 'FONT'
+    ? sanitizeCssColor(source.getAttribute('color') || '')
+    : '';
+  const color = sanitizeCssColor(source.style.color) || legacyColor;
   const fontSize = sanitizeFontSize(source.style.fontSize);
   const textDecorationLine = sanitizeTextDecorationLine(source.style.textDecorationLine);
 
@@ -85,6 +88,12 @@ const sanitizeNode = (node: Node): Node | null => {
   }
 
   if (!ALLOWED_RICH_TAGS.has(tagName)) {
+    const styledSpan = document.createElement('span');
+    copySafeStyle(node, styledSpan);
+    if (styledSpan.style.length > 0) {
+      copyChildren(node, styledSpan);
+      return styledSpan;
+    }
     const fragment = document.createDocumentFragment();
     copyChildren(node, fragment);
     return fragment;

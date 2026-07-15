@@ -18,6 +18,11 @@ import {
 import { sanitizeRichHtml } from './lib/htmlSanitizer';
 import { notesHaveMeaningfulChanges } from './lib/noteChangeDetection';
 import {
+  getBoundaryInheritedTextStyles,
+  insertStyledTextAtRange,
+  removeAdjacentNoteImageForInput,
+} from './lib/richTextEditing';
+import {
   applyRichTextStyleSession,
   applyRichTextStyleToRange,
   createRichTextStyleSession,
@@ -1255,17 +1260,13 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     styles: Record<string, string>,
     syncAfterChange: () => void
   ) => {
-    if (!range || !range.collapsed || !rangeIsInsideElement(range, element)) return false;
-
-    const span = document.createElement('span');
-    Object.entries(styles).forEach(([property, value]) => {
-      span.style.setProperty(property, value);
-    });
-    span.textContent = text;
-
-    range.deleteContents();
-    range.insertNode(span);
-    moveCaretAfterNode(span);
+    const nextRange = insertStyledTextAtRange(element, range, text, styles);
+    if (!nextRange) return false;
+    const selection = window.getSelection();
+    element.focus();
+    selection?.removeAllRanges();
+    selection?.addRange(nextRange);
+    savedRangeRef.current = nextRange.cloneRange();
     syncAfterChange();
     return true;
   };
@@ -1291,18 +1292,46 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     return true;
   };
 
+  const removeEditorImageAtCaret = (inputType: string) => {
+    const editor = editorRef.current;
+    const range = getEditorSelectionRange();
+    const nextRange = removeAdjacentNoteImageForInput(editor, range, inputType);
+    if (!nextRange || !editor) return false;
+
+    colorStyleSessionRef.current = null;
+    clearPendingEditorStyles();
+    ensureEditableTailAfterMedia(editor);
+    const selection = window.getSelection();
+    editor.focus();
+    selection?.removeAllRanges();
+    selection?.addRange(nextRange);
+    savedRangeRef.current = nextRange.cloneRange();
+    syncEditorContent();
+    return true;
+  };
+
   const handleEditorBeforeInput = (e: React.FormEvent<HTMLDivElement>) => {
     const inputEvent = e.nativeEvent as InputEvent;
+    const editor = editorRef.current;
+    const range = getEditorSelectionRange();
+    if (removeEditorImageAtCaret(inputEvent.inputType)) {
+      e.preventDefault();
+      return;
+    }
+
     const pendingStyles = pendingEditorStylesRef.current;
     if (
       inputEvent.inputType !== 'insertText' ||
-      !inputEvent.data ||
-      Object.keys(pendingStyles).length === 0
+      !inputEvent.data
     ) {
       return;
     }
 
-    if (insertStyledTextAtCaret(inputEvent.data, pendingStyles)) {
+    const contextualStyles = getBoundaryInheritedTextStyles(editor, range);
+    const styles = { ...contextualStyles, ...pendingStyles };
+    if (Object.keys(styles).length === 0) return;
+    if (insertStyledTextAtCaret(inputEvent.data, styles)) {
+      clearPendingEditorStyles();
       e.preventDefault();
     }
   };
@@ -1311,21 +1340,35 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     const titleEditor = titleEditorRef.current;
     const inputEvent = e.nativeEvent as InputEvent;
     const pendingStyles = pendingTitleStylesRef.current;
+    const range = getTitleSelectionRange();
     if (
       !titleEditor ||
       inputEvent.inputType !== 'insertText' ||
-      !inputEvent.data ||
-      Object.keys(pendingStyles).length === 0
+      !inputEvent.data
     ) {
       return;
     }
 
-    if (insertStyledTextInElement(titleEditor, getTitleSelectionRange(), inputEvent.data, pendingStyles, syncTitleContent)) {
+    const contextualStyles = getBoundaryInheritedTextStyles(titleEditor, range);
+    const styles = { ...contextualStyles, ...pendingStyles };
+    if (Object.keys(styles).length === 0) return;
+    if (insertStyledTextInElement(titleEditor, range, inputEvent.data, styles, syncTitleContent)) {
+      clearPendingTitleStyles();
       e.preventDefault();
     }
   };
 
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const inputType = e.key === 'Backspace'
+      ? 'deleteContentBackward'
+      : e.key === 'Delete'
+        ? 'deleteContentForward'
+        : null;
+    if (inputType && removeEditorImageAtCaret(inputType)) {
+      e.preventDefault();
+      return;
+    }
+
     if (
       e.key.startsWith('Arrow') ||
       ['Home', 'End', 'PageUp', 'PageDown', 'Escape'].includes(e.key)

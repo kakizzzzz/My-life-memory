@@ -574,6 +574,7 @@ export default function App() {
     handleReaderTextColor,
     handleReaderUnderline,
     handleReaderBeforeInput,
+    handleReaderKeyDown,
     handleReaderInput,
     handleReaderContentClick,
     handleReaderPaste,
@@ -1054,6 +1055,7 @@ export default function App() {
           setReaderActivePanel(null);
         }}
         onReaderBeforeInput={handleReaderBeforeInput}
+        onReaderKeyDown={handleReaderKeyDown}
         onReaderInput={handleReaderInput}
         onReaderPaste={handleReaderPaste}
         onSaveReaderSelection={saveReaderSelection}
