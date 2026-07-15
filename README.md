@@ -4,11 +4,17 @@ My Life Memory is a private life-map app for saving places, notes, photos, route
 
 ## Screenshots
 
-Screenshots are kept in `docs/screenshots/` after local or Pages preview capture.
+Places become memories: mark them on the map, attach photos and notes, revisit them through the timeline, and see the wider travel pattern in statistics.
 
-| Login | Map | Records |
+| Login | Main map | Memory note |
 | --- | --- | --- |
-| ![Login screen](docs/screenshots/login.svg) | ![Map screen](docs/screenshots/map.svg) | ![Records screen](docs/screenshots/records.svg) |
+| ![Account login screen](docs/screenshots/login-screen.svg) | ![Main map with place stars and color tools](docs/screenshots/main-map.svg) | ![Memory note with a photo, title, and rich-text tools](docs/screenshots/memory-note.svg) |
+| Account login with language switching. | Create, browse, recolor, and edit place memories directly on the map. | Keep a place, image, and written memory together. |
+
+| Records | Trip statistics |
+| --- | --- |
+| ![Timeline of saved records](docs/screenshots/records-timeline.svg) | ![Trip statistics with a dotted world map and location ranking](docs/screenshots/trip-statistics.svg) |
+| Browse saved memories as a dated timeline. | Review marked places, rankings, and the dotted world-map overview. |
 
 ## Features
 
