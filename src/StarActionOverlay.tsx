@@ -430,12 +430,12 @@ export function StarActionOverlay({
       )}
 
       {activeTab === 'eye' && isMapChooserOpen && (
-        <div className="grid grid-cols-2 gap-1.5 rounded-[16px] border border-[var(--app-card)] bg-[var(--app-active-surface)] p-1.5 shadow-lg">
+        <div className="grid grid-cols-2 gap-1.5 rounded-[16px] border border-[var(--app-card)] bg-[var(--app-active-surface)] p-1.5 font-sans shadow-lg">
           {mapProviders.map(provider => (
             <button
               key={provider.id}
               onClick={() => openMapProvider(provider.id)}
-              className="min-w-[58px] rounded-full bg-[var(--app-card)] px-3 py-1.5 text-[12px] font-medium leading-none text-black transition-transform active:scale-95"
+              className="min-w-[58px] rounded-full bg-[var(--app-card)] px-3 py-1.5 font-sans text-[12px] font-medium leading-none text-black transition-transform active:scale-95"
             >
               {provider.label}
             </button>
