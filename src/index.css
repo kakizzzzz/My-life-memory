@@ -204,6 +204,7 @@ select {
 }
 
 .record-preview-card {
+  position: relative;
   height: 116px;
   overflow: hidden;
   display: flex;
@@ -225,8 +226,10 @@ select {
 }
 
 .record-preview-time {
-  flex: 0 0 auto;
-  margin-top: 8px;
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  margin-top: 0;
 }
 
 .note-title-editor {
