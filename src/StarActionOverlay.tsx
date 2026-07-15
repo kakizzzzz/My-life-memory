@@ -156,7 +156,11 @@ export function StarActionOverlay({
   const [isMapChooserOpen, setIsMapChooserOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
   const [customColor, setCustomColor] = useState('#EDC727');
-  const [customPickerPosition, setCustomPickerPosition] = useState<{ top: number; left: number } | null>(null);
+  const [customPickerPosition, setCustomPickerPosition] = useState<{
+    top: number;
+    left: number;
+    backgroundColor: string;
+  } | null>(null);
   const copyTimerRef = React.useRef<number | null>(null);
   const colorPanelRef = React.useRef<HTMLDivElement>(null);
   const selectedStar = selectedStarId ? stars.find(star => star.id === selectedStarId) : undefined;
@@ -237,6 +241,7 @@ export function StarActionOverlay({
       setCustomPickerPosition({
         top: Math.max(gap, top),
         left: Math.min(window.innerWidth - 70, Math.max(70, rect.left + rect.width / 2)),
+        backgroundColor: window.getComputedStyle(panel).backgroundColor || '#5C5C5C',
       });
     };
 
@@ -483,6 +488,7 @@ export function StarActionOverlay({
                 left: customPickerPosition.left,
                 transform: 'translateX(-50%)',
                 zIndex: 2000,
+                backgroundColor: customPickerPosition.backgroundColor,
               }}
             >
                <HexColorPicker
