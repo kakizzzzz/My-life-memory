@@ -1,0 +1,55 @@
+name: Update README contribution details
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/update-readme-contributions.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update README wording
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('README.md')
+          text = path.read_text(encoding='utf-8')
+
+          old_paragraph = "GPT-5.6 helped translate my product requirements into both frontend and backend implementation. On the frontend, it assisted with React and TypeScript structure, interaction logic, component behavior, debugging, and testing. On the backend, it helped design and configure Supabase, including the data model, Row Level Security policies, Edge Functions, privacy safeguards, testing strategy, and deployment workflow. Through computer-use assistance, it also helped configure and verify parts of the Supabase setup. It additionally supported product and interaction review and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP."
+          new_paragraph = "GPT-5.6 helped translate my completed visual and interaction designs into frontend code, assisting with React and TypeScript structure and implementation. I defined the interaction logic and component behavior, and I also participated directly in debugging, testing, and iteration. On the backend, GPT-5.6 helped design and configure Supabase, including the data model, Row Level Security policies, Edge Functions, privacy safeguards, testing strategy, and deployment workflow. Through computer-use assistance, it also helped configure and verify parts of the Supabase setup. It additionally supported product review and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP."
+
+          if old_paragraph not in text:
+              raise SystemExit('Expected GPT-5.6 paragraph was not found.')
+          text = text.replace(old_paragraph, new_paragraph, 1)
+
+          feature_anchor = "- Show an in-app user manual for map, record, statistics, account, icon, and permission behavior."
+          new_feature = "- Generate a personal MCP access token inside the app so compatible AI clients can securely retrieve and analyze the user's marked places, notes, and travel routes through read-only tools."
+
+          if new_feature not in text:
+              if feature_anchor not in text:
+                  raise SystemExit('Expected Features anchor was not found.')
+              text = text.replace(feature_anchor, feature_anchor + "\n" + new_feature, 1)
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Remove temporary workflow
+        run: rm .github/workflows/update-readme-contributions.yml
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md .github/workflows/update-readme-contributions.yml
+          git commit -m "docs: clarify contribution roles and MCP access"
+          git push
