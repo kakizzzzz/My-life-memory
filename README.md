@@ -61,6 +61,7 @@ The six views below follow the app's core journey: shape places with stars, pres
 - Persist entity mutations to an IndexedDB outbox before network requests, commit them atomically with optimistic dataset revisions, and retain conflict copies for notes, star locations, routes, and profile metadata.
 - Soft-delete memories, retain the latest 20 historical versions per entity, and protect media referenced by active rows, deleted rows, history, conflicts, or pending local work.
 - Show an in-app user manual for map, record, statistics, account, icon, and permission behavior.
+- Generate a personal MCP access token inside the app so compatible AI clients can securely retrieve and analyze the user's marked places, notes, and travel routes through read-only tools.
 
 ## OpenAI Build Week
 
@@ -68,7 +69,7 @@ My Life Memory existed before OpenAI Build Week, with its core map, place stars,
 
 All visual design, UI/UX, interaction design, and product direction were created independently by me. I also made the feature decisions and led testing and acceptance. Codex was used under my direction for implementation, refactoring, debugging, testing, and documentation; the week's focus included normalized user-scoped storage, synchronization and conflict handling, the private media lifecycle, account lifecycle and privacy safeguards, the Memory API, and a read-only MCP for GPT-5.6-compatible AI clients.
 
-GPT-5.6 helped translate my product requirements into both frontend and backend implementation. On the frontend, it assisted with React and TypeScript structure, interaction logic, component behavior, debugging, and testing. On the backend, it helped design and configure Supabase, including the data model, Row Level Security policies, Edge Functions, privacy safeguards, testing strategy, and deployment workflow. Through computer-use assistance, it also helped configure and verify parts of the Supabase setup. It additionally supported product and interaction review and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP.
+GPT-5.6 helped translate my completed visual and interaction designs into frontend code, assisting with React and TypeScript structure and implementation. I defined the interaction logic and component behavior, and I also participated directly in debugging, testing, and iteration. On the backend, GPT-5.6 helped design and configure Supabase, including the data model, Row Level Security policies, Edge Functions, privacy safeguards, testing strategy, and deployment workflow. Through computer-use assistance, it also helped configure and verify parts of the Supabase setup. It additionally supported product review and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP.
 
 ## Tech Stack
 
