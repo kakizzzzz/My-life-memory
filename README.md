@@ -57,9 +57,9 @@ The nine views below follow the app's core journey: enter a private space, shape
       <sub>Revisit saved notes as a dated timeline with monthly and annual views.</sub>
     </td>
     <td width="33%" align="center" valign="top">
-      <strong>Calendar filter</strong><br><br>
-      <img src="docs/screenshots/records-calendar.png" alt="Calendar filter for saved memory records" width="160"><br><br>
-      <sub>Find active memory days and narrow the record timeline by date.</sub>
+      <strong>Memory reader</strong><br><br>
+      <img src="docs/screenshots/memory-reader.png" alt="Saved memory reader with writing, photography, and original date" width="160"><br><br>
+      <sub>Revisit a saved place through writing, photography, and its original date.</sub>
     </td>
   </tr>
 </table>
