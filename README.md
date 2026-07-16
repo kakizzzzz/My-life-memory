@@ -8,7 +8,7 @@
 
 ## Screenshots
 
-The seven views below follow the app's core journey: enter a private space, shape places with stars, preserve memories in text and photos, record movement, review patterns, and manage personal data with clear privacy controls.
+The nine views below follow the app's core journey: enter a private space, shape places with stars, preserve memories in text and photos, record movement, review patterns, and manage personal data with clear privacy controls.
 
 <table>
   <tr>
@@ -46,13 +46,21 @@ The seven views below follow the app's core journey: enter a private space, shap
     </td>
   </tr>
   <tr>
-    <td width="33%" align="center" valign="top"></td>
     <td width="33%" align="center" valign="top">
       <strong>Settings &amp; privacy</strong><br><br>
       <img src="docs/screenshots/settings-and-account.png" alt="Settings, privacy, export, MCP, and account controls" width="160"><br><br>
       <sub>Control language, location, privacy, export, AI access, and the account lifecycle.</sub>
     </td>
-    <td width="33%" align="center" valign="top"></td>
+    <td width="33%" align="center" valign="top">
+      <strong>My records</strong><br><br>
+      <img src="docs/screenshots/records-timeline.png" alt="Timeline of saved memory records" width="160"><br><br>
+      <sub>Revisit saved notes as a dated timeline with monthly and annual views.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <strong>Calendar filter</strong><br><br>
+      <img src="docs/screenshots/records-calendar.png" alt="Calendar filter for saved memory records" width="160"><br><br>
+      <sub>Find active memory days and narrow the record timeline by date.</sub>
+    </td>
   </tr>
 </table>
 
