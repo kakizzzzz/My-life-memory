@@ -9,15 +9,10 @@
 
 ## Screenshots
 
-The nine views below follow the app's core journey: enter a private space, shape places with stars, preserve memories in text and photos, record movement, review patterns, and manage personal data with clear privacy controls.
+The six views below follow the app's core journey: shape places with stars, preserve memories in text and photos, record movement, and revisit the patterns and moments that emerge.
 
 <table>
   <tr>
-    <td width="33%" align="center" valign="top">
-      <img src="docs/screenshots/account-login.webp" alt="Account login screen" width="160"><br><br>
-      <strong>Account login</strong><br>
-      <sub>Multilingual, invite-only access to a private memory space.</sub>
-    </td>
     <td width="33%" align="center" valign="top">
       <img src="docs/screenshots/star-color-customization.webp" alt="Star color customization on the main map" width="160"><br><br>
       <strong>Star color</strong><br>
@@ -28,13 +23,13 @@ The nine views below follow the app's core journey: enter a private space, shape
       <strong>Memory note</strong><br>
       <sub>Combine a place with rich text, photos, color, size, and underline.</sub>
     </td>
-  </tr>
-  <tr>
     <td width="33%" align="center" valign="top">
       <img src="docs/screenshots/route-tracking.webp" alt="Saved route with distance and duration" width="160"><br><br>
       <strong>Route tracking</strong><br>
       <sub>Record real movement and revisit distance, duration, and route shape.</sub>
     </td>
+  </tr>
+  <tr>
     <td width="33%" align="center" valign="top">
       <img src="docs/screenshots/trip-statistics.webp" alt="Trip statistics and location ranking" width="160"><br><br>
       <strong>Trip statistics</strong><br>
@@ -45,22 +40,10 @@ The nine views below follow the app's core journey: enter a private space, shape
       <strong>My records</strong><br>
       <sub>Revisit saved notes as a dated timeline with monthly and annual views.</sub>
     </td>
-  </tr>
-  <tr>
     <td width="33%" align="center" valign="top">
       <img src="docs/screenshots/memory-reader.webp" alt="Saved memory reader with writing, photography, and original date" width="160"><br><br>
       <strong>Memory reader</strong><br>
       <sub>Revisit a saved place through writing, photography, and its original date.</sub>
-    </td>
-    <td width="33%" align="center" valign="top">
-      <img src="docs/screenshots/profile-and-gallery.webp" alt="Profile, theme, image gallery, and settings screen" width="160"><br><br>
-      <strong>Profile &amp; gallery</strong><br>
-      <sub>Keep identity, themes, saved images, and personal controls together.</sub>
-    </td>
-    <td width="33%" align="center" valign="top">
-      <img src="docs/screenshots/settings-and-account.webp" alt="Settings, privacy, export, MCP, and account controls" width="160"><br><br>
-      <strong>Settings &amp; privacy</strong><br>
-      <sub>Control language, location, privacy, export, AI access, and the account lifecycle.</sub>
     </td>
   </tr>
 </table>
