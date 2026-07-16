@@ -1847,7 +1847,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
           </div>
 
           <div className="note-editor-scroll min-h-0 flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-            <div className="flex h-[2.75rem] items-end gap-3 border-b border-[var(--app-card)] pb-1.5">
+            <div className="flex h-[2.75rem] items-end border-b border-[var(--app-card)] pb-1.5">
               <div
                 ref={titleEditorRef}
                 contentEditable
@@ -1876,9 +1876,6 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                 }}
                 className="note-title-editor min-w-0 flex-1 font-sans font-medium bg-transparent border-none outline-none"
               />
-              <div className="self-start pt-1 text-[12px] font-medium leading-none text-black/40 shrink-0">
-                {currentIndex + 1}/{notes.length}
-              </div>
             </div>
 
             <div
@@ -1899,6 +1896,9 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
               style={{ fontSize: `${currentNote?.fontSize || 18}px` }}
               className="note-rich-editor min-h-[20rem] bg-transparent border-none outline-none font-sans text-[#7E9FBA] leading-relaxed"
             />
+            <div className="self-end pb-1 pr-1 text-[12px] font-medium leading-none tabular-nums text-black/40">
+              {currentIndex + 1}/{notes.length}
+            </div>
           </div>
         </div>
 
