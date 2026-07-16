@@ -852,10 +852,23 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     savedRangeRef.current = range.cloneRange();
   };
 
-  const keepEditorSelectionMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+  const keepEditorSelectionPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      if (rangeIsInsideTitle(range)) {
+        savedRangeRef.current = range.cloneRange();
+        setActiveTextTarget('title');
+        setSelectedFontSize(getFontSizeFromRange(range, titleEditorRef.current, currentNote?.titleFontSize || 18));
+        setSelectedUnderline(getUnderlineFromRange(range, titleEditorRef.current));
+        setSelectedColor(getColorFromRange(range, titleEditorRef.current, currentNote?.color || '#D2936D'));
+      } else if (rangeIsInsideEditor(range)) {
+        setActiveTextTarget('editor');
+        savedRangeRef.current = range.cloneRange();
+        syncToolbarFontSizeFromRange(range);
+      }
+    }
     e.preventDefault();
-    if (activeTextTarget === 'title' || document.activeElement === titleEditorRef.current) return;
-    saveEditorSelection();
   };
 
   const getEditorSelectionRange = () => {
@@ -1721,7 +1734,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
               <div className={fontButtonSlotClass}>
                 <button
-                  onMouseDown={keepEditorSelectionMouseDown}
+                  onPointerDown={keepEditorSelectionPointerDown}
                   onClick={() => setActivePanel(activePanel === 'font' ? null : 'font')}
                   className={fontButtonClass}
                   aria-label={copy.fontSize}
@@ -1735,7 +1748,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                     {FONT_SIZES.map(size => (
                       <button
                         key={size}
-                        onMouseDown={keepEditorSelectionMouseDown}
+                        onPointerDown={keepEditorSelectionPointerDown}
                         onClick={() => handleFontSize(size)}
                         className={`h-7 rounded-full text-[12px] font-medium transition-colors ${selectedFontSize === size ? 'bg-white text-black' : 'text-white hover:bg-white/15'}`}
                       >
@@ -1748,7 +1761,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
               <div className={toolbarButtonSlotClass}>
                 <button
-                  onMouseDown={keepEditorSelectionMouseDown}
+                  onPointerDown={keepEditorSelectionPointerDown}
                   onClick={handleUnderline}
                   className={`${toolbarButtonClass} ${selectedUnderline ? 'bg-[var(--app-dark)] text-white hover:brightness-100' : ''}`}
                   aria-label={copy.underline}
@@ -1759,7 +1772,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
               <div className={toolbarButtonSlotClass}>
                 <button
-                  onMouseDown={keepEditorSelectionMouseDown}
+                  onPointerDown={keepEditorSelectionPointerDown}
                   onClick={handleColorPanelToggle}
                   className={toolbarButtonClass}
                   aria-label={copy.noteColor}
@@ -1774,7 +1787,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                         {DEFAULT_COLORS.map(color => (
                           <button
                             key={color}
-                            onMouseDown={keepEditorSelectionMouseDown}
+                            onPointerDown={keepEditorSelectionPointerDown}
                             onClick={() => handleTextColor(color)}
                             className="w-[20px] h-[20px] rounded-full"
                             style={{
@@ -1784,7 +1797,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                           />
                         ))}
                         <button
-                          onMouseDown={keepEditorSelectionMouseDown}
+                          onPointerDown={keepEditorSelectionPointerDown}
                           onClick={() => setShowCustomPicker(!showCustomPicker)}
                           className="w-[20px] h-[20px] rounded-[6px] relative overflow-hidden"
                           style={{ boxShadow: showCustomPicker || !DEFAULT_COLORS.includes(selectedColor) ? '0 0 0 1.5px white' : 'none' }}
@@ -1813,7 +1826,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
               <div className={toolbarButtonSlotClass}>
                 <button
-                  onMouseDown={keepEditorSelectionMouseDown}
+                  onPointerDown={keepEditorSelectionPointerDown}
                   onClick={() => {
                     saveEditorSelection();
                     setActivePanel(null);
@@ -1830,7 +1843,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
 
               <div className={toolbarButtonSlotClass}>
                 <button
-                  onMouseDown={keepEditorSelectionMouseDown}
+                  onPointerDown={keepEditorSelectionPointerDown}
                   onClick={openCamera}
                   className={toolbarButtonClass}
                   aria-label={copy.takePhoto}
@@ -1862,11 +1875,11 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                 onFocus={syncToolbarFontSizeFromTitle}
                 onClick={syncToolbarFontSizeFromTitle}
                 onKeyUp={syncToolbarFontSizeFromTitle}
-                onMouseDown={() => {
+                onPointerDown={() => {
                   colorStyleSessionRef.current = null;
                   clearPendingTitleStyles();
                 }}
-                onMouseUp={syncToolbarFontSizeFromTitle}
+                onPointerUp={syncToolbarFontSizeFromTitle}
                 onKeyDown={e => {
                   if (e.key === 'Enter') e.preventDefault();
                 }}
@@ -1893,8 +1906,8 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
               onFocus={saveEditorSelection}
               onKeyDown={handleEditorKeyDown}
               onKeyUp={saveEditorSelection}
-              onMouseUp={saveEditorSelection}
-              onMouseDown={handleEditorMouseDown}
+              onPointerUp={saveEditorSelection}
+              onPointerDown={handleEditorMouseDown}
               onClick={handleEditorClick}
               style={{ fontSize: `${currentNote?.fontSize || 18}px` }}
               className="note-rich-editor min-h-[20rem] bg-transparent border-none outline-none font-sans text-[#7E9FBA] leading-relaxed"
