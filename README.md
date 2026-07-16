@@ -7,14 +7,6 @@
 
 ---
 
-## OpenAI Build Week
-
-My Life Memory existed before OpenAI Build Week, with its core map, place stars, memory notes, route recording, and foundational interface already in place.
-
-During Build Week, I led the product concept, visual and interaction design, feature decisions, testing, and acceptance. Codex was the primary implementation tool for coding, refactoring, debugging, testing, and documentation; the week's focus included normalized user-scoped storage, synchronization and conflict handling, the private media lifecycle, account lifecycle and privacy safeguards, the Memory API, and a read-only MCP for GPT-5.6-compatible AI clients.
-
-GPT-5.6 supported product and architecture review, privacy and interaction analysis, test planning, and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP.
-
 ## Screenshots
 
 The nine views below follow the app's core journey: enter a private space, shape places with stars, preserve memories in text and photos, record movement, review patterns, and manage personal data with clear privacy controls.
@@ -86,6 +78,14 @@ The nine views below follow the app's core journey: enter a private space, shape
 - Persist entity mutations to an IndexedDB outbox before network requests, commit them atomically with optimistic dataset revisions, and retain conflict copies for notes, star locations, routes, and profile metadata.
 - Soft-delete memories, retain the latest 20 historical versions per entity, and protect media referenced by active rows, deleted rows, history, conflicts, or pending local work.
 - Show an in-app user manual for map, record, statistics, account, icon, and permission behavior.
+
+## OpenAI Build Week
+
+My Life Memory existed before OpenAI Build Week, with its core map, place stars, memory notes, route recording, and foundational interface already in place.
+
+During Build Week, I led the product concept, visual and interaction design, feature decisions, testing, and acceptance. Codex was the primary implementation tool for coding, refactoring, debugging, testing, and documentation; the week's focus included normalized user-scoped storage, synchronization and conflict handling, the private media lifecycle, account lifecycle and privacy safeguards, the Memory API, and a read-only MCP for GPT-5.6-compatible AI clients.
+
+GPT-5.6 supported product and architecture review, privacy and interaction analysis, test planning, and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP.
 
 ## Tech Stack
 
