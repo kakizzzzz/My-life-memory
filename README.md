@@ -6,15 +6,38 @@ My Life Memory is a private life-map app for saving places, notes, photos, route
 
 Places become memories: mark them on the map, attach photos and notes, revisit them through the timeline, and see the wider travel pattern in statistics.
 
-| Login | Main map | Memory note |
-| --- | --- | --- |
-| ![Account login screen](docs/screenshots/login-screen.svg) | ![Main map with place stars and color tools](docs/screenshots/main-map.svg) | ![Memory note with a photo, title, and rich-text tools](docs/screenshots/memory-note.svg) |
-| Account login with language switching. | Create, browse, recolor, and edit place memories directly on the map. | Keep a place, image, and written memory together. |
+<table>
+  <tr>
+    <th width="33%">Login</th>
+    <th width="33%">Main map</th>
+    <th width="33%">Memory note</th>
+  </tr>
+  <tr>
+    <td width="33%" align="center" valign="top"><img src="docs/screenshots/login-screen.svg" alt="Account login screen" width="160"></td>
+    <td width="33%" align="center" valign="top"><img src="docs/screenshots/main-map.svg" alt="Main map with place stars and color tools" width="160"></td>
+    <td width="33%" align="center" valign="top"><img src="docs/screenshots/memory-note.svg" alt="Memory note with a photo, title, and rich-text tools" width="160"></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center" valign="top"><sub>Account login with language switching.</sub></td>
+    <td width="33%" align="center" valign="top"><sub>Create and edit place memories directly on the map.</sub></td>
+    <td width="33%" align="center" valign="top"><sub>Keep a place, image, and written memory together.</sub></td>
+  </tr>
+</table>
 
-| Records | Trip statistics |
-| --- | --- |
-| ![Timeline of saved records](docs/screenshots/records-timeline.svg) | ![Trip statistics with a dotted world map and location ranking](docs/screenshots/trip-statistics.svg) |
-| Browse saved memories as a dated timeline. | Review marked places, rankings, and the dotted world-map overview. |
+<table>
+  <tr>
+    <th width="50%">Records</th>
+    <th width="50%">Trip statistics</th>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top"><img src="docs/screenshots/records-timeline.svg" alt="Timeline of saved records" width="160"></td>
+    <td width="50%" align="center" valign="top"><img src="docs/screenshots/trip-statistics.svg" alt="Trip statistics with a dotted world map and location ranking" width="160"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top"><sub>Browse saved memories as a dated timeline.</sub></td>
+    <td width="50%" align="center" valign="top"><sub>Review marked places, rankings, and the dotted world-map overview.</sub></td>
+  </tr>
+</table>
 
 ## Features
 
