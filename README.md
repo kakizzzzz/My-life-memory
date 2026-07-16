@@ -1,10 +1,9 @@
-<div align="center">
-  <h1>My Life Memory</h1>
-</div>
-
 ![My Life Memory product overview showing the map, notes, routes, statistics, records, reader, and profile](docs/my-life-memory-overview.webp)
 
-<p align="center">My Life Memory is a private life-map app for saving places, notes, photos, routes, coordinates, and travel statistics in one personal memory space.</p>
+<div align="center">
+  <h1>My Life Memory</h1>
+  <p>My Life Memory is a private life-map app for saving places, notes, photos, routes, coordinates, and travel statistics in one personal memory space.</p>
+</div>
 
 ---
 
