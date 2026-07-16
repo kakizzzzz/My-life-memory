@@ -66,7 +66,7 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 My Life Memory existed before OpenAI Build Week, with its core map, place stars, memory notes, route recording, and foundational interface already in place.
 
-During Build Week, I led the product concept, visual and interaction design, feature decisions, testing, and acceptance. Codex was the primary implementation tool for coding, refactoring, debugging, testing, and documentation; the week's focus included normalized user-scoped storage, synchronization and conflict handling, the private media lifecycle, account lifecycle and privacy safeguards, the Memory API, and a read-only MCP for GPT-5.6-compatible AI clients.
+All visual design, UI/UX, interaction design, and product direction were created independently by me. I also made the feature decisions and led testing and acceptance. Codex was used under my direction for implementation, refactoring, debugging, testing, and documentation; the week's focus included normalized user-scoped storage, synchronization and conflict handling, the private media lifecycle, account lifecycle and privacy safeguards, the Memory API, and a read-only MCP for GPT-5.6-compatible AI clients.
 
 GPT-5.6 supported product and architecture review, privacy and interaction analysis, test planning, and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP.
 
