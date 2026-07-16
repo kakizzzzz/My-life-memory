@@ -22,52 +22,52 @@ The nine views below follow the app's core journey: enter a private space, shape
   <tr>
     <td width="33%" align="center" valign="top">
       <strong>Account login</strong><br><br>
-      <img src="docs/screenshots/account-login.png" alt="Account login screen" width="160"><br><br>
+      <img src="docs/screenshots/account-login.webp" alt="Account login screen" width="160"><br><br>
       <sub>Multilingual, invite-only access to a private memory space.</sub>
     </td>
     <td width="33%" align="center" valign="top">
       <strong>Star color</strong><br><br>
-      <img src="docs/screenshots/star-color-customization.png" alt="Star color customization on the main map" width="160"><br><br>
+      <img src="docs/screenshots/star-color-customization.webp" alt="Star color customization on the main map" width="160"><br><br>
       <sub>Place memories on the map and give each star its own visual identity.</sub>
     </td>
     <td width="33%" align="center" valign="top">
       <strong>Memory note</strong><br><br>
-      <img src="docs/screenshots/memory-note-editor.png" alt="Memory note editor with photo and rich text" width="160"><br><br>
+      <img src="docs/screenshots/memory-note-editor.webp" alt="Memory note editor with photo and rich text" width="160"><br><br>
       <sub>Combine a place with rich text, photos, color, size, and underline.</sub>
     </td>
   </tr>
   <tr>
     <td width="33%" align="center" valign="top">
       <strong>Route tracking</strong><br><br>
-      <img src="docs/screenshots/route-tracking.png" alt="Saved route with distance and duration" width="160"><br><br>
+      <img src="docs/screenshots/route-tracking.webp" alt="Saved route with distance and duration" width="160"><br><br>
       <sub>Record real movement and revisit distance, duration, and route shape.</sub>
     </td>
     <td width="33%" align="center" valign="top">
       <strong>Trip statistics</strong><br><br>
-      <img src="docs/screenshots/trip-statistics.png" alt="Trip statistics and location ranking" width="160"><br><br>
+      <img src="docs/screenshots/trip-statistics.webp" alt="Trip statistics and location ranking" width="160"><br><br>
       <sub>Turn stars and routes into location counts, rankings, and travel patterns.</sub>
     </td>
     <td width="33%" align="center" valign="top">
-      <strong>Profile &amp; gallery</strong><br><br>
-      <img src="docs/screenshots/profile-and-gallery.png" alt="Profile, theme, image gallery, and settings screen" width="160"><br><br>
-      <sub>Keep identity, themes, saved images, and personal controls together.</sub>
+      <strong>My records</strong><br><br>
+      <img src="docs/screenshots/records-timeline.webp" alt="Timeline of saved memory records" width="160"><br><br>
+      <sub>Revisit saved notes as a dated timeline with monthly and annual views.</sub>
     </td>
   </tr>
   <tr>
     <td width="33%" align="center" valign="top">
-      <strong>Settings &amp; privacy</strong><br><br>
-      <img src="docs/screenshots/settings-and-account.png" alt="Settings, privacy, export, MCP, and account controls" width="160"><br><br>
-      <sub>Control language, location, privacy, export, AI access, and the account lifecycle.</sub>
-    </td>
-    <td width="33%" align="center" valign="top">
-      <strong>My records</strong><br><br>
-      <img src="docs/screenshots/records-timeline.png" alt="Timeline of saved memory records" width="160"><br><br>
-      <sub>Revisit saved notes as a dated timeline with monthly and annual views.</sub>
-    </td>
-    <td width="33%" align="center" valign="top">
       <strong>Memory reader</strong><br><br>
-      <img src="docs/screenshots/memory-reader.png" alt="Saved memory reader with writing, photography, and original date" width="160"><br><br>
+      <img src="docs/screenshots/memory-reader.webp" alt="Saved memory reader with writing, photography, and original date" width="160"><br><br>
       <sub>Revisit a saved place through writing, photography, and its original date.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <strong>Profile &amp; gallery</strong><br><br>
+      <img src="docs/screenshots/profile-and-gallery.webp" alt="Profile, theme, image gallery, and settings screen" width="160"><br><br>
+      <sub>Keep identity, themes, saved images, and personal controls together.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <strong>Settings &amp; privacy</strong><br><br>
+      <img src="docs/screenshots/settings-and-account.webp" alt="Settings, privacy, export, MCP, and account controls" width="160"><br><br>
+      <sub>Control language, location, privacy, export, AI access, and the account lifecycle.</sub>
     </td>
   </tr>
 </table>
