@@ -1,41 +1,58 @@
-# My Life Memory
+<div align="center">
+  <h1>My Life Memory</h1>
+  <p><strong>A private map for the places, movements, and moments that shape a life.</strong></p>
+  <p>My Life Memory is a private life-map app for saving places, notes, photos, routes, coordinates, and travel statistics in one personal memory space.</p>
+</div>
 
-My Life Memory is a private life-map app for saving places, notes, photos, routes, coordinates, and travel statistics in one personal memory space.
+---
 
 ## Screenshots
 
-Places become memories: mark them on the map, attach photos and notes, revisit them through the timeline, and see the wider travel pattern in statistics.
+The seven views below follow the app's core journey: enter a private space, shape places with stars, preserve memories in text and photos, record movement, review patterns, and manage personal data with clear privacy controls.
 
 <table>
   <tr>
-    <th width="33%">Login</th>
-    <th width="33%">Main map</th>
-    <th width="33%">Memory note</th>
+    <td width="33%" align="center" valign="top">
+      <strong>Account login</strong><br><br>
+      <img src="docs/screenshots/account-login.png" alt="Account login screen" width="160"><br><br>
+      <sub>Multilingual, invite-only access to a private memory space.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <strong>Star color</strong><br><br>
+      <img src="docs/screenshots/star-color-customization.png" alt="Star color customization on the main map" width="160"><br><br>
+      <sub>Place memories on the map and give each star its own visual identity.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <strong>Memory note</strong><br><br>
+      <img src="docs/screenshots/memory-note-editor.png" alt="Memory note editor with photo and rich text" width="160"><br><br>
+      <sub>Combine a place with rich text, photos, color, size, and underline.</sub>
+    </td>
   </tr>
   <tr>
-    <td width="33%" align="center" valign="top"><img src="docs/screenshots/login-screen.svg" alt="Account login screen" width="160"></td>
-    <td width="33%" align="center" valign="top"><img src="docs/screenshots/main-map.svg" alt="Main map with place stars and color tools" width="160"></td>
-    <td width="33%" align="center" valign="top"><img src="docs/screenshots/memory-note.svg" alt="Memory note with a photo, title, and rich-text tools" width="160"></td>
+    <td width="33%" align="center" valign="top">
+      <strong>Route tracking</strong><br><br>
+      <img src="docs/screenshots/route-tracking.png" alt="Saved route with distance and duration" width="160"><br><br>
+      <sub>Record real movement and revisit distance, duration, and route shape.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <strong>Trip statistics</strong><br><br>
+      <img src="docs/screenshots/trip-statistics.png" alt="Trip statistics and location ranking" width="160"><br><br>
+      <sub>Turn stars and routes into location counts, rankings, and travel patterns.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <strong>Profile &amp; gallery</strong><br><br>
+      <img src="docs/screenshots/profile-and-gallery.png" alt="Profile, theme, image gallery, and settings screen" width="160"><br><br>
+      <sub>Keep identity, themes, saved images, and personal controls together.</sub>
+    </td>
   </tr>
   <tr>
-    <td width="33%" align="center" valign="top"><sub>Account login with language switching.</sub></td>
-    <td width="33%" align="center" valign="top"><sub>Create and edit place memories directly on the map.</sub></td>
-    <td width="33%" align="center" valign="top"><sub>Keep a place, image, and written memory together.</sub></td>
-  </tr>
-</table>
-
-<table>
-  <tr>
-    <th width="50%">Records</th>
-    <th width="50%">Trip statistics</th>
-  </tr>
-  <tr>
-    <td width="50%" align="center" valign="top"><img src="docs/screenshots/records-timeline.svg" alt="Timeline of saved records" width="160"></td>
-    <td width="50%" align="center" valign="top"><img src="docs/screenshots/trip-statistics.svg" alt="Trip statistics with a dotted world map and location ranking" width="160"></td>
-  </tr>
-  <tr>
-    <td width="50%" align="center" valign="top"><sub>Browse saved memories as a dated timeline.</sub></td>
-    <td width="50%" align="center" valign="top"><sub>Review marked places, rankings, and the dotted world-map overview.</sub></td>
+    <td width="33%" align="center" valign="top"></td>
+    <td width="33%" align="center" valign="top">
+      <strong>Settings &amp; privacy</strong><br><br>
+      <img src="docs/screenshots/settings-and-account.png" alt="Settings, privacy, export, MCP, and account controls" width="160"><br><br>
+      <sub>Control language, location, privacy, export, AI access, and the account lifecycle.</sub>
+    </td>
+    <td width="33%" align="center" valign="top"></td>
   </tr>
 </table>
 
