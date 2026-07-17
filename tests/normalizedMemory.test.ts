@@ -4,6 +4,8 @@ import { normalizePersistedAppState } from '../src/lib/appStateNormalize';
 import {
   convertLegacyPendingSnapshotToMutations,
   extractPendingMemoryMediaPaths,
+  memoryOutboxForUser,
+  newestMemoryOutboxForUser,
 } from '../src/lib/memoryOutbox';
 import {
   assembleNormalizedMemoryState,
@@ -242,6 +244,31 @@ test('pending outbox media scanning protects only the active user folder', () =>
     },
   }, userId);
   assert.deepEqual(paths.sort(), [ownHtmlPath, ownMetadataPath].sort());
+});
+
+test('pending outbox selection never crosses account boundaries', () => {
+  const firstUser = '11111111-1111-4111-8111-111111111111';
+  const secondUser = '22222222-2222-4222-8222-222222222222';
+  const firstOutbox = {
+    userId: firstUser,
+    expectedRevision: 1,
+    mutations: [],
+    sequence: 99,
+    savedAt: 99,
+    language: 'en',
+  };
+  const secondOutbox = {
+    userId: secondUser,
+    expectedRevision: 1,
+    mutations: [],
+    sequence: 1,
+    savedAt: 1,
+    language: 'zh',
+  };
+
+  assert.equal(memoryOutboxForUser(firstOutbox, secondUser), null);
+  assert.equal(newestMemoryOutboxForUser(firstOutbox, secondOutbox, secondUser), secondOutbox);
+  assert.equal(newestMemoryOutboxForUser(firstOutbox, null, secondUser), null);
 });
 
 test('note edit versus remote parent-star deletion preserves a valid star and all local notes', () => {

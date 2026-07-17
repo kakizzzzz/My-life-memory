@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-life-memory-shell-v2-registration-integrity';
+const CACHE_NAME = 'my-life-memory-shell-v4-http-error-fallback';
 const SHELL_FILES = ['./', './index.html', './site.webmanifest', './app-icon.png'];
 
 self.addEventListener('install', event => {
@@ -29,10 +29,27 @@ self.addEventListener('fetch', event => {
           if (response.ok) {
             const copy = response.clone();
             void caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
+            return response;
           }
-          return response;
+          return caches.match('./index.html').then(cached => cached || response);
         })
         .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  if (url.pathname.endsWith('/app-icon.png') || url.pathname.endsWith('/site.webmanifest')) {
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          if (response.ok) {
+            const copy = response.clone();
+            void caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+            return response;
+          }
+          return caches.match(request).then(cached => cached || response);
+        })
+        .catch(() => caches.match(request))
     );
     return;
   }

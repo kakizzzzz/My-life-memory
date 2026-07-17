@@ -201,8 +201,10 @@ export const loadMemoryChangesSince = async (revision: number): Promise<MemoryCh
   throw new Error('Memory changed repeatedly while loading incremental changes. Please retry.');
 };
 
-export const loadProtectedMemoryMediaPaths = async () => {
-  const client = requireSupabase();
+export const loadProtectedMemoryMediaPaths = async (
+  clientOverride?: NonNullable<typeof supabase>,
+) => {
+  const client = clientOverride || requireSupabase();
   const { data, error } = await client.rpc('list_protected_memory_media_paths');
   if (error) throw error;
   return ((data || []) as Array<{ path?: unknown } | string>)
@@ -218,8 +220,10 @@ export type MemoryTrashPurgeResult = {
   deletedHistory: number;
 };
 
-export const purgeExpiredMemoryTrash = async (): Promise<MemoryTrashPurgeResult> => {
-  const client = requireSupabase();
+export const purgeExpiredMemoryTrash = async (
+  clientOverride?: NonNullable<typeof supabase>,
+): Promise<MemoryTrashPurgeResult> => {
+  const client = clientOverride || requireSupabase();
   const { data, error } = await client.rpc('purge_expired_memory_trash');
   if (error) throw error;
   const result = (data || {}) as Partial<MemoryTrashPurgeResult>;

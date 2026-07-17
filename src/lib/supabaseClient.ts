@@ -84,4 +84,22 @@ export const supabase = isCloudBackendEnabled
     })
   : null;
 
+export const createSessionScopedSupabaseClient = (accessToken: string) => {
+  const token = accessToken.trim();
+  if (!isCloudBackendEnabled || !supabaseUrl || !supabaseAnonKey || !token) return null;
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  });
+};
+
 export type CloudSession = Session;

@@ -31,71 +31,106 @@ export const useMcpTokens = ({
   const [mcpPlainToken, setMcpPlainToken] = React.useState('');
   const [mcpTokenStatus, setMcpTokenStatus] = React.useState('');
   const [isMcpTokenBusy, setIsMcpTokenBusy] = React.useState(false);
+  const requestGenerationRef = React.useRef(0);
+  const statusTimerRef = React.useRef<number | null>(null);
 
-  const loadMcpTokens = React.useCallback(async () => {
+  const clearStatusTimer = React.useCallback(() => {
+    if (statusTimerRef.current !== null) {
+      window.clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
+  }, []);
+
+  const loadMcpTokens = React.useCallback(async (generation: number) => {
     if (!isCloudBackendEnabled || !isSignedIn) return;
     try {
       const tokens = await listCloudMcpTokens();
+      if (requestGenerationRef.current !== generation) return;
       setMcpTokens(tokens);
     } catch (error) {
+      if (requestGenerationRef.current !== generation) return;
       console.error('Could not load MCP tokens:', error);
+      setMcpTokens([]);
       setMcpTokenStatus(copy.mcpFailed);
     }
   }, [copy.mcpFailed, isSignedIn]);
 
   const handleCreateMcpToken = React.useCallback(async () => {
     if (isMcpTokenBusy) return;
+    const generation = requestGenerationRef.current;
     setIsMcpTokenBusy(true);
     setMcpTokenStatus('');
     setMcpPlainToken('');
     try {
       const result = await createCloudMcpToken(`${account || 'My'} MCP`);
+      if (requestGenerationRef.current !== generation) return;
       setMcpPlainToken(result.token);
       setMcpTokens([result.tokenInfo]);
       setMcpTokenStatus(copy.mcpTokenReady);
     } catch (error) {
+      if (requestGenerationRef.current !== generation) return;
       console.error('Could not create MCP token:', error);
       setMcpTokenStatus(copy.mcpFailed);
     } finally {
-      setIsMcpTokenBusy(false);
+      if (requestGenerationRef.current === generation) setIsMcpTokenBusy(false);
     }
   }, [account, copy.mcpFailed, copy.mcpTokenReady, isMcpTokenBusy]);
 
   const handleCopyMcpText = React.useCallback(async (text: string) => {
+    const generation = requestGenerationRef.current;
     try {
       await copyToClipboard(text);
+      if (requestGenerationRef.current !== generation) return;
+      clearStatusTimer();
       setMcpTokenStatus(copy.mcpCopied);
-      window.setTimeout(() => setMcpTokenStatus(''), 800);
+      statusTimerRef.current = window.setTimeout(() => {
+        statusTimerRef.current = null;
+        if (requestGenerationRef.current === generation) setMcpTokenStatus('');
+      }, 800);
     } catch (error) {
+      if (requestGenerationRef.current !== generation) return;
       console.error('Could not copy MCP text:', error);
       setMcpTokenStatus(copy.mcpFailed);
     }
-  }, [copy.mcpCopied, copy.mcpFailed]);
+  }, [clearStatusTimer, copy.mcpCopied, copy.mcpFailed]);
 
   const handleRevokeMcpToken = React.useCallback(async (tokenId: string) => {
     if (isMcpTokenBusy) return;
+    const generation = requestGenerationRef.current;
     setIsMcpTokenBusy(true);
     setMcpTokenStatus('');
     try {
       await revokeCloudMcpToken(tokenId);
+      if (requestGenerationRef.current !== generation) return;
       setMcpTokens(current => current.filter(token => token.id !== tokenId));
       setMcpTokenStatus(copy.mcpRevoked);
     } catch (error) {
+      if (requestGenerationRef.current !== generation) return;
       console.error('Could not revoke MCP token:', error);
       setMcpTokenStatus(copy.mcpFailed);
     } finally {
-      setIsMcpTokenBusy(false);
+      if (requestGenerationRef.current === generation) setIsMcpTokenBusy(false);
     }
   }, [copy.mcpFailed, copy.mcpRevoked, isMcpTokenBusy]);
 
   React.useEffect(() => {
-    if (isSignedIn && activeHomePanel === 'mcp' && isCloudBackendEnabled) {
-      void loadMcpTokens();
-      return;
-    }
+    const generation = requestGenerationRef.current + 1;
+    requestGenerationRef.current = generation;
+    clearStatusTimer();
+    setMcpTokens([]);
     setMcpPlainToken('');
     setMcpTokenStatus('');
-  }, [activeHomePanel, isSignedIn, loadMcpTokens]);
+    setIsMcpTokenBusy(false);
+
+    if (isSignedIn && activeHomePanel === 'mcp' && isCloudBackendEnabled) {
+      void loadMcpTokens(generation);
+    }
+  }, [account, activeHomePanel, clearStatusTimer, isSignedIn, loadMcpTokens]);
+
+  React.useEffect(() => () => {
+    requestGenerationRef.current += 1;
+    clearStatusTimer();
+  }, [clearStatusTimer]);
 
   return {
     mcpTokens,

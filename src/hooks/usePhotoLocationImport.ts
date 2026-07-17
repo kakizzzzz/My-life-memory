@@ -1,7 +1,9 @@
 import React from 'react';
 import { sanitizeRichHtml } from '../lib/htmlSanitizer';
 import {
+  captureMediaAccountScope,
   dehydrateStorageMediaHtml,
+  discardUploadedImageForScope,
   isSupabaseMediaEnabled,
   requestCloudMediaMaintenance,
   uploadImageToStorage,
@@ -19,6 +21,7 @@ import {
   readerEditableTailHtml,
 } from '../lib/noteHtmlUtils';
 import type { NoteData, StarData } from '../types/app';
+import { useAsyncScope } from './useAsyncScope';
 
 type PhotoLocationImportCopy = {
   photoLocationLoading: string;
@@ -31,17 +34,21 @@ type PhotoLocationImportCopy = {
 };
 
 export const usePhotoLocationImport = ({
+  accountScopeKey,
   copy,
   addStarAtLatLng,
   onCreated,
 }: {
+  accountScopeKey: string;
   copy: PhotoLocationImportCopy;
   addStarAtLatLng: (lat: number, lng: number, starData?: Partial<StarData>) => void;
   onCreated: (starId: string, coordinates: [number, number]) => void;
 }) => {
+  const { captureScope, isScopeCurrent } = useAsyncScope(accountScopeKey);
   const [isReadingPhotoLocation, setIsReadingPhotoLocation] = React.useState(false);
   const [photoLocationStatus, setPhotoLocationStatus] = React.useState('');
   const photoLocationStatusTimerRef = React.useRef<number | null>(null);
+  const importRequestRef = React.useRef(0);
 
   const showPhotoLocationStatus = React.useCallback((message: string, durationMs = 500) => {
     if (photoLocationStatusTimerRef.current !== null) {
@@ -63,6 +70,16 @@ export const usePhotoLocationImport = ({
     }
   }, []);
 
+  React.useEffect(() => {
+    importRequestRef.current += 1;
+    if (photoLocationStatusTimerRef.current !== null) {
+      window.clearTimeout(photoLocationStatusTimerRef.current);
+      photoLocationStatusTimerRef.current = null;
+    }
+    setIsReadingPhotoLocation(false);
+    setPhotoLocationStatus('');
+  }, [accountScopeKey]);
+
   const handlePhotoLocationInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -71,11 +88,23 @@ export const usePhotoLocationImport = ({
     if (!looksLikeImage) return;
     if (isReadingPhotoLocation) return;
 
+    const runScope = captureScope();
+    const requestId = importRequestRef.current + 1;
+    importRequestRef.current = requestId;
+    const isCurrent = () => (
+      importRequestRef.current === requestId && isScopeCurrent(runScope)
+    );
+
     setIsReadingPhotoLocation(true);
     showPhotoLocationStatus(copy.photoLocationLoading, 0);
 
     try {
+      const accountScope = isSupabaseMediaEnabled
+        ? await captureMediaAccountScope()
+        : null;
+      if (!isCurrent()) return;
       const coordinates = await readPhotoGpsCoordinates(file);
+      if (!isCurrent()) return;
       if (!coordinates) {
         showPhotoLocationStatus(copy.photoLocationNoGps, 1800);
         return;
@@ -86,22 +115,32 @@ export const usePhotoLocationImport = ({
       const starId = createClientId();
       const noteId = createClientId();
       const imageUrl = await compressImageFileToDataUrl(file);
+      if (!isCurrent()) return;
       let imageHtml = imageToReaderHtml(imageUrl, copy.noteImageAlt, copy.removeImage);
       let imageMetadata: StoredImageMetadata | undefined;
 
-      if (isSupabaseMediaEnabled) {
+      if (isSupabaseMediaEnabled && accountScope) {
         try {
           const compressedFile = await dataUrlToFile(imageUrl, file.name || `${timestamp}.jpg`);
+          if (!isCurrent()) return;
           const uploaded = await uploadImageToStorage(compressedFile, {
             noteId,
             folder: 'notes',
             fileName: compressedFile.name,
+            accountScope: accountScope || undefined,
           });
+          if (!isCurrent()) {
+            if (uploaded.metadata && accountScope) {
+              await discardUploadedImageForScope(uploaded.metadata, accountScope);
+            }
+            return;
+          }
           if (uploaded.metadata) {
             imageMetadata = uploaded.metadata;
             imageHtml = imageToReaderHtml(uploaded.src, copy.noteImageAlt, copy.removeImage, uploaded.metadata);
           }
         } catch (error) {
+          if (!isCurrent()) return;
           console.warn('Supabase Storage photo GPS upload failed, using data URL fallback:', error);
           requestCloudMediaMaintenance();
         }
@@ -123,6 +162,12 @@ export const usePhotoLocationImport = ({
         color: '#D2936D',
       };
 
+      if (!isCurrent()) {
+        if (imageMetadata && accountScope) {
+          await discardUploadedImageForScope(imageMetadata, accountScope);
+        }
+        return;
+      }
       addStarAtLatLng(lat, lng, {
         id: starId,
         createdAt: timestamp,
@@ -132,13 +177,15 @@ export const usePhotoLocationImport = ({
       onCreated(starId, [lat, lng]);
       showPhotoLocationStatus(copy.photoLocationCreated, 500);
     } catch (error) {
+      if (!isCurrent()) return;
       console.error('Could not create star from photo GPS:', error);
       showPhotoLocationStatus(copy.photoLocationFailed, 500);
     } finally {
-      setIsReadingPhotoLocation(false);
+      if (isCurrent()) setIsReadingPhotoLocation(false);
     }
   }, [
     addStarAtLatLng,
+    captureScope,
     copy.noteImageAlt,
     copy.photoGpsNoteTitle,
     copy.photoLocationCreated,
@@ -147,6 +194,7 @@ export const usePhotoLocationImport = ({
     copy.photoLocationNoGps,
     copy.removeImage,
     isReadingPhotoLocation,
+    isScopeCurrent,
     onCreated,
     showPhotoLocationStatus,
   ]);

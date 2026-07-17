@@ -40,6 +40,26 @@ export type MemoryMutationOutbox = {
   lastError?: string;
 };
 
+export const memoryOutboxForUser = (
+  outbox: MemoryMutationOutbox | null,
+  userId: string
+) => outbox?.userId === userId ? outbox : null;
+
+export const newestMemoryOutboxForUser = (
+  first: MemoryMutationOutbox | null,
+  second: MemoryMutationOutbox | null,
+  userId: string
+) => {
+  const firstForUser = memoryOutboxForUser(first, userId);
+  const secondForUser = memoryOutboxForUser(second, userId);
+  if (!firstForUser) return secondForUser;
+  if (!secondForUser) return firstForUser;
+  if (firstForUser.sequence !== secondForUser.sequence) {
+    return firstForUser.sequence > secondForUser.sequence ? firstForUser : secondForUser;
+  }
+  return firstForUser.savedAt >= secondForUser.savedAt ? firstForUser : secondForUser;
+};
+
 type MigratedPendingCloudSnapshot = PendingCloudSnapshot & {
   migratedToMutationOutboxAt?: number;
   migrationBlockedReason?: string;

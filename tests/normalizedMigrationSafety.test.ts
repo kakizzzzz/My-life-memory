@@ -68,7 +68,10 @@ test('same-account recovery cannot target another source account', () => {
   assert.match(recovery, /No legacy archive exists for this user/);
 });
 
-test('service worker cache is bumped for the normalized client', () => {
-  assert.match(serviceWorker, /my-life-memory-shell-v2-registration-integrity/);
-  assert.doesNotMatch(serviceWorker, /my-life-memory-shell-v1/);
+test('service worker refreshes fixed PWA assets while retaining an offline fallback', () => {
+  assert.match(serviceWorker, /my-life-memory-shell-v4-http-error-fallback/);
+  assert.match(serviceWorker, /url\.pathname\.endsWith\('\/app-icon\.png'\)/);
+  assert.match(serviceWorker, /url\.pathname\.endsWith\('\/site\.webmanifest'\)/);
+  assert.match(serviceWorker, /fetch\(request\)[\s\S]*catch\(\(\) => caches\.match\(request\)\)/);
+  assert.match(serviceWorker, /if \(response\.ok\)[\s\S]*return caches\.match\('\.\/index\.html'\)\.then\(cached => cached \|\| response\)/);
 });

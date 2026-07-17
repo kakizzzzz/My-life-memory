@@ -63,6 +63,9 @@ export const useLocationController = ({
   const [trackingActive, setTrackingActive] = React.useState(false);
 
   const isLocating = React.useRef(false);
+  const pendingLocationShouldFlyRef = React.useRef(false);
+  const locationRequestEpochRef = React.useRef(0);
+  const locationRequestWaitersRef = React.useRef<Array<(ready: boolean) => void>>([]);
   const gpsWatchIdRef = React.useRef<number | null>(null);
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
@@ -139,6 +142,46 @@ export const useLocationController = ({
     }
   }, [applyLocationPoint, syncDefaultStarNearUser]);
 
+  const cancelPendingLocationRequest = React.useCallback(() => {
+    locationRequestEpochRef.current += 1;
+    isLocating.current = false;
+    pendingLocationShouldFlyRef.current = false;
+    const waiters = locationRequestWaitersRef.current.splice(0);
+    waiters.forEach(resolve => resolve(false));
+  }, []);
+
+  const requestCurrentPosition = React.useCallback((options: PositionOptions) => new Promise<boolean>(resolve => {
+    locationRequestWaitersRef.current.push(resolve);
+    if (isLocating.current) return;
+
+    isLocating.current = true;
+    const requestEpoch = locationRequestEpochRef.current;
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        if (locationRequestEpochRef.current !== requestEpoch) return;
+        const shouldFly = pendingLocationShouldFlyRef.current;
+        isLocating.current = false;
+        pendingLocationShouldFlyRef.current = false;
+        applyGpsPosition(position, shouldFly);
+        const waiters = locationRequestWaitersRef.current.splice(0);
+        waiters.forEach(waiter => waiter(true));
+      },
+      error => {
+        if (locationRequestEpochRef.current !== requestEpoch) return;
+        const shouldFly = pendingLocationShouldFlyRef.current;
+        isLocating.current = false;
+        pendingLocationShouldFlyRef.current = false;
+        if (shouldFly) setFlyTarget([userLocation[0], userLocation[1]]);
+        if (error.code === error.PERMISSION_DENIED && !trackingStateRef.current.isTracking) {
+          setIsWatchingUserLocation(false);
+        }
+        const waiters = locationRequestWaitersRef.current.splice(0);
+        waiters.forEach(waiter => waiter(false));
+      },
+      options
+    );
+  }), [applyGpsPosition, userLocation]);
+
   const stopGpsWatch = React.useCallback(() => {
     if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
       navigator.geolocation.clearWatch(gpsWatchIdRef.current);
@@ -194,25 +237,13 @@ export const useLocationController = ({
     }
 
     setIsWatchingUserLocation(true);
+    pendingLocationShouldFlyRef.current = pendingLocationShouldFlyRef.current || shouldFly;
     const options = trackingStateRef.current.isTracking
       ? GEOLOCATION_OPTIONS
       : PASSIVE_GEOLOCATION_OPTIONS;
-    navigator.geolocation.getCurrentPosition(
-      position => {
-        applyGpsPosition(position, shouldFly);
-        isLocating.current = false;
-      },
-      error => {
-        if (shouldFly) setFlyTarget([userLocation[0], userLocation[1]]);
-        if (error.code === error.PERMISSION_DENIED && !trackingStateRef.current.isTracking) {
-          setIsWatchingUserLocation(false);
-        }
-        isLocating.current = false;
-      },
-      options
-    );
+    void requestCurrentPosition(options);
     return true;
-  }, [applyGpsPosition, userLocation]);
+  }, [requestCurrentPosition, userLocation]);
 
   const requestLocationPermissionOnce = React.useCallback(() => new Promise<boolean>(resolve => {
     if (!canUseBrowserGeolocation()) {
@@ -221,20 +252,8 @@ export const useLocationController = ({
     }
 
     setIsWatchingUserLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      position => {
-        applyGpsPosition(position, false);
-        resolve(true);
-      },
-      error => {
-        if (error.code === error.PERMISSION_DENIED && !trackingStateRef.current.isTracking) {
-          setIsWatchingUserLocation(false);
-        }
-        resolve(false);
-      },
-      PASSIVE_GEOLOCATION_OPTIONS
-    );
-  }), [applyGpsPosition]);
+    requestCurrentPosition(PASSIVE_GEOLOCATION_OPTIONS).then(resolve);
+  }), [requestCurrentPosition]);
 
   const handleOpenPermissions = React.useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -374,13 +393,15 @@ export const useLocationController = ({
   }, [activeView, isDocumentVisible, stopHeadingWatch, trackingActive]);
 
   React.useEffect(() => () => {
+    cancelPendingLocationRequest();
     stopGpsWatch();
     stopHeadingWatch();
-  }, [stopGpsWatch, stopHeadingWatch]);
+  }, [cancelPendingLocationRequest, stopGpsWatch, stopHeadingWatch]);
 
   const getLastGpsLocation = React.useCallback(() => lastGpsLocationRef.current, []);
 
   const resetLocationSession = React.useCallback(() => {
+    cancelPendingLocationRequest();
     hasRequestedEntryLocationRef.current = false;
     hasSyncedDefaultStarToGpsRef.current = false;
     setHasSeenInitialPermissionPrompt(false);
@@ -388,7 +409,7 @@ export const useLocationController = ({
     setIsWatchingUserLocation(false);
     stopGpsWatch();
     if (!trackingStateRef.current.isTracking) stopHeadingWatch();
-  }, [stopGpsWatch, stopHeadingWatch]);
+  }, [cancelPendingLocationRequest, stopGpsWatch, stopHeadingWatch]);
 
   const setTrackingState = React.useCallback((state: TrackingState) => {
     trackingStateRef.current = state;

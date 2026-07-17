@@ -44,6 +44,21 @@ const mosaicMapHtml = `<!DOCTYPE html>
       overflow: hidden;
       background-color: #0f172a;
       touch-action: none;
+      position: relative;
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      padding: 24px;
+      color: rgba(255, 255, 255, 0.72);
+      font: 500 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      text-align: center;
+      pointer-events: none;
     }
     #mapCanvas {
       display: block;
@@ -119,6 +134,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
       const interactionHighlightColor = [180, 180, 180];
 
       if (typeof d3 === 'undefined' || typeof topojson === 'undefined') {
+        loadingEl.removeAttribute('aria-hidden');
         loadingEl.innerText = window.MAP_COPY?.mapEngineError || 'Map engine failed to load. Please check the network and refresh.';
         return;
       }
@@ -128,6 +144,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
         resize();
       }).catch(error => {
         console.error('加载地图数据失败:', error);
+        loadingEl.removeAttribute('aria-hidden');
         loadingEl.innerText = window.MAP_COPY?.geoDataError || 'Could not fetch geographic data. Please refresh.';
       });
 
@@ -288,6 +305,7 @@ const mosaicMapHtml = `<!DOCTYPE html>
           }
 
           loadingEl.style.opacity = '0';
+          loadingEl.setAttribute('aria-hidden', 'true');
           draw();
         }, 50);
       }

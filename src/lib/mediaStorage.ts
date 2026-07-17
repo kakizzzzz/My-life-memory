@@ -1,4 +1,8 @@
-import { isCloudBackendEnabled, supabase } from './supabaseClient';
+import {
+  createSessionScopedSupabaseClient,
+  isCloudBackendEnabled,
+  supabase,
+} from './supabaseClient';
 import { getCloudSyncStatus } from './cloudSyncStatus';
 
 export const MEDIA_BUCKET = 'life-media';
@@ -21,6 +25,11 @@ export type StoredImageMetadata = {
 export type StoredImageUpload = {
   metadata: StoredImageMetadata | null;
   src: string;
+};
+
+export type MediaAccountScope = {
+  userId: string;
+  accessToken: string;
 };
 
 export type StoredImageDownloadFailureType = (
@@ -74,6 +83,18 @@ const signedUrlCache = new Map<string, { src: string; expiresAt: number }>();
 
 export const isSupabaseMediaEnabled = Boolean(isCloudBackendEnabled && supabase);
 
+export const captureMediaAccountScope = async (): Promise<MediaAccountScope | null> => {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const session = data.session;
+  if (!session?.user?.id || !session.access_token) return null;
+  return {
+    userId: session.user.id,
+    accessToken: session.access_token,
+  };
+};
+
 export const requestCloudMediaMaintenance = () => {
   if (typeof window === 'undefined') return;
   window.setTimeout(() => window.dispatchEvent(new Event('mlm:media-maintenance')), 1000);
@@ -99,6 +120,15 @@ const uniqueMetadata = <T extends StoredImageMetadata>(metadataList: T[]): T[] =
 const getPendingDeleteStorageKey = (userId: string) => (
   `${PENDING_MEDIA_DELETE_STORAGE_KEY_PREFIX}${encodeURIComponent(userId)}`
 );
+
+export const clearPendingMediaDeletionState = (userId: string) => {
+  if (typeof window === 'undefined' || !userId) return;
+  try {
+    window.localStorage.removeItem(getPendingDeleteStorageKey(userId));
+  } catch {
+    // Server account deletion has already completed; local cleanup is best effort.
+  }
+};
 
 const readPendingDeletes = (userId: string): PendingMediaDelete[] => {
   if (typeof window === 'undefined') return [];
@@ -139,13 +169,14 @@ const writePendingDeletes = (userId: string, metadataList: PendingMediaDelete[])
 const enqueueServerMediaDeletion = async (
   userId: string,
   metadata: PendingMediaDelete,
+  client: NonNullable<typeof supabase> | null = supabase,
 ) => {
-  if (!supabase || !metadata.path.startsWith(`${userId}/`)) return false;
+  if (!client || !metadata.path.startsWith(`${userId}/`)) return false;
   const deleteAfter = metadata.deleteAfter
     ?? (metadata.immediate ? Date.now() : metadata.createdAt + DEFERRED_MEDIA_DELETE_MS);
 
   try {
-    const { error } = await supabase.rpc('enqueue_memory_media_deletion', {
+    const { error } = await client.rpc('enqueue_memory_media_deletion', {
       p_bucket: metadata.bucket || MEDIA_BUCKET,
       p_path: metadata.path,
       p_not_before: new Date(deleteAfter).toISOString(),
@@ -214,9 +245,12 @@ export const buildStorageImageSrc = (metadata?: StoredImageMetadata | null) => {
     : storagePlaceholderSrc(metadata);
 };
 
-export const createSignedImageUrl = async (metadata: StoredImageMetadata) => {
-  if (!supabase || !metadata.path) return '';
-  const { data, error } = await supabase.storage
+const createSignedImageUrlWithClient = async (
+  metadata: StoredImageMetadata,
+  client: NonNullable<typeof supabase>,
+) => {
+  if (!metadata.path) return '';
+  const { data, error } = await client.storage
     .from(metadata.bucket || MEDIA_BUCKET)
     .createSignedUrl(metadata.path, SIGNED_URL_TTL_SECONDS);
 
@@ -229,6 +263,11 @@ export const createSignedImageUrl = async (metadata: StoredImageMetadata) => {
     });
   }
   return signedUrl;
+};
+
+export const createSignedImageUrl = async (metadata: StoredImageMetadata) => {
+  if (!supabase) return '';
+  return createSignedImageUrlWithClient(metadata, supabase);
 };
 
 const getErrorStatus = (error: unknown) => {
@@ -418,13 +457,19 @@ export const uploadImageToStorage = async (
     imageId?: string;
     folder?: 'notes' | 'avatars';
     fileName?: string;
+    accountScope?: MediaAccountScope;
   } = {}
 ): Promise<StoredImageUpload> => {
   if (!isSupabaseMediaEnabled || !supabase) {
     throw new Error('Supabase Storage is not configured.');
   }
 
-  const userId = await getCurrentUserId();
+  const scopedClient = options.accountScope
+    ? createSessionScopedSupabaseClient(options.accountScope.accessToken)
+    : supabase;
+  if (!scopedClient) throw new Error('The media upload session is unavailable.');
+
+  const userId = options.accountScope?.userId || await getCurrentUserId();
   if (!userId) throw new Error('No active Supabase user for media upload.');
 
   const imageId = safePart(options.imageId || crypto.randomUUID());
@@ -434,7 +479,7 @@ export const uploadImageToStorage = async (
   const extension = extensionFromMime(mimeType);
   const path = `${userId}/${folder}/${noteId}/${imageId}.${extension}`;
 
-  const { error } = await supabase.storage
+  const { error } = await scopedClient.storage
     .from(MEDIA_BUCKET)
     .upload(path, file, {
       cacheControl: '3600',
@@ -454,17 +499,84 @@ export const uploadImageToStorage = async (
     createdAt: Date.now(),
   };
 
-  return {
-    metadata,
-    src: await createSignedImageUrl(metadata),
+  let src = storagePlaceholderSrc(metadata);
+  try {
+    src = await createSignedImageUrlWithClient(metadata, scopedClient) || src;
+  } catch (error) {
+    // The upload already succeeded. Return its metadata so the caller can keep
+    // or clean up the object instead of losing track of an orphaned file.
+    console.warn('Could not create a signed URL for the uploaded image:', error);
+  }
+  return { metadata, src };
+};
+
+export const discardUploadedImageForScope = async (
+  metadata: StoredImageMetadata,
+  accountScope: MediaAccountScope,
+) => {
+  if (
+    metadata.provider !== 'supabase'
+    || !metadata.path.startsWith(`${accountScope.userId}/`)
+  ) return false;
+
+  const pendingDelete: PendingMediaDelete = {
+    ...metadata,
+    immediate: true,
+    deleteAfter: Date.now(),
   };
+  writePendingDeletes(accountScope.userId, [
+    ...readPendingDeletes(accountScope.userId),
+    pendingDelete,
+  ]);
+
+  const scopedClient = createSessionScopedSupabaseClient(accountScope.accessToken);
+  if (!scopedClient) return false;
+
+  try {
+    const { error } = await scopedClient.storage
+      .from(metadata.bucket || MEDIA_BUCKET)
+      .remove([metadata.path]);
+    if (error) throw error;
+    signedUrlCache.delete(cacheKeyForMetadata(metadata));
+    writePendingDeletes(
+      accountScope.userId,
+      readPendingDeletes(accountScope.userId).filter(item => !sameStoredImage(item, metadata)),
+    );
+    return true;
+  } catch (removeError) {
+    try {
+      const { error } = await scopedClient.rpc('enqueue_memory_media_deletion', {
+        p_bucket: metadata.bucket || MEDIA_BUCKET,
+        p_path: metadata.path,
+        p_not_before: new Date().toISOString(),
+      });
+      if (error) throw error;
+      writePendingDeletes(
+        accountScope.userId,
+        readPendingDeletes(accountScope.userId).filter(item => !sameStoredImage(item, metadata)),
+      );
+      return true;
+    } catch (queueError) {
+      console.warn('Could not clean up a stale media upload:', removeError, queueError);
+      return false;
+    }
+  }
 };
 
 export const deleteImageFromStorage = async (metadata: StoredImageMetadata) => {
   if (!supabase || metadata.provider !== 'supabase' || !metadata.path) return true;
 
+  return deleteImageFromStorageWithClient(metadata, supabase);
+};
+
+const deleteImageFromStorageWithClient = async (
+  metadata: StoredImageMetadata,
+  client: NonNullable<typeof supabase>,
+) => {
+  if (metadata.provider !== 'supabase' || !metadata.path) return true;
+
   try {
-    const { error } = await supabase.storage
+    const { error } = await client.storage
       .from(metadata.bucket || MEDIA_BUCKET)
       .remove([metadata.path]);
 
@@ -506,10 +618,17 @@ export const scheduleImageDeletion = async (
 };
 
 export const retryPendingImageDeletions = async (
-  referencedMetadata: StoredImageMetadata[] = []
+  referencedMetadata: StoredImageMetadata[] = [],
+  options: {
+    accountScope?: MediaAccountScope;
+    allowDeferredDeletes?: boolean;
+  } = {},
 ) => {
-  const userId = await getCurrentUserId().catch(() => '');
-  if (!userId) return;
+  const client = options.accountScope
+    ? createSessionScopedSupabaseClient(options.accountScope.accessToken)
+    : supabase;
+  const userId = options.accountScope?.userId || await getCurrentUserId().catch(() => '');
+  if (!client || !userId) return;
   const pendingDeletes = uniqueMetadata(readPendingDeletes(userId));
   if (pendingDeletes.length === 0) return;
 
@@ -525,41 +644,45 @@ export const retryPendingImageDeletions = async (
       remainingDeletes.push(metadata);
       continue;
     }
-    if (!metadata.immediate && getCloudSyncStatus().phase !== 'synced') {
+    const allowDeferredDeletes = options.allowDeferredDeletes
+      ?? getCloudSyncStatus().phase === 'synced';
+    if (!metadata.immediate && !allowDeferredDeletes) {
       remainingDeletes.push(metadata);
       continue;
     }
     const deleteAfter = metadata.deleteAfter ?? metadata.createdAt + DEFERRED_MEDIA_DELETE_MS;
     if (!metadata.immediate && deleteAfter > Date.now()) {
-      const queued = await enqueueServerMediaDeletion(userId, metadata);
+      const queued = await enqueueServerMediaDeletion(userId, metadata, client);
       if (!queued) remainingDeletes.push(metadata);
       continue;
     }
-    const deleted = await deleteImageFromStorage(metadata);
+    const deleted = await deleteImageFromStorageWithClient(metadata, client);
     if (!deleted) {
       const queued = await enqueueServerMediaDeletion(userId, {
         ...metadata,
         immediate: true,
         deleteAfter: Date.now(),
-      });
+      }, client);
       if (!queued) remainingDeletes.push(metadata);
     }
   }
   writePendingDeletes(userId, remainingDeletes);
 };
 
-const listStorageFilesRecursively = async (folder: string): Promise<Array<{
+const listStorageFilesRecursively = async (
+  folder: string,
+  client: NonNullable<typeof supabase>,
+): Promise<Array<{
   path: string;
   createdAt: number;
   mimeType: string;
   size: number;
 }>> => {
-  if (!supabase) return [];
   const output: Array<{ path: string; createdAt: number; mimeType: string; size: number }> = [];
   let offset = 0;
 
   while (true) {
-    const { data, error } = await supabase.storage.from(MEDIA_BUCKET).list(folder, {
+    const { data, error } = await client.storage.from(MEDIA_BUCKET).list(folder, {
       limit: 100,
       offset,
       sortBy: { column: 'name', order: 'asc' },
@@ -569,7 +692,7 @@ const listStorageFilesRecursively = async (folder: string): Promise<Array<{
     for (const entry of entries) {
       const path = `${folder}/${entry.name}`;
       if (!entry.id) {
-        output.push(...await listStorageFilesRecursively(path));
+        output.push(...await listStorageFilesRecursively(path, client));
         continue;
       }
       output.push({
@@ -587,23 +710,27 @@ const listStorageFilesRecursively = async (folder: string): Promise<Array<{
 
 export const cleanupUnreferencedStorageImages = async (
   referencedMetadata: StoredImageMetadata[],
-  graceMs = ORPHAN_MEDIA_GRACE_MS
+  graceMs = ORPHAN_MEDIA_GRACE_MS,
+  accountScope?: MediaAccountScope,
 ) => {
-  const userId = await getCurrentUserId().catch(() => '');
-  if (!userId) return { scanned: 0, deleted: 0 };
+  const client = accountScope
+    ? createSessionScopedSupabaseClient(accountScope.accessToken)
+    : supabase;
+  const userId = accountScope?.userId || await getCurrentUserId().catch(() => '');
+  if (!client || !userId) return { scanned: 0, deleted: 0 };
 
   const referencedPaths = new Set(
     uniqueMetadata(referencedMetadata)
       .filter(metadata => metadata.path.startsWith(`${userId}/`))
       .map(metadata => metadata.path)
   );
-  const files = await listStorageFilesRecursively(userId);
+  const files = await listStorageFilesRecursively(userId, client);
   const cutoff = Date.now() - Math.max(0, graceMs);
   const orphanedFiles = files.filter(file => file.createdAt < cutoff && !referencedPaths.has(file.path));
 
   let deleted = 0;
   for (const file of orphanedFiles) {
-    const didDelete = await deleteImageFromStorageReliably({
+    const metadata: StoredImageMetadata = {
       provider: 'supabase',
       bucket: MEDIA_BUCKET,
       key: file.path,
@@ -611,7 +738,15 @@ export const cleanupUnreferencedStorageImages = async (
       mimeType: file.mimeType,
       size: file.size,
       createdAt: file.createdAt,
-    });
+    };
+    const didDelete = await deleteImageFromStorageWithClient(metadata, client);
+    if (!didDelete) {
+      await enqueueServerMediaDeletion(userId, {
+        ...metadata,
+        immediate: true,
+        deleteAfter: Date.now(),
+      }, client);
+    }
     if (didDelete) deleted += 1;
   }
   return { scanned: files.length, deleted };

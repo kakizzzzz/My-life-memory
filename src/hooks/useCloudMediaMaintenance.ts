@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   cleanupUnreferencedStorageImages,
+  captureMediaAccountScope,
   isSupabaseMediaEnabled,
   MEDIA_BUCKET,
   retryPendingImageDeletions,
@@ -12,53 +13,20 @@ import {
   purgeExpiredMemoryTrash,
 } from '../lib/memoryRepository';
 import { readPendingMemoryMediaPaths } from '../lib/memoryOutbox';
-import { getCloudSession } from '../lib/cloudBackend';
+import { createSessionScopedSupabaseClient } from '../lib/supabaseClient';
 import {
   getStoredImagesFromNote,
   uniqueStoredImages,
 } from '../lib/noteHtmlUtils';
 import { migrateInlineMediaToStorage } from '../lib/mediaMigration';
 import { getCloudSyncStatus, subscribeCloudSyncStatus } from '../lib/cloudSyncStatus';
+import {
+  claimDailyMemoryTrashPurge,
+  isMediaScanDue,
+  markMediaScanComplete,
+} from '../lib/mediaMaintenancePersistence';
+import { useAsyncScope, type AsyncScopeToken } from './useAsyncScope';
 import type { ProfileConflictData, StarData, UserProfile } from '../types/app';
-
-const MEDIA_SCAN_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const MEDIA_SCAN_STORAGE_KEY_PREFIX = 'my-life-memory-media-scan-v1:';
-const MEMORY_TRASH_PURGE_STORAGE_KEY_PREFIX = 'my-life-memory-trash-purge-v1:';
-
-const getMediaScanStorageKey = (account: string) => (
-  `${MEDIA_SCAN_STORAGE_KEY_PREFIX}${encodeURIComponent(account.trim().toLowerCase())}`
-);
-
-const isMediaScanDue = (account: string) => {
-  if (typeof window === 'undefined' || !account) return false;
-  const previousScan = Number(window.localStorage.getItem(getMediaScanStorageKey(account)) || 0);
-  return !Number.isFinite(previousScan) || Date.now() - previousScan >= MEDIA_SCAN_INTERVAL_MS;
-};
-
-const markMediaScanComplete = (account: string) => {
-  if (typeof window === 'undefined' || !account) return;
-  try {
-    window.localStorage.setItem(getMediaScanStorageKey(account), String(Date.now()));
-  } catch {
-    // A future focus/online event can safely retry the maintenance scan.
-  }
-};
-
-const claimDailyMemoryTrashPurge = (account: string) => {
-  if (typeof window === 'undefined' || !account) return false;
-  const storageKey = `${MEMORY_TRASH_PURGE_STORAGE_KEY_PREFIX}${encodeURIComponent(account.trim().toLowerCase())}`;
-  const now = Date.now();
-  try {
-    const previousAttempt = Number(window.localStorage.getItem(storageKey) || 0);
-    if (Number.isFinite(previousAttempt) && now - previousAttempt < MEDIA_SCAN_INTERVAL_MS) return false;
-    // Claim before the request so focus/online retries cannot call the RPC more
-    // than once per day, even when the request itself fails.
-    window.localStorage.setItem(storageKey, String(now));
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 export const useCloudMediaMaintenance = ({
   isSignedIn,
@@ -77,7 +45,9 @@ export const useCloudMediaMaintenance = ({
   setStars: React.Dispatch<React.SetStateAction<StarData[]>>;
   onMediaReady: () => void;
 }) => {
-  const maintenanceInFlightRef = React.useRef(false);
+  const accountScopeKey = `${isSignedIn ? 'signed-in' : 'signed-out'}:${profile.account.trim().toLowerCase()}`;
+  const { captureScope, isScopeCurrent } = useAsyncScope(accountScopeKey);
+  const maintenanceInFlightRef = React.useRef<AsyncScopeToken | null>(null);
   const latestProfileRef = React.useRef(profile);
   const latestStarsRef = React.useRef(stars);
   latestProfileRef.current = profile;
@@ -91,11 +61,14 @@ export const useCloudMediaMaintenance = ({
       )),
     ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata)))
   ), [profile.avatarImage, profileConflicts, stars]);
-  const getProtectedStoredMedia = React.useCallback(async () => {
-    const session = await getCloudSession();
+  const getProtectedStoredMedia = React.useCallback(async (
+    accountScope: NonNullable<Awaited<ReturnType<typeof captureMediaAccountScope>>>,
+  ) => {
+    const scopedClient = createSessionScopedSupabaseClient(accountScope.accessToken);
+    if (!scopedClient) return [];
     const [cloudPaths, pendingPaths] = await Promise.all([
-      loadProtectedMemoryMediaPaths(),
-      session?.user ? readPendingMemoryMediaPaths(session.user.id) : Promise.resolve([]),
+      loadProtectedMemoryMediaPaths(scopedClient),
+      readPendingMemoryMediaPaths(accountScope.userId),
     ]);
     const paths = [...new Set([...cloudPaths, ...pendingPaths])];
     return paths.map(path => ({
@@ -128,11 +101,20 @@ export const useCloudMediaMaintenance = ({
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
 
     const retryDeletes = () => {
-      void getProtectedStoredMedia()
-        .then(protectedMedia => retryPendingImageDeletions(uniqueStoredImages([
-          ...getReferencedStoredMedia(),
-          ...protectedMedia,
-        ])))
+      const runScope = captureScope();
+      void captureMediaAccountScope()
+        .then(async accountScope => {
+          if (!accountScope || !isScopeCurrent(runScope)) return;
+          const protectedMedia = await getProtectedStoredMedia(accountScope);
+          if (!isScopeCurrent(runScope)) return;
+          await retryPendingImageDeletions(uniqueStoredImages([
+            ...getReferencedStoredMedia(),
+            ...protectedMedia,
+          ]), {
+            accountScope,
+            allowDeferredDeletes: getCloudSyncStatus().phase === 'synced',
+          });
+        })
         .catch(error => console.warn('Protected media references could not be loaded:', error));
     };
 
@@ -144,18 +126,32 @@ export const useCloudMediaMaintenance = ({
       window.removeEventListener('online', retryDeletes);
       window.removeEventListener('focus', retryDeletes);
     };
-  }, [getProtectedStoredMedia, getReferencedStoredMedia, isSignedIn, profile.account]);
+  }, [captureScope, getProtectedStoredMedia, getReferencedStoredMedia, isScopeCurrent, isSignedIn, profile.account]);
 
   React.useEffect(() => {
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
 
     const runMaintenance = async () => {
-      if (maintenanceInFlightRef.current) return;
-      maintenanceInFlightRef.current = true;
+      const runScope = captureScope();
+      const activeRun = maintenanceInFlightRef.current;
+      if (
+        activeRun
+        && activeRun.key === runScope.key
+        && activeRun.generation === runScope.generation
+      ) return;
+      maintenanceInFlightRef.current = runScope;
       const sourceProfile = latestProfileRef.current;
       const sourceStars = latestStarsRef.current;
       try {
-        const migrated = await migrateInlineMediaToStorage(sourceProfile, sourceStars);
+        const accountScope = await captureMediaAccountScope();
+        if (!accountScope || !isScopeCurrent(runScope)) return;
+        const scopedClient = createSessionScopedSupabaseClient(accountScope.accessToken);
+        if (!scopedClient) return;
+        const migrated = await migrateInlineMediaToStorage(sourceProfile, sourceStars, {
+          accountScope,
+          isCurrent: () => isScopeCurrent(runScope),
+        });
+        if (migrated.aborted || !isScopeCurrent(runScope)) return;
         if (migrated.changed) {
           setProfile(current => (
             current.account === sourceProfile.account && current.avatarUrl === sourceProfile.avatarUrl
@@ -181,12 +177,14 @@ export const useCloudMediaMaintenance = ({
 
         const canPurgeExpiredTrash = !migrated.changed && getCloudSyncStatus().phase === 'synced';
         if (canPurgeExpiredTrash && claimDailyMemoryTrashPurge(sourceProfile.account)) {
-          await purgeExpiredMemoryTrash();
+          await purgeExpiredMemoryTrash(scopedClient);
+          if (!isScopeCurrent(runScope)) return;
         }
 
         const latestProfile = latestProfileRef.current;
         const latestStars = latestStarsRef.current;
-        const protectedMedia = await getProtectedStoredMedia();
+        const protectedMedia = await getProtectedStoredMedia(accountScope);
+        if (!isScopeCurrent(runScope)) return;
         const referencedMedia = uniqueStoredImages([
           migrated.profile.avatarImage,
           latestProfile.avatarImage,
@@ -201,16 +199,25 @@ export const useCloudMediaMaintenance = ({
         ].filter((metadata): metadata is StoredImageMetadata => Boolean(metadata)));
         const canCleanCloudMedia = !migrated.changed && getCloudSyncStatus().phase === 'synced';
         if (canCleanCloudMedia) {
-          await retryPendingImageDeletions(referencedMedia);
+          await retryPendingImageDeletions(referencedMedia, {
+            accountScope,
+            allowDeferredDeletes: true,
+          });
+          if (!isScopeCurrent(runScope)) return;
           if (isMediaScanDue(sourceProfile.account)) {
-            await cleanupUnreferencedStorageImages(referencedMedia);
+            await cleanupUnreferencedStorageImages(referencedMedia, undefined, accountScope);
+            if (!isScopeCurrent(runScope)) return;
             markMediaScanComplete(sourceProfile.account);
           }
         }
       } catch (error) {
         console.warn('Cloud media maintenance could not finish:', error);
       } finally {
-        maintenanceInFlightRef.current = false;
+        const activeRun = maintenanceInFlightRef.current;
+        if (
+          activeRun?.key === runScope.key
+          && activeRun.generation === runScope.generation
+        ) maintenanceInFlightRef.current = null;
       }
     };
 
@@ -228,5 +235,5 @@ export const useCloudMediaMaintenance = ({
       window.removeEventListener('mlm:media-maintenance', requestMaintenance);
       unsubscribeCloudSync();
     };
-  }, [getProtectedStoredMedia, isSignedIn, profile.account, profileConflicts, setProfile, setStars]);
+  }, [captureScope, getProtectedStoredMedia, isScopeCurrent, isSignedIn, profile.account, profileConflicts, setProfile, setStars]);
 };

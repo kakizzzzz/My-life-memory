@@ -5,6 +5,7 @@ import test from 'node:test';
 const migration = readFileSync('supabase/migrations/20260714_memory_trash_retention.sql', 'utf8');
 const oldMigration = readFileSync('supabase/migrations/20260713_normalized_memory_storage_v2.sql', 'utf8');
 const maintenanceHook = readFileSync('src/hooks/useCloudMediaMaintenance.ts', 'utf8');
+const maintenancePersistence = readFileSync('src/lib/mediaMaintenancePersistence.ts', 'utf8');
 const mediaStorage = readFileSync('src/lib/mediaStorage.ts', 'utf8');
 const fixPermissions = readFileSync('supabase/fix-permissions.sql', 'utf8');
 const verifyBackend = readFileSync('supabase/verify-cloud-backend.sql', 'utf8');
@@ -36,12 +37,13 @@ test('client purges at most daily only after sync, before protected-path scannin
   const runMaintenance = maintenanceHook.slice(maintenanceHook.indexOf('const runMaintenance'));
   const phaseCheck = runMaintenance.indexOf("getCloudSyncStatus().phase === 'synced'");
   const claim = runMaintenance.indexOf('claimDailyMemoryTrashPurge');
-  const purge = runMaintenance.indexOf('await purgeExpiredMemoryTrash()');
-  const protectedPaths = runMaintenance.indexOf('await getProtectedStoredMedia()');
+  const purge = runMaintenance.indexOf('await purgeExpiredMemoryTrash(scopedClient)');
+  const protectedPaths = runMaintenance.indexOf('await getProtectedStoredMedia(accountScope)');
   assert.ok(phaseCheck >= 0 && phaseCheck < claim);
   assert.ok(claim < purge && purge < protectedPaths);
-  assert.match(maintenanceHook, /my-life-memory-trash-purge-v1:/);
-  assert.match(maintenanceHook, /now - previousAttempt < MEDIA_SCAN_INTERVAL_MS/);
+  assert.match(maintenancePersistence, /my-life-memory-trash-purge-v1:/);
+  assert.match(maintenancePersistence, /now - previousAttempt < MEDIA_SCAN_INTERVAL_MS/);
+  assert.match(maintenanceHook, /createSessionScopedSupabaseClient\(accountScope\.accessToken\)/);
 });
 
 test('deferred and orphan media grace periods are both seven days', () => {

@@ -518,10 +518,12 @@ export default function App() {
       untitledNote: homeCopy.untitledNote,
     },
   });
+  const mediaAccountScopeKey = `${isSignedIn ? 'signed-in' : 'signed-out'}:${profile.account.trim().toLowerCase()}`;
   const {
     handleAvatarInput,
     downloadGalleryImage,
   } = useGalleryActions({
+    accountScopeKey: mediaAccountScopeKey,
     profile,
     setProfile,
   });
@@ -536,6 +538,7 @@ export default function App() {
     photoLocationStatus,
     handlePhotoLocationInput,
   } = usePhotoLocationImport({
+    accountScopeKey: mediaAccountScopeKey,
     copy: {
       photoLocationLoading: homeCopy.photoLocationLoading,
       photoLocationNoGps: homeCopy.photoLocationNoGps,
@@ -581,6 +584,7 @@ export default function App() {
     handleReaderImageInput,
     handleReaderPanelToggle,
   } = useReaderController({
+    accountScopeKey: mediaAccountScopeKey,
     activeView,
     stars,
     setStars,
@@ -1177,6 +1181,7 @@ export default function App() {
         {editingNoteTarget && editingStar && (
           <React.Suspense fallback={null}>
           <NoteEditorModal
+             accountScopeKey={mediaAccountScopeKey}
              star={editingStar}
              initialNoteId={editingNoteTarget.noteId}
              language={language}

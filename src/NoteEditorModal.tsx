@@ -3,8 +3,9 @@ import { motion } from 'motion/react';
 import { X, Palette, ImageIcon, Camera, Check, ChevronsLeft, ChevronsRight, Plus, Trash2, Underline } from 'lucide-react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import {
+  captureMediaAccountScope,
   dehydrateStorageMediaHtml,
-  deleteImageFromStorageReliably,
+  discardUploadedImageForScope,
   scheduleImageDeletion,
   hydrateStorageMediaHtml,
   imageMetadataFromElement,
@@ -13,6 +14,7 @@ import {
   storageImageAttrsHtml,
   storagePlaceholderSrc,
   uploadImageToStorage,
+  type MediaAccountScope,
   type StoredImageMetadata,
 } from './lib/mediaStorage';
 import { sanitizeRichHtml } from './lib/htmlSanitizer';
@@ -35,8 +37,11 @@ import {
   SAMPLE_NOTE_TEXT,
   UPLOAD_IMAGE_MAX_BYTES,
 } from './constants/appDefaults';
+import { createClientId } from './lib/generalUtils';
+import { useAsyncScope } from './hooks/useAsyncScope';
 
 interface NoteEditorModalProps {
+  accountScopeKey: string;
   star: StarData;
   initialNoteId?: string;
   language?: string;
@@ -44,6 +49,11 @@ interface NoteEditorModalProps {
   onClose: () => void;
   onSave: (notes: NoteData[]) => void;
 }
+
+type EditorUploadedImage = {
+  metadata: StoredImageMetadata;
+  accountScope: MediaAccountScope;
+};
 
 const DEFAULT_COLORS = [
   '#D2936D', '#B6A5B9', '#EDC727', '#88AA9A', '#C4D4C5', '#D0D5C1',
@@ -130,7 +140,7 @@ const NOTE_EDITOR_COPY = {
 type NoteEditorCopy = typeof NOTE_EDITOR_COPY.en;
 
 const defaultNote: NoteData = {
-  id: Date.now().toString(),
+  id: createClientId(),
   title: 'Today Note',
   titleHtml: 'Today Note',
   content: SAMPLE_NOTE_TEXT,
@@ -145,7 +155,7 @@ const defaultNote: NoteData = {
 const createBlankNote = (): NoteData => {
   const timestamp = Date.now();
   return {
-    id: timestamp.toString(),
+    id: createClientId(),
     title: '',
     titleHtml: '',
     content: '',
@@ -485,19 +495,24 @@ const getStoredImagesFromNote = (note?: NoteData) => (
   ])
 );
 
-const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
-  uniqueStoredImages(metadataList).forEach(metadata => {
-    void deleteImageFromStorageReliably(metadata);
-  });
-};
-
 const scheduleStoredImageDeletions = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
     void scheduleImageDeletion(metadata);
   });
 };
 
-export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRefreshKey = 0, onClose, onSave }: NoteEditorModalProps) {
+const discardScopedEditorUploads = (
+  uploads: EditorUploadedImage[],
+  metadataList = uploads.map(upload => upload.metadata),
+) => {
+  const paths = new Set(metadataList.map(metadata => `${metadata.bucket}/${metadata.path}`));
+  uploads.forEach(upload => {
+    if (!paths.has(`${upload.metadata.bucket}/${upload.metadata.path}`)) return;
+    void discardUploadedImageForScope(upload.metadata, upload.accountScope);
+  });
+};
+
+export function NoteEditorModal({ accountScopeKey, star, initialNoteId, language = 'en', mediaRefreshKey = 0, onClose, onSave }: NoteEditorModalProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const titleEditorRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -513,9 +528,13 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   const originalStoredImagesRef = useRef<StoredImageMetadata[]>(
     uniqueStoredImages(initialNotes.flatMap(note => getStoredImagesFromNote(note)))
   );
-  const uploadedStoredImagesRef = useRef<StoredImageMetadata[]>([]);
+  const uploadedStoredImagesRef = useRef<EditorUploadedImage[]>([]);
   const imageTransactionCommittedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const imageOperationCountRef = useRef(0);
   const [notes, setNotes] = useState<NoteData[]>(initialNotes);
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
   const [currentIndex, setCurrentIndex] = useState(() => getInitialNoteIndex(initialNotes, initialNoteId));
   const [activePanel, setActivePanel] = useState<'font' | 'color' | null>(null);
   const [activeTextTarget, setActiveTextTarget] = useState<'editor' | 'title'>('editor');
@@ -529,7 +548,10 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   const currentNote = notes[currentIndex];
-  const toolbarEdgeButtonClass = 'w-[26px] h-[26px] rounded-full bg-[var(--app-icon)] inline-flex items-center justify-center text-black hover:brightness-95 transition-all leading-none shrink-0';
+  const { captureScope, isScopeCurrent } = useAsyncScope(
+    `${accountScopeKey}:${star.id}:${currentNote?.id || 'none'}`,
+  );
+  const toolbarEdgeButtonClass = 'w-[26px] h-[26px] rounded-full bg-[var(--app-icon)] inline-flex items-center justify-center text-black hover:brightness-95 transition-all leading-none shrink-0 disabled:opacity-50 disabled:hover:brightness-100';
   const toolbarButtonSlotClass = 'relative h-[26px] min-w-[27px] flex-1 basis-0';
   const toolbarButtonClass = 'w-full h-[26px] rounded-full bg-[var(--app-icon)] inline-flex items-center justify-center text-black hover:brightness-95 transition-all leading-none';
   const fontButtonSlotClass = 'relative h-8 min-w-[4rem] flex-[1.9] basis-0';
@@ -539,12 +561,27 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   const canGoPrev = currentIndex > 0;
   const canGoNext = currentIndex < notes.length - 1;
 
-  const registerUploadedImage = (metadata?: StoredImageMetadata | null) => {
+  const registerUploadedImage = (
+    metadata: StoredImageMetadata | null | undefined,
+    accountScope: MediaAccountScope,
+  ) => {
     if (!metadata) return;
-    uploadedStoredImagesRef.current = uniqueStoredImages([
-      ...uploadedStoredImagesRef.current,
-      metadata,
-    ]);
+    const existingUploads = uploadedStoredImagesRef.current.filter(upload => (
+      upload.metadata.bucket !== metadata.bucket || upload.metadata.path !== metadata.path
+    ));
+    uploadedStoredImagesRef.current = [...existingUploads, { metadata, accountScope }];
+  };
+
+  const beginImageProcessing = () => {
+    imageOperationCountRef.current += 1;
+    if (mountedRef.current) setIsProcessingImage(true);
+  };
+
+  const finishImageProcessing = () => {
+    imageOperationCountRef.current = Math.max(0, imageOperationCountRef.current - 1);
+    if (mountedRef.current && imageOperationCountRef.current === 0) {
+      setIsProcessingImage(false);
+    }
   };
 
   const getEditorPlainText = () => {
@@ -620,10 +657,11 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   }, [isCameraOpen]);
 
   useEffect(() => () => {
+    mountedRef.current = false;
     cameraStreamRef.current?.getTracks().forEach(track => track.stop());
     cameraStreamRef.current = null;
     if (!imageTransactionCommittedRef.current) {
-      deleteStoredImages(uploadedStoredImagesRef.current);
+      discardScopedEditorUploads(uploadedStoredImagesRef.current);
     }
   }, []);
 
@@ -1447,36 +1485,57 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     const imageFiles = Array.from(files || []).filter(file => file.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
 
-    setIsProcessingImage(true);
+    const runScope = captureScope();
+    const isCurrent = () => mountedRef.current && isScopeCurrent(runScope);
+    beginImageProcessing();
     try {
+      const accountScope = isSupabaseMediaEnabled
+        ? await captureMediaAccountScope().catch(error => {
+            console.warn('Could not capture the note upload session, using the local fallback:', error);
+            return null;
+          })
+        : null;
+      if (!isCurrent()) return;
       for (const file of imageFiles) {
         const imageUrl = await compressImageToDataUrl(file);
-        if (isSupabaseMediaEnabled) {
+        if (!isCurrent()) return;
+        if (isSupabaseMediaEnabled && accountScope) {
           try {
             const compressedFile = await dataUrlToFile(imageUrl, `${Date.now()}.jpg`);
+            if (!isCurrent()) return;
             const uploaded = await uploadImageToStorage(compressedFile, {
               noteId: currentNote?.id,
               folder: 'notes',
               fileName: compressedFile.name,
+              accountScope,
             });
-            registerUploadedImage(uploaded.metadata);
+            if (!isCurrent()) {
+              if (uploaded.metadata) {
+                await discardUploadedImageForScope(uploaded.metadata, accountScope);
+              }
+              return;
+            }
+            registerUploadedImage(uploaded.metadata, accountScope);
             insertImageIntoEditor(uploaded.src, uploaded.metadata);
             continue;
           } catch (error) {
+            if (!isCurrent()) return;
             console.warn('Supabase Storage upload failed, using data URL fallback:', error);
             requestCloudMediaMaintenance();
           }
         }
+        if (!isCurrent()) return;
         insertImageIntoEditor(imageUrl);
       }
     } finally {
-      setIsProcessingImage(false);
+      finishImageProcessing();
     }
   };
 
   const handleImageInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    await appendImages(e.target.files);
+    const files = e.target.files;
     e.target.value = '';
+    await appendImages(files);
   };
 
   const handleTitlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -1512,19 +1571,28 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   const openCamera = async () => {
     if (!navigator.mediaDevices?.getUserMedia) return;
 
+    const runScope = captureScope();
     saveEditorSelection();
-    setIsProcessingImage(true);
+    beginImageProcessing();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' } },
         audio: false,
       });
+      if (!mountedRef.current || !isScopeCurrent(runScope)) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
       cameraStreamRef.current = stream;
       setIsCameraOpen(true);
       setActivePanel(null);
       setShowCustomPicker(false);
+    } catch (error) {
+      if (mountedRef.current && isScopeCurrent(runScope)) {
+        console.warn('Could not open the camera:', error);
+      }
     } finally {
-      setIsProcessingImage(false);
+      finishImageProcessing();
     }
   };
 
@@ -1539,32 +1607,53 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     if (!context) return;
 
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    setIsProcessingImage(true);
+    const runScope = captureScope();
+    const isCurrent = () => mountedRef.current && isScopeCurrent(runScope);
+    beginImageProcessing();
     try {
+      const accountScope = isSupabaseMediaEnabled
+        ? await captureMediaAccountScope().catch(error => {
+            console.warn('Could not capture the camera upload session, using the local fallback:', error);
+            return null;
+          })
+        : null;
+      if (!isCurrent()) return;
       const blob = await canvasToBlob(canvas, 'image/jpeg', 0.92);
+      if (!isCurrent()) return;
       const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
       const imageUrl = await compressImageToDataUrl(file);
-      if (isSupabaseMediaEnabled) {
+      if (!isCurrent()) return;
+      if (isSupabaseMediaEnabled && accountScope) {
         try {
           const compressedFile = await dataUrlToFile(imageUrl, file.name);
+          if (!isCurrent()) return;
           const uploaded = await uploadImageToStorage(compressedFile, {
             noteId: currentNote?.id,
             folder: 'notes',
             fileName: compressedFile.name,
+            accountScope,
           });
-          registerUploadedImage(uploaded.metadata);
+          if (!isCurrent()) {
+            if (uploaded.metadata) {
+              await discardUploadedImageForScope(uploaded.metadata, accountScope);
+            }
+            return;
+          }
+          registerUploadedImage(uploaded.metadata, accountScope);
           insertImageIntoEditor(uploaded.src, uploaded.metadata);
           stopCamera();
           return;
         } catch (error) {
+          if (!isCurrent()) return;
           console.warn('Supabase Storage upload failed, using data URL fallback:', error);
           requestCloudMediaMaintenance();
         }
       }
+      if (!isCurrent()) return;
       insertImageIntoEditor(imageUrl);
       stopCamera();
     } finally {
-      setIsProcessingImage(false);
+      finishImageProcessing();
     }
   };
 
@@ -1613,38 +1702,24 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   };
 
   const handleAddNote = () => {
-    const newNote: NoteData = {
-      id: Date.now().toString(),
-      title: '',
-      titleHtml: '',
-      content: '',
-      contentHtml: '',
-      fontSize: 18,
-      titleFontSize: 18,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      color: '#D2936D'
-    };
-    setNotes(prev => [...prev, newNote]);
-    setCurrentIndex(notes.length);
+    if (isProcessingImage) return;
+    const newNote = createBlankNote();
+    const currentNotes = notesRef.current;
+    const nextNotes = [...currentNotes, newNote];
+    notesRef.current = nextNotes;
+    setNotes(nextNotes);
+    setCurrentIndex(currentNotes.length);
   };
 
   const handleDeleteNote = () => {
+    if (isProcessingImage) return;
     if (notes.length === 1) {
-      setNotes([{
-        id: Date.now().toString(),
-        title: '',
-        titleHtml: '',
-        content: '',
-        contentHtml: '',
-        fontSize: 18,
-        titleFontSize: 18,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        color: '#D2936D'
-      }]);
+      const nextNotes = [createBlankNote()];
+      notesRef.current = nextNotes;
+      setNotes(nextNotes);
     } else {
       const newNotes = notes.filter((_, idx) => idx !== currentIndex);
+      notesRef.current = newNotes;
       setNotes(newNotes);
       if (currentIndex >= newNotes.length) {
         setCurrentIndex(newNotes.length - 1);
@@ -1653,6 +1728,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
   };
 
   const handleSave = () => {
+    if (isProcessingImage) return;
     stopCamera();
     const editor = editorRef.current;
     const titleEditor = titleEditorRef.current;
@@ -1689,20 +1765,24 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
     }) : notes;
 
     const savedImages = uniqueStoredImages(savedNotes.flatMap(note => getStoredImagesFromNote(note)));
+    const uploadedEntries = uploadedStoredImagesRef.current;
+    const uploadedImages = uniqueStoredImages(
+      uploadedEntries.map(upload => upload.metadata),
+    );
     const hasChanges = notesHaveMeaningfulChanges(initialNotes, savedNotes);
     if (!hasChanges) {
       imageTransactionCommittedRef.current = true;
-      deleteStoredImages(uploadedStoredImagesRef.current);
+      discardScopedEditorUploads(uploadedEntries);
       uploadedStoredImagesRef.current = [];
       onClose();
       return;
     }
     const removedOriginalImages = getRemovedStoredImages(originalStoredImagesRef.current, savedImages);
-    const unusedUploadedImages = getRemovedStoredImages(uploadedStoredImagesRef.current, savedImages);
+    const unusedUploadedImages = getRemovedStoredImages(uploadedImages, savedImages);
     imageTransactionCommittedRef.current = true;
     uploadedStoredImagesRef.current = [];
     scheduleStoredImageDeletions(removedOriginalImages);
-    deleteStoredImages(unusedUploadedImages);
+    discardScopedEditorUploads(uploadedEntries, unusedUploadedImages);
     onSave(savedNotes);
     onClose();
   };
@@ -1728,7 +1808,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
             />
 
             <div ref={toolbarRef} className="flex w-full max-w-full items-center gap-0.5 overflow-visible">
-              <button onClick={handleSave} className={toolbarEdgeButtonClass} aria-label={copy.closeEditor}>
+              <button onClick={handleSave} disabled={isProcessingImage} className={toolbarEdgeButtonClass} aria-label={copy.closeEditor}>
                 <X size={15} strokeWidth={2.2} />
               </button>
 
@@ -1853,7 +1933,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
                 </button>
               </div>
 
-              <button onClick={handleSave} className={toolbarEdgeButtonClass} aria-label={copy.saveNote}>
+              <button onClick={handleSave} disabled={isProcessingImage} className={toolbarEdgeButtonClass} aria-label={copy.saveNote}>
                 <Check size={15} strokeWidth={2.2} />
               </button>
             </div>
@@ -1926,7 +2006,8 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
             <div className="flex shrink-0 items-center justify-center gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
               <button
                 onClick={stopCamera}
-                className="h-11 px-5 rounded-full bg-white/15 text-white text-[14px] font-medium hover:bg-white/20"
+                disabled={isProcessingImage}
+                className="h-11 px-5 rounded-full bg-white/15 text-white text-[14px] font-medium hover:bg-white/20 disabled:opacity-50"
               >
                 {copy.cancel}
               </button>
@@ -1944,7 +2025,7 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
         <div className="flex shrink-0 items-center justify-center gap-3 pb-1">
           <button
             onClick={() => setCurrentIndex(i => Math.max(0, i - 1))}
-            disabled={!canGoPrev}
+            disabled={isProcessingImage || !canGoPrev}
             className={disabledBottomButtonClass}
             aria-label={copy.previousNote}
           >
@@ -1952,21 +2033,23 @@ export function NoteEditorModal({ star, initialNoteId, language = 'en', mediaRef
           </button>
           <button
             onClick={handleAddNote}
-            className={bottomButtonClass}
+            disabled={isProcessingImage}
+            className={disabledBottomButtonClass}
             aria-label={copy.createNote}
           >
             <Plus size={28} strokeWidth={2.2} />
           </button>
           <button
             onClick={handleDeleteNote}
-            className={bottomButtonClass}
+            disabled={isProcessingImage}
+            className={disabledBottomButtonClass}
             aria-label={copy.deleteNote}
           >
             <Trash2 size={24} strokeWidth={2.2} />
           </button>
           <button
             onClick={() => setCurrentIndex(i => Math.min(notes.length - 1, i + 1))}
-            disabled={!canGoNext}
+            disabled={isProcessingImage || !canGoNext}
             className={disabledBottomButtonClass}
             aria-label={copy.nextNote}
           >

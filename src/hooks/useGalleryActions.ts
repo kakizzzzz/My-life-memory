@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  captureMediaAccountScope,
+  discardUploadedImageForScope,
   scheduleImageDeletion,
   isSupabaseMediaEnabled,
   requestCloudMediaMaintenance,
@@ -13,6 +15,7 @@ import {
   getImageDownloadFileName,
 } from '../lib/photoUtils';
 import type { UploadedImage, UserProfile } from '../types/app';
+import { useAsyncScope } from './useAsyncScope';
 
 type NavigatorWithFileShare = Navigator & {
   canShare?: (data: { files?: File[]; title?: string }) => boolean;
@@ -29,44 +32,84 @@ const downloadGalleryImageFallback = (href: string, fileName: string) => {
 };
 
 export const useGalleryActions = ({
+  accountScopeKey,
   profile,
   setProfile,
 }: {
+  accountScopeKey: string;
   profile: UserProfile;
   setProfile: React.Dispatch<React.SetStateAction<UserProfile>>;
 }) => {
+  const { captureScope, isScopeCurrent } = useAsyncScope(accountScopeKey);
+  const avatarRequestRef = React.useRef(0);
+  const latestProfileRef = React.useRef(profile);
+  latestProfileRef.current = profile;
+
+  React.useEffect(() => {
+    avatarRequestRef.current += 1;
+  }, [accountScopeKey]);
+
   const handleAvatarInput = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file || !file.type.startsWith('image/')) return;
+    const runScope = captureScope();
+    const requestId = avatarRequestRef.current + 1;
+    avatarRequestRef.current = requestId;
+    const isCurrent = () => (
+      avatarRequestRef.current === requestId && isScopeCurrent(runScope)
+    );
+    const accountScope = isSupabaseMediaEnabled
+      ? await captureMediaAccountScope().catch(error => {
+          console.warn('Could not capture the avatar upload session, using the local fallback:', error);
+          return null;
+        })
+      : null;
+    if (!isCurrent()) return;
     const imageUrl = await compressImageFileToDataUrl(file);
-    const previousAvatarImage = profile.avatarImage;
+    if (!isCurrent()) return;
     let avatarUrl = imageUrl;
     let avatarImage: StoredImageMetadata | undefined;
 
-    if (isSupabaseMediaEnabled) {
+    if (isSupabaseMediaEnabled && accountScope) {
       try {
         const compressedFile = await dataUrlToFile(imageUrl, `avatar-${Date.now()}.jpg`);
+        if (!isCurrent()) return;
         const uploaded = await uploadImageToStorage(compressedFile, {
           folder: 'avatars',
           noteId: 'profile',
           fileName: compressedFile.name,
+          accountScope: accountScope || undefined,
         });
+        if (!isCurrent()) {
+          if (uploaded.metadata && accountScope) {
+            await discardUploadedImageForScope(uploaded.metadata, accountScope);
+          }
+          return;
+        }
         if (uploaded.metadata) {
           avatarUrl = storagePlaceholderSrc(uploaded.metadata);
           avatarImage = uploaded.metadata;
         }
       } catch (error) {
+        if (!isCurrent()) return;
         console.warn('Supabase Storage avatar upload failed, using data URL fallback:', error);
         requestCloudMediaMaintenance();
       }
     }
 
+    if (!isCurrent()) {
+      if (avatarImage && accountScope) {
+        await discardUploadedImageForScope(avatarImage, accountScope);
+      }
+      return;
+    }
+    const previousAvatarImage = latestProfileRef.current.avatarImage;
     setProfile(prev => ({ ...prev, avatarUrl, avatarImage }));
     if (previousAvatarImage && previousAvatarImage.key !== avatarImage?.key) {
       void scheduleImageDeletion(previousAvatarImage);
     }
-    event.target.value = '';
-  }, [profile.avatarImage, setProfile]);
+  }, [captureScope, isScopeCurrent, setProfile]);
 
   const downloadGalleryImage = React.useCallback(async (image: UploadedImage) => {
     let objectUrl: string | null = null;

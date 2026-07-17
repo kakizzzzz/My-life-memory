@@ -80,7 +80,6 @@ export const useAppViewLifecycle = ({
     autoOpenedManualAccountRef.current = account;
     if (readAutoUserManualSeen(account)) return;
 
-    markAutoUserManualSeen(account);
     setIsAutoUserManualOpen(true);
   }, [isSignedIn, profileAccount]);
 
@@ -180,8 +179,10 @@ export const useAppViewLifecycle = ({
   }, [homeScrollRef, setActiveHomePanel]);
 
   const closeAutoUserManual = React.useCallback(() => {
+    const account = normalizeAccountId(profileAccount);
+    if (account) markAutoUserManualSeen(account);
     setIsAutoUserManualOpen(false);
-  }, []);
+  }, [profileAccount]);
 
   return {
     closeHomePanel,

@@ -4,6 +4,8 @@ import {
   deleteCloudAccount,
 } from '../lib/cloudBackend';
 import { clearDeletedAccountLocalState } from '../lib/localPersistence';
+import { clearMediaMaintenanceLocalState } from '../lib/mediaMaintenancePersistence';
+import { clearPendingMediaDeletionState } from '../lib/mediaStorage';
 import { clearUserMemorySyncStorage } from '../lib/memoryOutbox';
 
 type AccountDeletionCopy = {
@@ -49,6 +51,8 @@ export function useAccountDeletion({
       const result = await deleteCloudAccount(password);
       await clearUserMemorySyncStorage(result.userId).catch(() => {});
       clearDeletedAccountLocalState(account);
+      clearMediaMaintenanceLocalState(account);
+      clearPendingMediaDeletionState(result.userId);
       setPassword('');
       onDeleted();
     } catch (error) {

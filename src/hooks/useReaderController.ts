@@ -1,12 +1,15 @@
 import React from 'react';
 import {
+  captureMediaAccountScope,
   dehydrateStorageMediaHtml,
   deleteImageFromStorageReliably,
+  discardUploadedImageForScope,
   imageMetadataFromElement,
   isSupabaseMediaEnabled,
   requestCloudMediaMaintenance,
   scheduleImageDeletion,
   uploadImageToStorage,
+  type MediaAccountScope,
   type StoredImageMetadata,
 } from '../lib/mediaStorage';
 import { sanitizeRichHtml } from '../lib/htmlSanitizer';
@@ -51,9 +54,14 @@ import {
   type RichTextStyleSession,
 } from '../lib/richTextStyleSession';
 import type { AppView, HomePanel, NoteData, ReadingNoteTarget, StarData } from '../types/app';
+import { useAsyncScope } from './useAsyncScope';
 
 type HomeCopy = typeof HOME_COPY.en;
 type ActiveTag = { order: number; groupId: number } | null;
+type ReaderUploadedImage = {
+  metadata: StoredImageMetadata;
+  accountScope: MediaAccountScope;
+};
 
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
@@ -67,7 +75,19 @@ const scheduleStoredImageDeletions = (metadataList: StoredImageMetadata[]) => {
   });
 };
 
+const discardScopedReaderUploads = (
+  uploads: ReaderUploadedImage[],
+  metadataList = uploads.map(upload => upload.metadata),
+) => {
+  const paths = new Set(metadataList.map(metadata => `${metadata.bucket}/${metadata.path}`));
+  uploads.forEach(upload => {
+    if (!paths.has(`${upload.metadata.bucket}/${upload.metadata.path}`)) return;
+    void discardUploadedImageForScope(upload.metadata, upload.accountScope);
+  });
+};
+
 export const useReaderController = ({
+  accountScopeKey,
   activeView,
   stars,
   setStars,
@@ -83,6 +103,7 @@ export const useReaderController = ({
   homeCopy,
   mediaRefreshKey,
 }: {
+  accountScopeKey: string;
   activeView: AppView;
   stars: StarData[];
   setStars: React.Dispatch<React.SetStateAction<StarData[]>>;
@@ -114,7 +135,7 @@ export const useReaderController = ({
   const readerColorStyleSessionRef = React.useRef<RichTextStyleSession | null>(null);
   const readerPendingTitleStylesRef = React.useRef<Record<string, string>>({});
   const readerPendingContentStylesRef = React.useRef<Record<string, string>>({});
-  const readerUploadedImagesRef = React.useRef<StoredImageMetadata[]>([]);
+  const readerUploadedImagesRef = React.useRef<ReaderUploadedImage[]>([]);
   const readerTransactionKeyRef = React.useRef<string | null>(null);
   const readerEditorReadyKeyRef = React.useRef<string | null>(null);
 
@@ -132,20 +153,24 @@ export const useReaderController = ({
     };
   }, [homeCopy.noteImageAlt, homeCopy.removeImage, homeCopy.untitledNote, mediaRefreshKey, readingNoteTarget, stars]);
   const readerRecordKey = readerRecord ? `${readerRecord.star.id}-${readerRecord.note.id}` : null;
+  const readerTransactionKey = readerRecordKey ? `${accountScopeKey}:${readerRecordKey}` : null;
+  const { captureScope, isScopeCurrent } = useAsyncScope(
+    `${accountScopeKey}:${activeView}:${readerRecordKey || 'none'}`,
+  );
 
   const discardUploadedReaderImages = React.useCallback(() => {
     const uploadedImages = readerUploadedImagesRef.current;
     readerUploadedImagesRef.current = [];
-    if (uploadedImages.length > 0) deleteStoredImages(uploadedImages);
+    if (uploadedImages.length > 0) discardScopedReaderUploads(uploadedImages);
   }, []);
 
   React.useEffect(() => {
     const previousKey = readerTransactionKeyRef.current;
-    if (previousKey && previousKey !== readerRecordKey) {
+    if (previousKey && previousKey !== readerTransactionKey) {
       discardUploadedReaderImages();
     }
-    readerTransactionKeyRef.current = readerRecordKey;
-  }, [discardUploadedReaderImages, readerRecordKey]);
+    readerTransactionKeyRef.current = readerTransactionKey;
+  }, [discardUploadedReaderImages, readerTransactionKey]);
 
   React.useEffect(() => () => {
     discardUploadedReaderImages();
@@ -201,11 +226,12 @@ export const useReaderController = ({
     const hasDraftChanges = titleHtml !== baselineTitleHtml || contentHtml !== baselineContentHtml;
     const hasExplicitUpdates = Object.keys(updates).length > 0;
     const images = extractStoredImagesFromHtml(contentHtml);
-    const uploadedImages = uniqueStoredImages(readerUploadedImagesRef.current);
+    const uploadedEntries = readerUploadedImagesRef.current;
+    const uploadedImages = uniqueStoredImages(uploadedEntries.map(upload => upload.metadata));
 
     if (!hasDraftChanges && !hasExplicitUpdates) {
       readerUploadedImagesRef.current = [];
-      if (uploadedImages.length > 0) deleteStoredImages(uploadedImages);
+      if (uploadedEntries.length > 0) discardScopedReaderUploads(uploadedEntries);
       return false;
     }
 
@@ -213,7 +239,7 @@ export const useReaderController = ({
     const removedExistingImages = getRemovedStoredImages(previousImages, images);
     const unusedUploadedImages = getRemovedStoredImages(uploadedImages, images);
     scheduleStoredImageDeletions(removedExistingImages);
-    deleteStoredImages(unusedUploadedImages);
+    discardScopedReaderUploads(uploadedEntries, unusedUploadedImages);
     readerUploadedImagesRef.current = [];
 
     const title = htmlToText(titleHtml);
@@ -464,36 +490,64 @@ export const useReaderController = ({
 
   const insertReaderImage = React.useCallback(async (file?: File) => {
     if (!file || !file.type.startsWith('image/')) return;
-    const imageUrl = await compressImageFileToDataUrl(file);
+    const runScope = captureScope();
     const editor = readerContentRef.current;
-    if (!editor) return;
+    const noteId = readerRecord?.note.id;
+    if (!editor || !noteId) return;
+    const isCurrent = () => (
+      isScopeCurrent(runScope)
+      && readerContentRef.current === editor
+    );
+    const accountScope = isSupabaseMediaEnabled
+      ? await captureMediaAccountScope().catch(error => {
+          console.warn('Could not capture the reader upload session, using the local fallback:', error);
+          return null;
+        })
+      : null;
+    if (!isCurrent()) return;
+    const imageUrl = await compressImageFileToDataUrl(file);
+    if (!isCurrent()) return;
     let imageHtml = imageToReaderHtml(imageUrl, homeCopy.noteImageAlt, homeCopy.removeImage);
 
-    if (isSupabaseMediaEnabled) {
+    if (isSupabaseMediaEnabled && accountScope) {
       try {
         const compressedFile = await dataUrlToFile(imageUrl, `${Date.now()}.jpg`);
+        if (!isCurrent()) return;
         const uploaded = await uploadImageToStorage(compressedFile, {
-          noteId: readerRecord?.note.id,
+          noteId,
           folder: 'notes',
           fileName: compressedFile.name,
+          accountScope,
         });
+        if (!isCurrent()) {
+          if (uploaded.metadata) {
+            await discardUploadedImageForScope(uploaded.metadata, accountScope);
+          }
+          return;
+        }
         if (uploaded.metadata) {
-          readerUploadedImagesRef.current = uniqueStoredImages([
-            ...readerUploadedImagesRef.current,
-            uploaded.metadata,
-          ]);
+          const existingUploads = readerUploadedImagesRef.current.filter(existing => (
+            existing.metadata.bucket !== uploaded.metadata?.bucket
+            || existing.metadata.path !== uploaded.metadata?.path
+          ));
+          readerUploadedImagesRef.current = [
+            ...existingUploads,
+            { metadata: uploaded.metadata, accountScope },
+          ];
         }
         imageHtml = imageToReaderHtml(uploaded.src, homeCopy.noteImageAlt, homeCopy.removeImage, uploaded.metadata);
       } catch (error) {
+        if (!isCurrent()) return;
         console.warn('Supabase Storage upload failed, using data URL fallback:', error);
         requestCloudMediaMaintenance();
       }
     }
 
+    if (!isCurrent()) return;
     editor.insertAdjacentHTML('beforeend', `${imageHtml}${readerEditableTailHtml}`);
     ensureReaderEditableTailAfterMedia(editor);
     moveReaderCaretToContentEnd();
-  }, [homeCopy.noteImageAlt, homeCopy.removeImage, moveReaderCaretToContentEnd, readerRecord?.note.id]);
+  }, [captureScope, homeCopy.noteImageAlt, homeCopy.removeImage, isScopeCurrent, moveReaderCaretToContentEnd, readerRecord?.note.id]);
 
   const handleReaderPaste = React.useCallback(async (
     target: 'title' | 'content',

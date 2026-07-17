@@ -96,7 +96,8 @@ test('server media retention queues expired references and keeps service operati
   assert.match(workflow, /name: Manual Media Retention/);
   assert.doesNotMatch(workflow, /schedule:/);
   assert.match(workflow, /MEDIA_RETENTION_CRON_SECRET/);
-  assert.match(mediaStorage, /supabase\.rpc\('enqueue_memory_media_deletion'/);
+  assert.match(mediaStorage, /client\.rpc\('enqueue_memory_media_deletion'/);
+  assert.match(mediaStorage, /createSessionScopedSupabaseClient\(options\.accountScope\.accessToken\)/);
   assert.match(mediaStorage, /Could not queue server-side media deletion/);
   assert.match(ci, /mobile-webkit:/);
   assert.match(ci, /playwright install --with-deps webkit/);
