@@ -50,11 +50,12 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 ## Features
 
-- **Build a living map.** Begin from your real GPS position, switch among light, dark, and aerial maps, and use the direction probe when the device supports it. Mark places by tapping, dragging a star, or importing one photo's GPS; then move, recolor, number, and reorder stars for planning, or send their coordinates to Apple Maps, AMap, Baidu Maps, or Google Maps.
-- **Turn places into memories.** Every star opens a place-specific notebook with multiple notes and a fixed first-created date. Write styled titles and body text, format selected words, capture or attach private photos, and revisit the result in a focused full-screen reader and editor.
-- **Record how you moved.** One adaptive GPS recorder follows walking, cycling, driving, and transit without asking for a transport mode. Pause and resume freely, restore an unfinished draft, and preserve route shape, distance, duration, and reliable segments while weak-signal gaps stay separate.
-- **Find moments and patterns again.** Browse the archive as a timeline, calendar, month, year, or dedicated search-results view; text search finds matching notes, while coordinate search returns the map to a place. Trip Statistics turns saved memories into marked-location counts, record rankings, star-colored charts, route summaries, and an expandable dotted world map.
-- **Keep the archive under your control.** Each account syncs to its own private cloud data, including when several accounts use the same device. Review the image gallery, create an all-time or date-range offline HTML export, manage language, themes, permissions, privacy, and password access, or permanently delete the account and its private media.
+- **Map meaningful places.** Start from real GPS, choose a map style, and create, move, recolor, sequence, or open stars in external map apps.
+- **Turn a photo into a place.** Import one geotagged photo to create a star at its original coordinates and a linked photo note automatically.
+- **Keep a place notebook.** Each star holds multiple dated notes with styled text, private photos, camera capture, and focused reading and editing views.
+- **Record real movement.** One adaptive GPS recorder handles common travel speeds, pause and resume, weak-signal gaps, drafts, distance, duration, and route shape.
+- **Revisit the archive.** Find memories through timelines, calendars, date filters, text or coordinate search, location rankings, route statistics, and the dotted world map.
+- **Keep control of the data.** Private accounts sync independently and support an image gallery, date-range export, themes, permissions, password changes, and permanent account deletion.
 
 ## AI Memory Research via MCP
 
