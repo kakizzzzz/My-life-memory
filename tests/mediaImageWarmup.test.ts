@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildStorageImageSrc,
+  STORAGE_IMAGE_URL_REFRESH_INTERVAL_MS,
   warmStorageImageUrls,
   type StoredImageMetadata,
 } from '../src/lib/mediaStorage';
@@ -14,6 +15,10 @@ const metadata = (path: string): StoredImageMetadata => ({
   mimeType: 'image/jpeg',
   size: 100,
   createdAt: 1,
+});
+
+test('private image URLs are scheduled to refresh before their one-hour expiry', () => {
+  assert.equal(STORAGE_IMAGE_URL_REFRESH_INTERVAL_MS, 55 * 60 * 1000);
 });
 
 test('hundreds of private images warm in bounded batches and become available progressively', async () => {

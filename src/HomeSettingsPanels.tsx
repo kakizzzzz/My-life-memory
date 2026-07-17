@@ -1,7 +1,9 @@
 import React from 'react';
-import { BookOpen, ChevronRight, Download, KeyRound, Languages, Lock, MapPin, ShieldCheck } from 'lucide-react';
+import { BookOpen, ChevronRight, KeyRound, Languages, Lock, MapPin, ShieldCheck } from 'lucide-react';
 import { AccountDeletionPanel, PrivacyNoticeContent } from './AccountLifecyclePanels';
+import { ExportDataPanel } from './ExportDataPanel';
 import type { CloudMcpTokenInfo } from './lib/cloudBackend';
+import type { UserDataExportRange } from './lib/userDataExport';
 import { LANGUAGE_OPTIONS } from './constants/language';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE, UI_ICON_STROKE } from './constants/ui';
 import { HOME_COPY } from './copy/homeCopy';
@@ -56,7 +58,7 @@ type HomeSettingsPanelsProps = {
   onLanguageChange: (language: string) => void;
   onOpenPermissions: () => void;
   onSignOut: () => void;
-  onExportUserData: () => void;
+  onExportUserData: (range: UserDataExportRange) => void;
   onAccountDeletePasswordChange: (value: string) => void;
   onDeleteAccount: () => void;
   onCopyMcpText: (text: string) => void;
@@ -308,47 +310,13 @@ export function HomeSettingsPanels({
 
   if (activeHomePanel === 'export') {
     return (
-      <div className="mt-4">
-        <div className="rounded-[14px] bg-[var(--app-card)] p-3">
-          <div className="mb-2 flex items-center gap-2 text-[14px] font-medium text-black/60">
-            <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-            {homeCopy.exportData}
-          </div>
-          <button
-            type="button"
-            onClick={onExportUserData}
-            disabled={isExportingData}
-            className="h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
-          >
-            {isExportingData ? homeCopy.exportingData : homeCopy.exportJson}
-          </button>
-          {exportDataProgress !== null && (
-            <div
-              className="mt-3"
-              role="progressbar"
-              aria-label={exportDataStatus || homeCopy.exportingData}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={exportDataProgress}
-            >
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/10">
-                <div
-                  className="h-full rounded-full bg-[var(--app-dark)] transition-[width] duration-200 ease-out"
-                  style={{ width: `${exportDataProgress}%` }}
-                />
-              </div>
-              <div className="mt-1 text-right text-[11px] font-medium tabular-nums text-black/38">
-                {exportDataProgress}%
-              </div>
-            </div>
-          )}
-          {exportDataStatus && (
-            <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
-              {exportDataStatus}
-            </div>
-          )}
-        </div>
-      </div>
+      <ExportDataPanel
+        homeCopy={homeCopy}
+        isExportingData={isExportingData}
+        exportDataStatus={exportDataStatus}
+        exportDataProgress={exportDataProgress}
+        onExportUserData={onExportUserData}
+      />
     );
   }
 

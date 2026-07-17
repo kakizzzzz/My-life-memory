@@ -37,6 +37,7 @@ import {
 import {
   exportReadableUserData,
   getUserDataExportProgressPercent,
+  type UserDataExportRange,
 } from './lib/userDataExport';
 import {
   dateFromCalendarDateKey,
@@ -665,7 +666,7 @@ export default function App() {
     setSystemTheme(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleExportUserData = async () => {
+  const handleExportUserData = async (range: UserDataExportRange = {}) => {
     if (isExportingData) return;
 
     setIsExportingData(true);
@@ -680,6 +681,7 @@ export default function App() {
         copy: {
           noteLabel: homeCopy.noteLabel,
         },
+        range,
         onProgress: progress => {
           setExportDataProgress(getUserDataExportProgressPercent(progress));
           if (progress.stage === 'preparing') {
@@ -695,6 +697,11 @@ export default function App() {
           }
         },
       });
+      if (!result.exported) {
+        setExportDataProgress(null);
+        setExportDataStatus(homeCopy.exportNoNotesInRange);
+        return;
+      }
       setExportDataProgress(100);
       setExportDataStatus(
         result.failedImageCount > 0

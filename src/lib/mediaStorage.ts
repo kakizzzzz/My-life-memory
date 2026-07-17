@@ -8,6 +8,8 @@ import { getCloudSyncStatus } from './cloudSyncStatus';
 export const MEDIA_BUCKET = 'life-media';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+export const STORAGE_IMAGE_URL_REFRESH_INTERVAL_MS =
+  SIGNED_URL_TTL_SECONDS * 1000 - SIGNED_URL_REFRESH_MARGIN_MS;
 const PENDING_MEDIA_DELETE_STORAGE_KEY_PREFIX = 'my-life-memory-pending-media-deletes-v1:';
 const DEFERRED_MEDIA_DELETE_MS = 7 * 24 * 60 * 60 * 1000;
 const ORPHAN_MEDIA_GRACE_MS = 7 * 24 * 60 * 60 * 1000;

@@ -15,6 +15,7 @@ import {
   htmlToText,
 } from './noteHtmlUtils';
 import { normalizeAccountId } from './accountUtils';
+import { dateFromCalendarDateKey } from './dateUtils';
 
 type UserDataExportCopy = {
   noteLabel: string;
@@ -25,6 +26,41 @@ export type UserDataExportProgress = (
   { stage: 'images'; completed: number; total: number } |
   { stage: 'generating' }
 );
+
+export type UserDataExportRange = {
+  startDate?: string;
+  endDate?: string;
+};
+
+const getExportRangeBounds = (range?: UserDataExportRange) => {
+  const startDate = range?.startDate ? dateFromCalendarDateKey(range.startDate) : null;
+  const endDate = range?.endDate ? dateFromCalendarDateKey(range.endDate) : null;
+  if (range?.startDate && !startDate) throw new Error('Invalid export start date.');
+  if (range?.endDate && !endDate) throw new Error('Invalid export end date.');
+
+  const startAt = startDate?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const endAt = endDate
+    ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() + 1).getTime()
+    : Number.POSITIVE_INFINITY;
+  if (startAt >= endAt) throw new Error('Invalid export date range.');
+  return { startAt, endAt };
+};
+
+export const filterStarsForUserDataExport = (
+  stars: StarData[],
+  range?: UserDataExportRange,
+) => {
+  const { startAt, endAt } = getExportRangeBounds(range);
+  return stars
+    .map(star => ({
+      ...star,
+      notes: (star.notes || []).filter(note => {
+        const timestamp = getNoteTimestamp(note);
+        return timestamp >= startAt && timestamp < endAt;
+      }),
+    }))
+    .filter(star => (star.notes || []).length > 0);
+};
 
 export const getUserDataExportProgressPercent = (progress: UserDataExportProgress) => {
   if (progress.stage === 'preparing') return 8;
@@ -41,18 +77,32 @@ export const exportReadableUserData = async ({
   profile,
   languageLocale,
   copy,
+  range,
   onProgress,
 }: {
   stars: StarData[];
   profile: UserProfile;
   languageLocale: string;
   copy: UserDataExportCopy;
+  range?: UserDataExportRange;
   onProgress?: (progress: UserDataExportProgress) => void;
 }) => {
   onProgress?.({ stage: 'preparing' });
   const exportedAt = new Date().toISOString();
   const imageTasks: ExportImageTask[] = [];
-  const locationDrafts = stars.map((star, starIndex) => {
+  const selectedStars = filterStarsForUserDataExport(stars, range);
+  const selectedNoteCount = selectedStars.reduce((total, star) => total + (star.notes || []).length, 0);
+  if (selectedNoteCount === 0) {
+    return {
+      exported: false,
+      noteCount: 0,
+      hasImageError: false,
+      failedImageCount: 0,
+      imageFailures: [],
+    };
+  }
+
+  const locationDrafts = selectedStars.map((star, starIndex) => {
     const notes = (star.notes || []).map((note, noteIndex) => {
       const timestamp = getNoteTimestamp(note);
       const noteTasks = [
@@ -132,6 +182,8 @@ export const exportReadableUserData = async ({
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 
   return {
+    exported: true,
+    noteCount: selectedNoteCount,
     hasImageError: hasImageExportError(readableLocations),
     failedImageCount: imageTaskResult.failures.length,
     imageFailures: imageTaskResult.failures,

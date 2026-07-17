@@ -39,6 +39,7 @@ import { LANGUAGE_OPTIONS, LOGIN_LANGUAGE_LABELS } from './constants/language';
 import { CLOUD_PASSWORD_MIN_LENGTH } from './constants/appDefaults';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE } from './constants/ui';
 import { HOME_COPY } from './copy/homeCopy';
+import type { UserDataExportRange } from './lib/userDataExport';
 import type { AppLanguage, HomePanel, SystemTheme, UploadedImage, UserProfile } from './types/app';
 
 type HomeCopy = typeof HOME_COPY.en;
@@ -110,7 +111,7 @@ type HomeScreenProps = {
   isDeletingAccount: boolean;
   onOpenPermissions: () => void;
   onSignOut: () => void;
-  onExportUserData: () => void;
+  onExportUserData: (range: UserDataExportRange) => void;
   onAccountDeletePasswordChange: (value: string) => void;
   onDeleteAccount: () => void;
   onCopyMcpText: (text: string) => void;

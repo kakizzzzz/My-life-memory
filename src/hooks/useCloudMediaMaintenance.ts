@@ -5,6 +5,7 @@ import {
   isSupabaseMediaEnabled,
   MEDIA_BUCKET,
   retryPendingImageDeletions,
+  STORAGE_IMAGE_URL_REFRESH_INTERVAL_MS,
   warmStorageImageUrls,
   type StoredImageMetadata,
 } from '../lib/mediaStorage';
@@ -86,16 +87,35 @@ export const useCloudMediaMaintenance = ({
     if (!isSupabaseMediaEnabled || !isSignedIn) return;
 
     let isMounted = true;
-    const metadataList = getReferencedStoredMedia();
+    const refreshSignedImageUrls = () => {
+      const metadataList = getReferencedStoredMedia();
+      if (metadataList.length === 0) return;
 
-    void warmStorageImageUrls(metadataList, {
-      onBatchReady: () => {
-        if (isMounted) onMediaReady();
-      },
-    });
+      void warmStorageImageUrls(metadataList, {
+        onBatchReady: () => {
+          if (isMounted) onMediaReady();
+        },
+      }).catch(error => {
+        console.warn('Signed media URLs could not be refreshed:', error);
+      });
+    };
+    const refreshVisibleImageUrls = () => {
+      if (document.visibilityState === 'visible') refreshSignedImageUrls();
+    };
+
+    refreshSignedImageUrls();
+    const intervalId = window.setInterval(
+      refreshSignedImageUrls,
+      STORAGE_IMAGE_URL_REFRESH_INTERVAL_MS,
+    );
+    window.addEventListener('focus', refreshSignedImageUrls);
+    document.addEventListener('visibilitychange', refreshVisibleImageUrls);
 
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshSignedImageUrls);
+      document.removeEventListener('visibilitychange', refreshVisibleImageUrls);
     };
   }, [getReferencedStoredMedia, isSignedIn, onMediaReady, profile.account]);
 
