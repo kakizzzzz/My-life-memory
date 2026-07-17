@@ -50,18 +50,14 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 ## Features
 
-- Place stars for meaningful locations by tapping the map, dragging the star tool, or importing the GPS metadata from one original photo.
-- Tap a star to center it on the map, edit its notes, view and copy coordinates, or choose Apple Maps, AMap, Baidu Maps, or Google Maps for native map handoff.
-- Write rich notes with text color, font size, underline, photos, camera capture, direct full-screen editing, and saved creation timestamps.
+- Place and manage stars by tapping or dragging on the map, importing photo GPS metadata, viewing coordinates, and handing locations off to native map apps.
+- Write rich notes with styled text, photos, camera capture, full-screen editing, saved creation timestamps, and a private image gallery.
 - Browse records by timeline, month/year filters, calendar markers, and a dedicated search results page that lists every matching note with match counts.
 - Track adaptive movement routes, view route statistics, location rankings, star-colored bar charts, and a dotted world-map overview.
-- Switch between Chinese, English, and Korean, customize the theme palette, and manage saved photos through the private image gallery.
-- Review the privacy notice, change the account password without storing readable passwords in app state, or permanently delete the account and its private media.
-- Open the in-app user manual for map, record, statistics, account, icon, and permission behavior.
-- Connect an optional personal read-only MCP to compatible AI clients for evidence-based memory research across countries, cities, towns, villages, neighbourhoods, dates, routes, and note history. Vision-capable clients can request only the relevant private photos as standard MCP image content; other clients continue with text and metadata.
+- Review the privacy notice, change the account password, or permanently delete the account and its private media.
+- Connect an optional personal read-only MCP for evidence-based research across places, dates, routes, notes, and selected private photos.
 - Export all memories or a selected date range as a readable HTML report with note text, dates, coordinates, and embedded images instead of raw app-state JSON.
-- Sync each user's settings, stars, notes, and routes through separate RLS-protected rows instead of replacing one account-wide JSON document.
-- Persist entity mutations to an IndexedDB outbox before network requests, commit them atomically with optimistic dataset revisions, and retain conflict copies for notes, star locations, routes, and profile metadata.
+- Sync user-scoped settings, stars, notes, and routes through normalized RLS-protected rows, with an IndexedDB outbox and optimistic conflict handling.
 - Soft-delete memories, retain the latest 20 historical versions per entity, and protect media referenced by active rows, deleted rows, history, conflicts, or pending local work.
 
 ## OpenAI Build Week
