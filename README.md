@@ -62,6 +62,14 @@ Give a trusted AI client user-scoped, read-only MCP access for evidence-based re
 
 Browse memories through timelines, calendars, search, route and location statistics, native map handoff, and readable date-range exports.
 
+## Spatial Memory Workflow
+
+Every memory begins with a star anchored to a real coordinate. A star can be placed by tapping or dragging on the map, created automatically from a photo with GPS metadata, recolored, moved later, or linked into a numbered place sequence. Opening a star reveals its coordinates and offers a deliberate handoff to a compatible native map app.
+
+Each star is also a place-specific notebook. It can hold multiple notes with immutable first-created timestamps, styled titles and body text, private photos, camera capture, and full-screen reading and editing. The same saved notes remain visible in **My records**, where newer entries appear first and calendar markers expose days with actual content.
+
+The route recorder follows real GPS movement without asking the user to choose a transport mode. It adapts filtering to accuracy and speed, supports pause and resume, separates unreliable gaps, and preserves distance, duration, and route shape. Search, monthly and annual views, location rankings, star-colored charts, the dotted world map, and date-range export then turn those individual place memories into a navigable personal history.
+
 ## AI Memory Research via MCP
 
 MCP is an optional, read-only extension to the private memory archive. It cannot create, edit, or delete memories, and each token is scoped to the authenticated user who generated it.

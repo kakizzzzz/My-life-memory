@@ -32,9 +32,11 @@ function CopyAction({ label, disabled = false, onClick }: CopyActionProps) {
       title={label}
       onClick={onClick}
       disabled={disabled}
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-soft-card)] text-black/65 transition-transform active:scale-[0.96] disabled:opacity-35"
+      className="flex h-11 w-11 shrink-0 items-center justify-center text-black/58 disabled:opacity-35"
     >
-      <Copy size={19} strokeWidth={UI_ICON_STROKE} />
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black/[0.045] transition-transform active:scale-[0.92]">
+        <Copy size={16} strokeWidth={UI_ICON_STROKE} />
+      </span>
     </button>
   );
 }
