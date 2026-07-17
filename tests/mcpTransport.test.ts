@@ -23,3 +23,19 @@ test('cloud MCP does not call catch on the Supabase query builder', () => {
   assert.match(source, /error: usageUpdateError/);
   assert.match(source, /MCP authentication failed unexpectedly/);
 });
+
+test('cloud MCP advertises the geographic and temporal research protocol', () => {
+  assert.match(source, /name: 'research_memory_context'/);
+  assert.match(source, /country, city, town, village/);
+  assert.match(source, /place argument/);
+  assert.match(source, /instructions: MCP_MEMORY_INSTRUCTIONS/);
+  assert.match(source, /version: '0\.3\.0'/);
+});
+
+test('cloud MCP exposes bounded private image blocks for relevant notes', () => {
+  assert.match(source, /name: 'get_memory_images'/);
+  assert.match(source, /maxItems: 10/);
+  assert.match(source, /maximum: 6/);
+  assert.match(source, /buildMcpImageContent/);
+  assert.match(source, /get_note_media/);
+});

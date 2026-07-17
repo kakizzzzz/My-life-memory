@@ -1,68 +1,22 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import type {
+  NormalizedMemoryRows,
+  NoteRow,
+  ProfileRow,
+  SettingsRow,
+  StarRow,
+  TrackRow,
+} from './memory-record-types.ts';
+export type {
+  NormalizedMemoryRows,
+  NoteRow,
+  ProfileRow,
+  SettingsRow,
+  StarRow,
+  TrackRow,
+} from './memory-record-types.ts';
 
 export type SupabaseClientLike = ReturnType<typeof createClient<any>>;
-
-export type ProfileRow = {
-  account_id: string | null;
-  name: string | null;
-  avatar_url: string | null;
-};
-
-export type SettingsRow = {
-  dataset_revision: number | null;
-  data_model_version: number | null;
-  migration_verified_at: string | null;
-};
-
-export type StarRow = {
-  id: string;
-  sort_order: number;
-  lat: number;
-  lng: number;
-  created_at_ms: number | null;
-  tag_order: number | null;
-  tag_group_id: number | null;
-  color: string | null;
-};
-
-export type NoteRow = {
-  star_id: string;
-  id: string;
-  sort_order: number;
-  title: string;
-  title_html: string;
-  content: string;
-  content_html: string;
-  image_url: string | null;
-  image_urls: unknown[] | null;
-  images: unknown[] | null;
-  font_size: number | null;
-  title_font_size: number | null;
-  color: string | null;
-  created_at_ms: number | null;
-  updated_at_ms: number | null;
-};
-
-export type TrackRow = {
-  id: string;
-  sort_order: number;
-  paths: unknown[];
-  color: string | null;
-  duration_seconds: number;
-  distance_km: number;
-  created_at_ms: number | null;
-  updated_at_ms: number | null;
-};
-
-export type NormalizedMemoryRows = {
-  userId: string;
-  account: string;
-  profile: ProfileRow | null;
-  revision: number;
-  stars: StarRow[];
-  notes: NoteRow[];
-  tracks: TrackRow[];
-};
 
 export type MemoryMutationWire = {
   type: string;
@@ -77,6 +31,7 @@ export type NormalizedMemoryLoadOptions = {
   includeNotes?: boolean;
   includeTracks?: boolean;
   starId?: string;
+  noteIds?: string[];
   noteCreatedFromMs?: number;
   noteCreatedBeforeMs?: number;
   trackCreatedFromMs?: number;
@@ -141,6 +96,7 @@ export const loadNormalizedMemoryRows = async (
               .select('star_id,id,sort_order,title,title_html,content,content_html,image_url,image_urls,images,font_size,title_font_size,color,created_at_ms,updated_at_ms')
               .eq('user_id', userId).is('deleted_at', null);
             if (options.starId) query = query.eq('star_id', options.starId);
+            if (options.noteIds?.length) query = query.in('id', options.noteIds);
             const from = Number.isFinite(options.noteCreatedFromMs) ? options.noteCreatedFromMs : null;
             const before = Number.isFinite(options.noteCreatedBeforeMs) ? options.noteCreatedBeforeMs : null;
             if (from !== null && before !== null) {

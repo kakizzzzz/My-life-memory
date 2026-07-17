@@ -59,6 +59,8 @@ Keep `ENABLE_MEMORY_API_WRITES` unset in production unless write/delete API acti
 
 Read actions:
 
+- `research_memory_context`
+- `get_note_media` (authenticated image-reference metadata for MCP)
 - `search_memories`
 - `list_locations`
 - `get_location_memory`
@@ -67,13 +69,24 @@ Read actions:
 - `summarize_memory_range`
 - `export_memory_report`
 
-The API queries normalized tables with explicit user filters and pagination. Action-specific reads skip unrelated tables, date ranges are pushed into database queries, and `summarize_memory_range` uses the service-only SQL aggregate `summarize_normalized_memory_range`. Route date filtering uses `created_at_ms`; `duration_seconds` is never treated as a timestamp.
+The API queries normalized tables with explicit user filters and pagination. Action-specific reads skip unrelated tables, date ranges are pushed into database queries, and `summarize_memory_range` uses the service-only SQL aggregate `summarize_normalized_memory_range`. Route date filtering uses `created_at_ms`; `duration_seconds` is never treated as a timestamp. Natural-language location research resolves countries offline and can resolve cities, towns, villages, neighbourhoods, and administrative places through a server-side Nominatim-compatible endpoint. Only the explicit place argument is sent to that resolver, never note text, account data, private coordinates, or the complete user prompt.
 
 Write actions are disabled unless `ENABLE_MEMORY_API_WRITES=true`. When enabled they still require `confirmWrite: true`; deletes additionally require `confirm: "DELETE"`. Every write becomes a target-entity mutation and uses the same optimistic revision RPC. Deletes are soft deletes and do not immediately remove Storage objects.
 
 ## MCP
 
 Both local and cloud MCP expose read-only memory tools. They cannot create, edit, or delete memories.
+
+For natural-language questions, clients should call `research_memory_context` first. It combines spatial scope, note creation time, routes, and the latest saved memory context, while marking travel-versus-daily-life classification as an inference. A vision-capable client may then call `get_memory_images` with only the relevant returned note IDs. The server rechecks active note ownership and private Storage paths, returns a bounded set of MCP image blocks, and never exposes a service-role key or signed Storage URL. Clients without image support can use the same text and metadata results without calling the image tool.
+
+Optional server-side place resolver settings:
+
+```text
+MEMORY_GEOCODER_URL
+MEMORY_GEOCODER_USER_AGENT
+```
+
+The default public Nominatim-compatible endpoint is limited and cached per warm function instance. Set these variables to a self-hosted or contracted compatible endpoint when traffic outgrows the public-service policy.
 
 Local stdio server:
 

@@ -53,6 +53,7 @@ The six views below follow the app's core journey: shape places with stars, pres
 - Place stars for meaningful locations by tapping the map, dragging the star tool, or importing the GPS metadata from one original photo.
 - Tap a star to center it on the map, edit its notes, view and copy coordinates, or choose Apple Maps, AMap, Baidu Maps, or Google Maps for native map handoff.
 - Write rich notes with text color, font size, underline, photos, camera capture, direct full-screen editing, and saved creation timestamps.
+- Connect a personal read-only MCP to compatible AI clients for evidence-based memory research across countries, cities, towns, villages, neighbourhoods, dates, routes, and note history. Vision-capable clients can request only the relevant private photos as standard MCP image content; other clients continue with text and metadata.
 - Browse records by timeline, month/year filters, calendar markers, and a dedicated search results page that lists every matching note with match counts.
 - Track adaptive movement routes, view route statistics, location rankings, star-colored bar charts, and a dotted world-map overview.
 - Export a readable HTML memory report with note text, dates, coordinates, and embedded images instead of raw app-state JSON.
@@ -61,7 +62,6 @@ The six views below follow the app's core journey: shape places with stars, pres
 - Persist entity mutations to an IndexedDB outbox before network requests, commit them atomically with optimistic dataset revisions, and retain conflict copies for notes, star locations, routes, and profile metadata.
 - Soft-delete memories, retain the latest 20 historical versions per entity, and protect media referenced by active rows, deleted rows, history, conflicts, or pending local work.
 - Show an in-app user manual for map, record, statistics, account, icon, and permission behavior.
-- Generate a personal MCP access token inside the app so compatible AI clients can securely retrieve and analyze the user's marked places, notes, and travel routes through read-only tools.
 
 ## OpenAI Build Week
 
@@ -128,6 +128,8 @@ My Life Memory exposes a user-scoped Memory API through the Supabase Edge Functi
 
 Supported read actions:
 
+- `research_memory_context`
+- `get_note_media` (authenticated image-reference metadata used by MCP)
 - `search_memories`
 - `list_locations`
 - `get_location_memory`
@@ -135,6 +137,12 @@ Supported read actions:
 - `get_routes`
 - `summarize_memory_range`
 - `export_memory_report`
+
+`research_memory_context` is the preferred action for natural-language questions. It applies the same retrieval process to countries, cities, towns, villages, neighbourhoods, and administrative areas: resolve a spatial scope, retrieve matching locations/notes/routes, group notes by their first-created timestamps, compare the latest saved memory context, and return a cautious travel/daily-life inference with evidence and confidence. The latest saved memory is never presented as the user's verified current location. `search_memories` remains available as an exact substring search for compatibility.
+
+For visual questions, MCP uses a deliberate second step instead of downloading the user's whole gallery. After research returns relevant note IDs, a vision-capable client can call `get_memory_images`; the server revalidates active note references and the authenticated user's private `life-media/<userId>/` paths, then returns a small bounded set of standard MCP image blocks without exposing signed URLs. Clients without image support can ignore this tool and use the same text results and image metadata. If no image block is returned, the model is explicitly instructed not to claim it has seen the photo.
+
+Country scope is resolved offline from a generated Natural Earth catalogue. Smaller named places use a replaceable server-side Nominatim lookup with a one-request-per-second limiter and warm-instance cache. Only the explicit geographic name in the MCP `place` argument is sent for lookup; full user questions, note text, private coordinates, and account data are not sent. The endpoint can be changed without a client update through `MEMORY_GEOCODER_URL`, and `MEMORY_GEOCODER_USER_AGENT` can identify a self-hosted deployment. Moderate deployments may use the default public endpoint under its usage policy; larger deployments should configure a self-hosted or contracted compatible service.
 
 The codebase contains these write/delete actions for future controlled integrations:
 
@@ -187,7 +195,7 @@ Users generate their own MCP token inside the app:
 
 Phone clients should choose Streamable HTTP, set the URL to the cloud function URL, and set the authorization header to `Bearer <generated-user-mcp-token>`. The full token is shown only once. Each user can have only one active MCP token; generating a new one replaces the old row, and revoking deletes it. Supabase stores only a SHA-256 hash in `public.mcp_tokens`, so each token maps to exactly one user and cannot read another account's data. The phone never receives the Supabase URL, publishable key, service role key, or app password.
 
-MCP exposes only read-only tools. This keeps AI clients useful for retrieval and analysis without letting them create, edit, or delete the user's private memories.
+MCP exposes only read-only tools. This keeps AI clients useful for retrieval and analysis without letting them create, edit, or delete the user's private memories. Image blocks are delivered only to the authenticated MCP client after user-scoped reference checks, so users should connect only AI clients they trust with the selected private photos.
 
 ## Local Development
 

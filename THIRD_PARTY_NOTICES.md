@@ -11,6 +11,19 @@ The light and dark map styles include map data from OpenStreetMap delivered thro
 - OpenStreetMap data is available under the Open Data Commons Open Database License (ODbL).
 - OpenStreetMap attribution remains visible beside the interactive map and links to the copyright and licence information.
 
+## Memory place resolution
+
+The read-only Memory API can resolve an explicit city, town, village, neighbourhood, or administrative place name through a configurable Nominatim-compatible endpoint.
+
+- Default public-service policy: https://operations.osmfoundation.org/policies/nominatim/
+- API documentation: https://nominatim.org/release-docs/latest/api/Search/
+- Attribution: Geocoding data © OpenStreetMap contributors, ODbL 1.0.
+- Only the explicit geographic name is sent to the resolver. Note text, full user prompts, account data, and saved coordinates are not submitted.
+- Requests are user-triggered, limited to at most one per second per warm function instance, and cached for 24 hours in that instance.
+- `MEMORY_GEOCODER_URL` makes the service replaceable without a client update. Substantial deployments should self-host or use a provider whose capacity and terms fit their traffic.
+
+The offline country catalogue is generated from Natural Earth 1:110m admin-0 data. Natural Earth states that its vector and raster data is in the public domain: https://www.naturalearthdata.com/about/terms-of-use/
+
 ## OpenFreeMap and OpenMapTiles
 
 The light and dark styles request remote vector map resources from OpenFreeMap.

@@ -3,7 +3,7 @@ import type {
   NoteRow,
   StarRow,
   TrackRow,
-} from './normalized-memory.ts';
+} from './memory-record-types.ts';
 export {
   dateKeyFor,
   isInDateRange,

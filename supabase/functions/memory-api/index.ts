@@ -34,6 +34,15 @@ import {
   routeSummary,
   starSummary,
 } from '../_shared/memory-presenters.ts';
+import { resolveMemoryPlace } from '../_shared/memory-place-resolver.ts';
+import {
+  researchMemoryContext,
+  resolveExactMemoryCountryRegion,
+  resolveMemoryCountryRegion,
+  type MemoryPlaceResolutionSummary,
+  type ResolvedMemoryPlace,
+} from '../_shared/memory-research.ts';
+import { collectMemoryImageReferences } from '../_shared/memory-image-references.ts';
 
 const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
@@ -75,6 +84,23 @@ const broadDatabaseDateRange = (dateFrom = '', dateTo = '') => {
   };
 };
 
+const requestedNoteIds = (body: Record<string, unknown>) => (
+  Array.isArray(body.noteIds)
+    ? [...new Set(body.noteIds
+      .filter(value => typeof value === 'string')
+      .map(value => value.trim())
+      .filter(Boolean))]
+    : []
+);
+
+const hasValidNoteIds = (body: Record<string, unknown>, noteIds: string[]) => (
+  Array.isArray(body.noteIds)
+  && noteIds.length >= 1
+  && noteIds.length <= 10
+  && noteIds.length === body.noteIds.length
+  && noteIds.every(noteId => noteId.length <= 200)
+);
+
 const memoryLoadOptions = (action: string, body: Record<string, unknown>): NormalizedMemoryLoadOptions => {
   const date = getString(body.date);
   const dateFrom = date || getString(body.dateFrom);
@@ -105,6 +131,17 @@ const memoryLoadOptions = (action: string, body: Record<string, unknown>): Norma
       includeNotes: false,
       trackCreatedFromMs: range.fromMs,
       trackCreatedBeforeMs: range.beforeMs,
+    };
+  }
+  if (action === 'research_memory_context') {
+    return { includeProfile: false };
+  }
+  if (action === 'get_note_media') {
+    return {
+      includeProfile: false,
+      includeStars: false,
+      includeTracks: false,
+      noteIds: requestedNoteIds(body),
     };
   }
   return {};
@@ -311,6 +348,11 @@ serve(async request => {
       );
     }
 
+    const mediaNoteIds = action === 'get_note_media' ? requestedNoteIds(body) : [];
+    if (action === 'get_note_media' && !hasValidNoteIds(body, mediaNoteIds)) {
+      return fail('bad_request', 'Provide between 1 and 10 unique noteIds.', 400);
+    }
+
     const memory = await loadNormalizedMemoryRows(admin, userId, '', memoryLoadOptions(action, body));
     const groupedNotes = notesByStarId(memory.notes);
     const output = (payload: Record<string, unknown>, count: number, query = '') => (
@@ -320,6 +362,11 @@ serve(async request => {
     if (action === 'list_locations') {
       const locations = memory.stars.map((star, index) => starSummary(star, index, groupedNotes.get(star.id) || []));
       return output({ locations, records: locations }, locations.length);
+    }
+
+    if (action === 'get_note_media') {
+      const media = collectMemoryImageReferences(memory.notes, userId);
+      return output({ media, records: media }, media.length);
     }
 
     if (action === 'search_memories') {
@@ -344,6 +391,131 @@ serve(async request => {
         return [summary];
       }).slice(0, limit);
       return output({ query, results, records: results }, results.length, query);
+    }
+
+    if (action === 'research_memory_context') {
+      const query = getString(body.query).trim();
+      const place = getString(body.place).trim();
+      const region = getString(body.region).trim();
+      const dateFrom = getString(body.dateFrom);
+      const dateTo = getString(body.dateTo);
+      if (!query && !place && !region) {
+        return fail('bad_request', 'query, place, or region is required.', 400);
+      }
+      if ((dateFrom && !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom))
+        || (dateTo && !/^\d{4}-\d{2}-\d{2}$/.test(dateTo))) {
+        return fail('bad_request', 'dateFrom and dateTo must be YYYY-MM-DD.', 400);
+      }
+      const hasCenterLat = body.centerLat !== undefined && body.centerLat !== null;
+      const hasCenterLng = body.centerLng !== undefined && body.centerLng !== null;
+      if (hasCenterLat !== hasCenterLng) {
+        return fail('bad_request', 'centerLat and centerLng must be provided together.', 400);
+      }
+      const centerLat = hasCenterLat ? Number(body.centerLat) : undefined;
+      const centerLng = hasCenterLng ? Number(body.centerLng) : undefined;
+      if (hasCenterLat && !isFiniteCoordinate(centerLat, centerLng)) {
+        return fail('bad_request', 'centerLat and centerLng must be valid coordinates.', 400);
+      }
+      const radiusKm = body.radiusKm === undefined || body.radiusKm === null
+        ? undefined
+        : Number(body.radiusKm);
+      if (radiusKm !== undefined && (!Number.isFinite(radiusKm) || radiusKm < 0.1 || radiusKm > 1_000)) {
+        return fail('bad_request', 'radiusKm must be between 0.1 and 1000.', 400);
+      }
+      const limit = Math.min(Math.max(getNumber(body.limit, 30), 1), 100);
+      const requestedPlace = place || (
+        region && !resolveExactMemoryCountryRegion(region) ? region : ''
+      );
+      if (requestedPlace.length > 160) return fail('bad_request', 'place must be 160 characters or fewer.', 400);
+
+      let resolvedPlace: ResolvedMemoryPlace | null = null;
+      let placeResolution: MemoryPlaceResolutionSummary = { status: 'not-requested' };
+      let placeCandidates: unknown[] = [];
+      const placeAsCountry = resolveExactMemoryCountryRegion(requestedPlace);
+      if (requestedPlace && !placeAsCountry && !hasCenterLat) {
+        const starById = new Map(memory.stars.map(star => [star.id, star]));
+        const latestNote = [...memory.notes]
+          .filter(note => Number.isFinite(Number(note.created_at_ms)))
+          .sort((left, right) => Number(right.created_at_ms || 0) - Number(left.created_at_ms || 0))[0];
+        const latestStar = latestNote ? starById.get(latestNote.star_id) : null;
+        const country = resolveMemoryCountryRegion(region)
+          || resolveMemoryCountryRegion(requestedPlace);
+        const resolution = await resolveMemoryPlace({
+          place: requestedPlace,
+          countryCode: country?.region.code,
+          memoryCoordinates: memory.stars.map(star => ({ lat: star.lat, lng: star.lng })),
+          latestCoordinate: latestStar ? { lat: latestStar.lat, lng: latestStar.lng } : null,
+          endpoint: Deno.env.get('MEMORY_GEOCODER_URL') || undefined,
+          userAgent: Deno.env.get('MEMORY_GEOCODER_USER_AGENT') || undefined,
+        });
+        resolvedPlace = resolution.resolvedPlace;
+        placeResolution = resolution.summary;
+        placeCandidates = resolution.candidates;
+      } else if (placeAsCountry) {
+        placeResolution = {
+          status: 'resolved',
+          query: requestedPlace,
+          candidateCount: 1,
+          selectionReason: 'offline-country-catalog',
+        };
+      } else if (hasCenterLat) {
+        placeResolution = {
+          status: 'resolved',
+          query: requestedPlace || undefined,
+          candidateCount: 1,
+          selectionReason: 'explicit-coordinates',
+        };
+      }
+
+      const research = researchMemoryContext(memory, {
+        query,
+        place: requestedPlace,
+        region,
+        dateFrom,
+        dateTo,
+        centerLat,
+        centerLng,
+        radiusKm,
+        limit,
+        resolvedPlace,
+        placeResolution,
+      }, timeZone);
+      const starById = new Map(memory.stars.map(star => [star.id, star]));
+      const starIndex = new Map(memory.stars.map((star, index) => [star.id, index]));
+      const noteById = new Map(memory.notes.map(note => [note.id, note]));
+      const trackById = new Map(memory.tracks.map(track => [track.id, track]));
+      const residualQuery = research.searchPlan.residualTextQuery;
+      const notes = research.selectedNoteIds.flatMap(noteId => {
+        const note = noteById.get(noteId);
+        const star = note ? starById.get(note.star_id) : null;
+        if (!note || !star) return [];
+        const siblings = groupedNotes.get(star.id) || [];
+        return [noteSummary(
+          note,
+          star,
+          starIndex.get(star.id) || 0,
+          siblings.findIndex(item => item.id === note.id),
+          residualQuery,
+        )];
+      });
+      const locations = research.selectedStarIds.flatMap(starId => {
+        const star = starById.get(starId);
+        return star ? [starSummary(star, starIndex.get(star.id) || 0, groupedNotes.get(star.id) || [])] : [];
+      });
+      const routes = research.selectedTrackIds.flatMap(trackId => {
+        const track = trackById.get(trackId);
+        return track ? [routeSummary(track, false)] : [];
+      });
+      const returnedEntityCount = notes.length + locations.length + routes.length;
+      return output({
+        ...research,
+        placeCandidates,
+        notes,
+        locations,
+        routes,
+        records: notes,
+        returnedEntityCount,
+      }, returnedEntityCount, query || requestedPlace || region);
     }
 
     if (action === 'get_location_memory') {

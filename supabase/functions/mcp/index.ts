@@ -7,6 +7,12 @@ import {
   rateLimitResponse,
   tokenPrefix,
 } from '../_shared/security.ts';
+import { MCP_MEMORY_INSTRUCTIONS } from '../_shared/memory-research.ts';
+import {
+  buildMcpImageContent,
+  encodeStorageObjectPath,
+  type MemoryImageReference,
+} from '../_shared/mcp-image-content.ts';
 
 const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -22,9 +28,66 @@ const optionalDateSchema = {
 
 const readTools = [
   {
+    name: 'research_memory_context',
+    title: 'Research Memory Context',
+    description: 'Primary tool for natural-language questions about any country, city, town, village, date range, trip, routine, or remembered experience. It resolves geographic scope, groups records by creation time, compares the latest saved memory context, and returns an evidence-based travel/daily-life inference. Put only the geographic name in the place argument when one is mentioned; never send private note text to place resolution. Answer only from returned records and do not treat inference as stored fact.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', minLength: 1 },
+        place: {
+          type: 'string',
+          maxLength: 160,
+          description: 'Only the place name to resolve, such as Example City, Example Town, or Example Village. Use for cities, towns, villages, neighbourhoods, and administrative places.',
+        },
+        region: {
+          type: 'string',
+          maxLength: 160,
+          description: 'Optional country or broader region used to disambiguate the place.',
+        },
+        dateFrom: optionalDateSchema,
+        dateTo: optionalDateSchema,
+        centerLat: { type: 'number', minimum: -90, maximum: 90 },
+        centerLng: { type: 'number', minimum: -180, maximum: 180 },
+        radiusKm: { type: 'number', minimum: 0.1, maximum: 1000, default: 5 },
+        limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: true,
+    },
+  },
+  {
+    name: 'get_memory_images',
+    title: 'Read Relevant Memory Photos',
+    description: 'Return private image blocks for up to 10 authenticated-user note ids already returned by another memory tool. Call only for notes relevant to the user question and only when visual analysis is useful. Vision-capable clients may analyze returned image blocks; otherwise use image metadata and never claim to have seen the photos.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        noteIds: {
+          type: 'array',
+          items: { type: 'string', minLength: 1, maxLength: 200 },
+          minItems: 1,
+          maxItems: 10,
+          uniqueItems: true,
+        },
+        maxImages: { type: 'integer', minimum: 1, maximum: 6, default: 3 },
+      },
+      required: ['noteIds'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
     name: 'search_memories',
     title: 'Search My Life Memory',
-    description: 'Search the authenticated user memory notes, coordinates, and location ids. Answer only from returned data. If count is 0, do not infer or invent.',
+    description: 'Exact substring search over the authenticated user memory notes, coordinates, and location ids. For natural-language place, trip, date, or routine questions, use research_memory_context first. If count is 0, do not infer or invent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -279,6 +342,30 @@ const callMemoryApi = async (config: ReturnType<typeof getConfig>, userId: strin
   return payload;
 };
 
+const downloadPrivateMemoryImage = async (
+  config: ReturnType<typeof getConfig>,
+  reference: MemoryImageReference,
+  signal: AbortSignal,
+  maxBytes: number,
+) => {
+  const objectUrl = `${config.supabaseUrl}/storage/v1/object/authenticated/${encodeURIComponent(reference.bucket)}/${encodeStorageObjectPath(reference.path)}`;
+  const response = await fetch(objectUrl, {
+    headers: {
+      apikey: config.serviceRoleKey,
+      Authorization: `Bearer ${config.serviceRoleKey}`,
+    },
+    signal,
+  });
+  if (!response.ok) throw new Error(`storage_http_${response.status}`);
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new Error('image_too_large');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return {
+    bytes,
+    mimeType: response.headers.get('content-type') || reference.mimeType,
+  };
+};
+
 const availableTools = () => readTools;
 
 const handleRpcMessage = async (message: Record<string, unknown>, config: ReturnType<typeof getConfig>, userId: string) => {
@@ -300,8 +387,9 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
       },
       serverInfo: {
         name: 'my-life-memory',
-        version: '0.1.0',
+        version: '0.3.0',
       },
+      instructions: MCP_MEMORY_INSTRUCTIONS,
     });
   }
 
@@ -323,6 +411,23 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
     const tools = availableTools();
     if (!tools.some(tool => tool.name === toolName)) {
       return rpcError(id, -32602, `Unknown or disabled tool: ${toolName}`);
+    }
+    if (toolName === 'get_memory_images') {
+      const payload = await callMemoryApi(config, userId, 'get_note_media', {
+        noteIds: args.noteIds,
+      });
+      const media = Array.isArray(payload?.media)
+        ? payload.media as MemoryImageReference[]
+        : [];
+      const result = await buildMcpImageContent({
+        userId,
+        media,
+        maxImages: Number(args.maxImages) || 3,
+        download: (reference, signal, maxBytes) => (
+          downloadPrivateMemoryImage(config, reference, signal, maxBytes)
+        ),
+      });
+      return rpcResult(id, { content: result.content });
     }
     const payload = await callMemoryApi(config, userId, toolName, args);
     return rpcResult(id, {
