@@ -2,7 +2,7 @@
 
 <div align="center">
   <h1>My Life Memory</h1>
-  <p>My Life Memory is a private life-map app for saving places, notes, photos, routes, coordinates, and travel statistics in one personal memory space, with optional read-only MCP access.</p>
+  <p>My Life Memory is a private spatial memory system for places, notes, photos, and routes. Trusted MCP-compatible AI clients can research that archive through user-controlled, read-only access.</p>
 </div>
 
 ---
@@ -50,15 +50,33 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 ## Features
 
-- Place and manage stars by tapping or dragging on the map, importing photo GPS metadata, viewing coordinates, and handing locations off to native map apps.
-- Write rich notes with styled text, photos, camera capture, full-screen editing, saved creation timestamps, and a private image gallery.
-- Browse records by timeline, month/year filters, calendar markers, and a dedicated search results page that lists every matching note with match counts.
-- Track adaptive movement routes, view route statistics, location rankings, star-colored bar charts, and a dotted world-map overview.
-- Connect an optional personal read-only MCP for evidence-based research across places, dates, routes, notes, and selected private photos.
-- Review the privacy notice, change the account password, or permanently delete the account and its private media.
-- Export all memories or a selected date range as a readable HTML report with note text, dates, coordinates, and embedded images instead of raw app-state JSON.
-- Sync user-scoped settings, stars, notes, and routes through normalized RLS-protected rows, with an IndexedDB outbox and optimistic conflict handling.
-- Soft-delete memories, retain the latest 20 historical versions per entity, and protect media referenced by active rows, deleted rows, history, conflicts, or pending local work.
+### Capture
+
+Map meaningful places with stars, write styled notes, attach private photos, import photo GPS metadata, and record movement routes.
+
+### Research safely
+
+Give a trusted AI client user-scoped, read-only MCP access for evidence-based research across places, dates, notes, routes, and selected private photos tied to relevant notes.
+
+### Revisit
+
+Browse memories through timelines, calendars, search, route and location statistics, native map handoff, and readable date-range exports.
+
+## AI Memory Research via MCP
+
+MCP is an optional, read-only extension to the private memory archive. It cannot create, edit, or delete memories, and each token is scoped to the authenticated user who generated it.
+
+> **Example question:** Was my time in Example City a trip or part of daily life? Show the evidence and inspect only the relevant photos.
+
+For this question, the intended research flow first calls `research_memory_context` to resolve the place and time scope, then returns matched dates, locations, notes, routes, evidence, and a cautious classification with confidence. When visual evidence is useful, a vision-capable client can pass only the relevant returned note IDs to `get_memory_images`; ownership and private Storage paths are checked again before at most six selected images are returned.
+
+Three representative tools:
+
+- `research_memory_context` — contextual place, time, route, and note research with explicit evidence and inference boundaries.
+- `get_memory_images` — selective access to relevant private photos for vision-capable clients.
+- `get_day_memory` — the authenticated user's saved memories for one local date.
+
+The complete nine-tool interface and connection details are documented in [Memory API And MCP Reference](#memory-api-and-mcp-reference).
 
 ## OpenAI Build Week
 
@@ -119,14 +137,16 @@ GPT-5.6 helped translate my completed visual and interaction designs into fronte
 - Settings includes a concise privacy notice that explains Supabase hosting, administrator access, seven-day trash retention, recovery limits, export, and account deletion. The service is not end-to-end encrypted.
 - Self-service account deletion re-verifies the current password, removes every object under `life-media/<userId>/`, then hard-deletes the Auth user. Existing foreign keys cascade to profiles, settings, memories, history, app-state archive, MCP tokens, and Auth sessions. It scans Storage again with retries after Auth deletion, and Storage write policies require a live profile so an expiring access token cannot create new media for a deleted account.
 
-## Memory API And MCP
+## Memory API And MCP Reference
+
+My Life Memory provides a focused, read-only MCP tool server over local stdio and cloud Streamable HTTP. It is designed for personal memory research rather than as a general-purpose MCP platform; the cloud transport uses a user-generated bearer token and does not claim MCP OAuth discovery or every optional MCP capability.
 
 My Life Memory exposes a user-scoped Memory API through the Supabase Edge Function `memory-api`. The API reads `memory_stars`, `memory_notes`, and `memory_tracks` with explicit user scoping and pagination; action-specific loads avoid unrelated tables and push date ranges into database queries. Range summaries use the service-only `summarize_normalized_memory_range` aggregate. The API does not read or rewrite `app_states`. Service-role credentials never reach the frontend or MCP clients.
 
-Supported read actions:
+The public MCP interface exposes exactly nine read-only tools:
 
 - `research_memory_context`
-- `get_note_media` (authenticated image-reference metadata used by MCP)
+- `get_memory_images`
 - `search_memories`
 - `list_locations`
 - `get_location_memory`
@@ -135,9 +155,9 @@ Supported read actions:
 - `summarize_memory_range`
 - `export_memory_report`
 
-These are Memory API action names. `get_note_media` is an internal authenticated action used to validate image-reference metadata; MCP clients use the public `get_memory_images` tool.
+Eight text-oriented tools call same-named Memory API read actions. The public MCP tool `get_memory_images` instead uses the internal authenticated `get_note_media` action to validate image references before returning standard MCP image content. `get_note_media` is not a public MCP tool.
 
-`research_memory_context` is the preferred action for natural-language questions. It applies the same retrieval process to countries, cities, towns, villages, neighbourhoods, and administrative areas: resolve a spatial scope, retrieve matching locations/notes/routes, group notes by their first-created timestamps, compare the latest saved memory context, and return a cautious travel/daily-life inference with evidence and confidence. The latest saved memory is never presented as the user's verified current location. `search_memories` remains available as an exact substring search for compatibility.
+`research_memory_context` is the preferred action for natural-language questions. It applies the same retrieval process to countries, cities, towns, villages, neighbourhoods, and administrative areas: resolve a spatial scope, retrieve matching locations/notes/routes, group notes by their first-created timestamps, compare the latest saved memory context, and return a cautious travel/daily-life inference with evidence and confidence. The latest saved memory is never presented as the user's verified current location. `search_memories` keeps exact substring search for compatibility, but an empty literal result is automatically retried through the same contextual research flow so less capable clients do not stop at a missing phrase.
 
 For visual questions, MCP uses a deliberate second step instead of downloading the user's whole gallery. After research returns relevant note IDs, a vision-capable client can call `get_memory_images`; the server revalidates active note references and the authenticated user's private `life-media/<userId>/` paths, then returns a small bounded set of standard MCP image blocks without exposing signed URLs. Clients without image support can ignore this tool and use the same text results and image metadata. If no image block is returned, the model is explicitly instructed not to claim it has seen the photo.
 

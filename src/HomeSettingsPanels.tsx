@@ -1,7 +1,8 @@
 import React from 'react';
-import { BookOpen, ChevronRight, KeyRound, Languages, Lock, MapPin, ShieldCheck } from 'lucide-react';
+import { BookOpen, ChevronRight, Languages, Lock, MapPin, ShieldCheck } from 'lucide-react';
 import { AccountDeletionPanel, PrivacyNoticeContent } from './AccountLifecyclePanels';
 import { ExportDataPanel } from './ExportDataPanel';
+import { McpAccessPanel } from './McpAccessPanel';
 import type { CloudMcpTokenInfo } from './lib/cloudBackend';
 import type { UserDataExportRange } from './lib/userDataExport';
 import { LANGUAGE_OPTIONS } from './constants/language';
@@ -334,90 +335,17 @@ export function HomeSettingsPanels({
   }
 
   return (
-    <div className="mt-4 space-y-3">
-      <div className="rounded-[14px] bg-[var(--app-card)] p-3">
-        <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-black/60">
-          <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
-          {homeCopy.mcpAccess}
-        </div>
-        <div className="space-y-2">
-          <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
-            <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpNameLabel}</div>
-            <div className="mt-1 break-all text-[13px] font-medium leading-snug text-black/72">{homeCopy.mcpNameValue}</div>
-          </div>
-          <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
-            <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpTransportLabel}</div>
-            <div className="mt-1 break-all text-[13px] font-medium leading-snug text-black/72">{homeCopy.mcpTransportValue}</div>
-          </div>
-          <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
-            <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpEndpoint}</div>
-            <div className="mt-1 break-all text-[12px] font-medium leading-snug text-black/72">{cloudMcpEndpoint}</div>
-            <button
-              type="button"
-              onClick={() => onCopyMcpText(cloudMcpEndpoint)}
-              className="mt-2 h-8 w-full rounded-full bg-white/70 text-[12px] font-medium text-black transition-transform active:scale-[0.98]"
-            >
-              {homeCopy.mcpCopyEndpoint}
-            </button>
-          </div>
-          <div className="rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
-            <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpCustomHeader}</div>
-            <div className="mt-2 rounded-[10px] bg-white/55 px-3 py-2">
-              <div className="text-[12px] font-medium text-black/42">{homeCopy.mcpHeaderName}</div>
-              <div className={`mt-1 break-all text-[12px] font-medium leading-snug ${mcpPlainToken ? 'text-black/72' : 'text-black/35'}`}>
-                {mcpHeaderValue}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onCopyMcpText(mcpHeaderValue)}
-              disabled={!mcpPlainToken}
-              className="mt-2 h-8 w-full rounded-full bg-white/70 text-[12px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-45"
-            >
-              {homeCopy.mcpCopyHeader}
-            </button>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onCreateMcpToken}
-          disabled={isMcpTokenBusy}
-          className="mt-3 h-10 w-full rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
-        >
-          {isMcpTokenBusy ? homeCopy.mcpGenerating : homeCopy.mcpGenerateToken}
-        </button>
-        {(mcpTokenStatus || mcpPlainToken) && (
-          <div className="mt-2 px-1 text-[12px] font-medium leading-snug text-black/45">
-            {mcpTokenStatus || homeCopy.mcpTokenWarning}
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-[14px] bg-[var(--app-card)] p-3">
-        <div className="mb-2 text-[13px] font-medium text-black/45">{homeCopy.mcpTokenPrefix}</div>
-        <div className="space-y-1.5">
-          {mcpTokens.length > 0 ? mcpTokens.map(token => (
-            <div key={token.id} className="flex items-center gap-2 rounded-[12px] bg-[var(--app-soft-card)] px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px] font-medium text-black/65">{token.name || homeCopy.mcpTokenPrefix}</div>
-                <div className="truncate text-[11px] font-medium text-black/38">{token.tokenPrefix}</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRevokeMcpToken(token.id)}
-                disabled={isMcpTokenBusy}
-                className="h-8 rounded-full bg-white/70 px-3 text-[12px] font-medium text-black transition-transform active:scale-[0.98] disabled:opacity-60"
-              >
-                {homeCopy.mcpRevoke}
-              </button>
-            </div>
-          )) : (
-            <div className="px-1 text-[12px] font-medium leading-snug text-black/38">
-              {homeCopy.mcpNoTokens}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <McpAccessPanel
+      homeCopy={homeCopy}
+      cloudMcpEndpoint={cloudMcpEndpoint}
+      mcpHeaderValue={mcpHeaderValue}
+      mcpPlainToken={mcpPlainToken}
+      mcpTokenStatus={mcpTokenStatus}
+      mcpTokens={mcpTokens}
+      isMcpTokenBusy={isMcpTokenBusy}
+      onCopyMcpText={onCopyMcpText}
+      onCreateMcpToken={onCreateMcpToken}
+      onRevokeMcpToken={onRevokeMcpToken}
+    />
   );
 }

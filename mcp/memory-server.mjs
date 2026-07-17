@@ -1,6 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import { buildImageToolResult, encodeStorageObjectPath } from './image-content.mjs';
+import {
+  contextualSearchInput,
+  mergeContextualSearchFallback,
+  shouldUseContextualSearchFallback,
+} from '../supabase/functions/_shared/mcp-query-routing.mjs';
 
 const env = process.env;
 
@@ -118,6 +123,13 @@ const textResult = value => ({
   ],
 });
 
+const searchMemoriesWithContextFallback = async input => {
+  const exact = await callMemoryApi('search_memories', input);
+  if (!shouldUseContextualSearchFallback(exact, input)) return exact;
+  const contextual = await callMemoryApi('research_memory_context', contextualSearchInput(input));
+  return mergeContextualSearchFallback(exact, contextual);
+};
+
 const getTokenUserId = token => {
   try {
     const payload = JSON.parse(Buffer.from(token.split('.')[1] || '', 'base64url').toString('utf8'));
@@ -198,7 +210,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('search_memories', {
     title: 'Search My Life Memory',
-    description: 'Exact substring search over the authenticated user memory notes, coordinates, and location ids. For natural-language place, trip, date, or routine questions, use research_memory_context first. If count is 0, do not infer or invent.',
+    description: 'Search authenticated-user memories. Exact text matches are returned first; if a non-empty search has no literal match, the server automatically retries with geographic and temporal research so place questions such as Japan travel do not fail merely because the notes omit that phrase. If the final count is 0, do not infer or invent.',
     inputSchema: {
       query: z.string().default(''),
       dateFrom: optionalDate,
@@ -209,7 +221,7 @@ export const createMemoryMcpServer = () => {
       readOnlyHint: true,
       openWorldHint: false,
     },
-  }, async input => textResult(await callMemoryApi('search_memories', input)));
+  }, async input => textResult(await searchMemoriesWithContextFallback(input)));
 
   server.registerTool('list_locations', {
     title: 'List Memory Locations',

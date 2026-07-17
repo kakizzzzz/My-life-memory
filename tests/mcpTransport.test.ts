@@ -32,6 +32,13 @@ test('cloud MCP advertises the geographic and temporal research protocol', () =>
   assert.match(source, /version: '0\.3\.0'/);
 });
 
+test('cloud MCP upgrades an empty literal search to contextual research', () => {
+  assert.match(source, /toolName === 'search_memories'/);
+  assert.match(source, /shouldUseContextualSearchFallback\(payload, args\)/);
+  assert.match(source, /'research_memory_context'/);
+  assert.match(source, /mergeContextualSearchFallback\(payload, contextual\)/);
+});
+
 test('cloud MCP exposes bounded private image blocks for relevant notes', () => {
   assert.match(source, /name: 'get_memory_images'/);
   assert.match(source, /maxItems: 10/);
