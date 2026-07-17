@@ -50,17 +50,17 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 ## Features
 
-- **Map and plan.** Place stars by tapping, dragging, or importing photo GPS; recolor or move them, arrange selected places into numbered sequences, and open coordinates in external map apps.
-- **Write and photograph.** Give each place multiple timestamped notes with styled text, private photos, camera capture, and focused reading and editing views.
-- **Track movement.** Record adaptive GPS routes without choosing a transport mode, pause and resume freely, separate unreliable gaps, and preserve distance, duration, and route shape.
-- **Revisit patterns.** Browse timelines, calendars, search results, monthly and annual views, location rankings, route statistics, star-colored charts, and the dotted world map.
-- **Keep control.** Sync memories within a private user-scoped account, create readable date-range exports, and manage privacy, access, and account deletion from the app.
+- **Build a living map.** Begin from your real GPS position, switch among light, dark, and aerial maps, and use the direction probe when the device supports it. Mark places by tapping, dragging a star, or importing one photo's GPS; then move, recolor, number, and reorder stars for planning, or send their coordinates to Apple Maps, AMap, Baidu Maps, or Google Maps.
+- **Turn places into memories.** Every star opens a place-specific notebook with multiple notes and a fixed first-created date. Write styled titles and body text, format selected words, capture or attach private photos, and revisit the result in a focused full-screen reader and editor.
+- **Record how you moved.** One adaptive GPS recorder follows walking, cycling, driving, and transit without asking for a transport mode. Pause and resume freely, restore an unfinished draft, and preserve route shape, distance, duration, and reliable segments while weak-signal gaps stay separate.
+- **Find moments and patterns again.** Browse the archive as a timeline, calendar, month, year, or dedicated search-results view; text search finds matching notes, while coordinate search returns the map to a place. Trip Statistics turns saved memories into marked-location counts, record rankings, star-colored charts, route summaries, and an expandable dotted world map.
+- **Keep the archive under your control.** Each account syncs to its own private cloud data, including when several accounts use the same device. Review the image gallery, create an all-time or date-range offline HTML export, manage language, themes, permissions, privacy, and password access, or permanently delete the account and its private media.
 
 ## AI Memory Research via MCP
 
-Trusted MCP-compatible AI clients can research only the authenticated user's saved places, dates, notes, routes, and selected related photos. Access is user-scoped and read-only: the client cannot create, edit, or delete memories, and answers are expected to stay grounded in returned evidence.
+My Life Memory can extend a private archive into a trusted AI conversation without placing an AI inside the app. A user-generated MCP token gives a compatible client read-only access to that account's places, dates, notes, routes, and only the related photos needed for a question; it cannot create, edit, or delete memories.
 
-Use it for questions such as what the archive shows about a past trip. Connection steps, the complete tool interface, retrieval behavior, and privacy boundaries are documented in [Memory API And MCP Reference](#memory-api-and-mcp-reference).
+Instead of stopping when an exact keyword is absent, the service can interpret named geographic areas, combine spatial, time, note, and route evidence, and return cautious context about a journey or everyday life. Vision-capable clients may inspect a small set of relevant photos after ownership is checked again, while text-only clients can ignore them. See [Memory API And MCP Reference](#memory-api-and-mcp-reference) for connection steps and the complete interface.
 
 ## OpenAI Build Week
 
