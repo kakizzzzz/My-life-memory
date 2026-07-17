@@ -12,7 +12,6 @@ import {
 import { getNoteTimestamp } from './noteDataUtils';
 import {
   getStoredImagesFromNote,
-  hasMeaningfulNoteContent,
   htmlToText,
 } from './noteHtmlUtils';
 import { normalizeAccountId } from './accountUtils';
@@ -55,7 +54,6 @@ export const exportReadableUserData = async ({
   const imageTasks: ExportImageTask[] = [];
   const locationDrafts = stars.map((star, starIndex) => {
     const notes = (star.notes || []).map((note, noteIndex) => {
-      if (!hasMeaningfulNoteContent(note)) return null;
       const timestamp = getNoteTimestamp(note);
       const noteTasks = [
         ...getStoredImagesFromNote(note).map((metadata, imageIndex) => (
@@ -86,7 +84,7 @@ export const exportReadableUserData = async ({
       lat: star.lat,
       lng: star.lng,
       createdAt: star.createdAt || null,
-      notes: notes.filter((note): note is NonNullable<typeof note> => Boolean(note)),
+      notes,
     };
   });
 

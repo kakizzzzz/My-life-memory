@@ -264,14 +264,20 @@ export function HomeGalleryPanel({ homeCopy, uploadedImages, onPreviewImage }: H
     >
       {uploadedImages.length > 0 ? (
         <div className="grid grid-cols-3 gap-2">
-          {uploadedImages.map(image => (
+          {uploadedImages.map((image, index) => (
             <button
               key={image.id}
               onClick={() => onPreviewImage(image)}
               className="aspect-square overflow-hidden rounded-[12px]"
               title={image.title}
             >
-              <img src={image.src} alt={image.title} className="h-full w-full object-cover" />
+              <img
+                src={image.src}
+                alt={image.title}
+                loading={index < 6 ? 'eager' : 'lazy'}
+                decoding="async"
+                className="h-full w-full object-cover"
+              />
             </button>
           ))}
         </div>

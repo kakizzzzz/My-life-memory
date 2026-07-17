@@ -6,13 +6,17 @@ import {
 } from '../lib/mediaStorage';
 import {
   extractImagesFromHtml,
-  hasMeaningfulNoteContent,
   htmlToText,
 } from '../lib/noteHtmlUtils';
-import { getNoteTimestamp } from '../lib/noteDataUtils';
 import { countSearchMatches } from '../lib/searchUtils';
-import { formatRecordMonth, getCalendarDateKey } from '../lib/dateUtils';
 import { getPointsEveryXMeters } from '../lib/trackUtils';
+import {
+  buildCalendarActivityDateKeys,
+  buildNoteRecords,
+  buildRecordDateSummaries,
+  buildStarRecordRankings,
+} from '../lib/memoryRecords';
+import { getNoteTimestamp } from '../lib/noteDataUtils';
 import type { MapActivityPoint, TextRankingItem } from '../TripStatisticsView';
 import type {
   RecordsByDateGroup,
@@ -81,45 +85,12 @@ export const useMemoryDerivedData = ({
   }, [copy.noteLabel, copy.starLabel, mediaRefreshKey, stars]);
 
   const noteRecords = React.useMemo(() => {
-    const now = new Date();
-    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const currentYear = now.getFullYear();
-
-    return stars
-      .flatMap((star, starIndex) => (
-        (star.notes || []).map((note, noteIndex) => {
-          const timestamp = getNoteTimestamp(note);
-          const date = new Date(timestamp);
-          const text = htmlToText(note.contentHtml) || note.content || note.title || copy.untitledNote;
-          const title = htmlToText(note.titleHtml) || note.title || `${copy.noteLabel} ${noteIndex + 1}`;
-          return {
-            id: `${star.id}-${note.id}`,
-            starId: star.id,
-            noteId: note.id,
-            starIndex,
-            noteIndex,
-            lat: star.lat,
-            lng: star.lng,
-            color: star.color || '#EDC727',
-            title,
-            text,
-            timestamp,
-            day: date.getDate(),
-            year: date.getFullYear(),
-            monthKey: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-            dateKey: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-            hasContent: hasMeaningfulNoteContent(note),
-          };
-        })
-      ))
-      .filter(record => {
-        if (!record.hasContent) return false;
-        if (selectedRecordsDateKey && record.dateKey !== selectedRecordsDateKey) return false;
-        if (recordsFilter === 'monthly' && record.monthKey !== currentMonthKey) return false;
-        if (recordsFilter === 'annual' && record.year !== currentYear) return false;
-        return true;
-      })
-      .sort((a, b) => b.timestamp - a.timestamp);
+    return buildNoteRecords({
+      stars,
+      recordsFilter,
+      selectedRecordsDateKey,
+      copy,
+    });
   }, [copy.noteLabel, copy.untitledNote, recordsFilter, selectedRecordsDateKey, stars]);
 
   const searchResultRecords = React.useMemo<SearchResultRecord[]>(() => {
@@ -145,12 +116,11 @@ export const useMemoryDerivedData = ({
             timestamp,
             color: star.color || '#EDC727',
             matchCount,
-            hasContent: hasMeaningfulNoteContent(note),
             isMatch: matchCount > 0,
           };
         })
       ))
-      .filter(record => record.hasContent && record.isMatch)
+      .filter(record => record.isMatch)
       .sort((a, b) => b.timestamp - a.timestamp);
   }, [copy.noteLabel, copy.untitledNote, stars, submittedTextSearch]);
 
@@ -168,43 +138,16 @@ export const useMemoryDerivedData = ({
       .sort((a, b) => (b.records[0]?.timestamp || 0) - (a.records[0]?.timestamp || 0));
   }, [noteRecords]);
 
-  const recordDateSummaries = React.useMemo(() => {
-    const counts = new Map<string, { dateKey: string; day: number; month: string; timestamp: number; count: number }>();
-    stars.forEach(star => {
-      (star.notes || []).forEach(note => {
-        if (!hasMeaningfulNoteContent(note)) return;
-        const timestamp = getNoteTimestamp(note);
-        const date = new Date(timestamp);
-        const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-        const existing = counts.get(dateKey);
-        if (existing) {
-          existing.count += 1;
-        } else {
-          counts.set(dateKey, {
-            dateKey,
-            day: date.getDate(),
-            month: formatRecordMonth(timestamp),
-            timestamp,
-            count: 1,
-          });
-        }
-      });
-    });
-    return Array.from(counts.values()).sort((a, b) => b.timestamp - a.timestamp);
-  }, [stars]);
+  const recordDateSummaries = React.useMemo(() => buildRecordDateSummaries(stars), [stars]);
 
   const recordDateKeys = React.useMemo(() => (
     new Set(recordDateSummaries.map(date => date.dateKey))
   ), [recordDateSummaries]);
 
-  const calendarActivityDateKeys = React.useMemo(() => {
-    const keys = new Set(recordDateSummaries.map(date => date.dateKey));
-    stars.forEach(star => {
-      if (!star.createdAt) return;
-      keys.add(getCalendarDateKey(new Date(star.createdAt)));
-    });
-    return keys;
-  }, [recordDateSummaries, stars]);
+  const calendarActivityDateKeys = React.useMemo(
+    () => buildCalendarActivityDateKeys(stars, recordDateSummaries),
+    [recordDateSummaries, stars],
+  );
 
   const mapActivity = React.useMemo(() => {
     const points: MapActivityPoint[] = [];
@@ -216,8 +159,8 @@ export const useMemoryDerivedData = ({
 
     stars.forEach(star => {
       addPoint(star.lat, star.lng, 1);
-      const meaningfulNoteCount = (star.notes || []).filter(hasMeaningfulNoteContent).length;
-      if (meaningfulNoteCount > 0) addPoint(star.lat, star.lng, meaningfulNoteCount);
+      const savedNoteCount = (star.notes || []).length;
+      if (savedNoteCount > 0) addPoint(star.lat, star.lng, savedNoteCount);
     });
 
     const taggedGroups = new Map<number, StarData[]>();
@@ -256,17 +199,10 @@ export const useMemoryDerivedData = ({
 
   const markedLocationCount = React.useMemo(() => stars.length, [stars]);
 
-  const starRecordRankings = React.useMemo<TextRankingItem[]>(() => (
-    stars
-      .map((star, index) => ({
-        name: String(index + 1),
-        value: (star.notes || []).filter(hasMeaningfulNoteContent).length,
-        fill: star.color || '#EDC727',
-      }))
-      .filter(item => item.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .map((item, index) => ({ ...item, name: String(index + 1) }))
-  ), [stars]);
+  const starRecordRankings = React.useMemo<TextRankingItem[]>(
+    () => buildStarRecordRankings(stars),
+    [stars],
+  );
 
   const recordsCalendarDays = React.useMemo(() => {
     const year = recordsCalendarDate.getFullYear();

@@ -108,7 +108,6 @@ export type NoteRecord = {
   year: number;
   monthKey: string;
   dateKey: string;
-  hasContent: boolean;
 };
 
 export type RecordsByDateGroup = {

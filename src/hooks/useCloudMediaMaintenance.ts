@@ -88,8 +88,10 @@ export const useCloudMediaMaintenance = ({
     let isMounted = true;
     const metadataList = getReferencedStoredMedia();
 
-    void warmStorageImageUrls(metadataList).then(() => {
-      if (isMounted) onMediaReady();
+    void warmStorageImageUrls(metadataList, {
+      onBatchReady: () => {
+        if (isMounted) onMediaReady();
+      },
     });
 
     return () => {

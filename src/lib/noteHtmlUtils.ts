@@ -195,19 +195,3 @@ export const getReadableNoteHtml = (note?: NoteData, imageAltText = 'Note attach
 export const getReadableTitleHtml = (note?: NoteData, fallbackTitle = 'Untitled note') => (
   cleanReaderHtml(note?.titleHtml || escapeHtml(note?.title || fallbackTitle))
 );
-
-export const hasMeaningfulNoteContent = (note: NoteData) => {
-  const title = (htmlToText(note.titleHtml) || note.title || '').trim();
-  const content = (htmlToText(note.contentHtml) || note.content || '').trim();
-  const images = [
-    ...extractImagesFromHtml(note.contentHtml),
-    ...(Array.isArray(note.imageUrls) ? note.imageUrls : []),
-    ...(note.imageUrl ? [note.imageUrl] : []),
-  ];
-
-  return Boolean(
-    content ||
-    images.length > 0 ||
-    (title && title !== 'New Note' && title !== 'Untitled note')
-  );
-};

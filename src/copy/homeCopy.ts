@@ -149,7 +149,7 @@ export const HOME_COPY = {
     manualSections: [
       { title: 'Map and stars', body: 'A star is one place memory. Tap an empty spot on the map to place a star directly, or drag the star tool onto the map to create it more deliberately. After a star is placed, you can still drag it to adjust the location. Tap a star to write notes, add photos, view coordinates, copy them, or choose another map app to open the place.' },
       { title: 'Location and direction', body: 'Open permissions to request real GPS and device direction. The black origin marker is your current position, and the translucent probe shows the phone-facing direction. On mobile Safari, direction data usually requires HTTPS and a user tap. Walking updates depend on GPS accuracy, so outdoor movement is more reliable than indoor testing.' },
-      { title: 'Records', body: 'Notes are created from stars. The note time is based on the first creation time and should not be edited later. In My records, newer notes appear above older ones. Open a note to edit text and images directly, then use the save button in the expanded tools. The calendar shows dots only on days that have saved content or star marks.' },
+      { title: 'Records', body: 'Notes are created from stars. The note time is based on the first creation time and should not be edited later. In My records, newer notes appear above older ones, including intentionally saved blank notes. Open a note to edit text and images directly, then use the save button in the expanded tools. The calendar shows dots on days that have saved notes or star marks.' },
       { title: 'Statistics', body: 'Trip statistics summarize stars, routes, frequent locations, rankings, and the dotted world map. Bar chart colors follow star colors, so the statistics stay visually connected to the memories on the map. The dotted world map is a decorative overview and can be opened for a fuller browsing experience.' },
       { title: 'Account and sync', body: 'Each ID is unique. Register first, then log in with that ID and password. After login, stars, notes, routes, settings, and profile data sync to the cloud. Different accounts stay separated even on the same device, so switching accounts should show each user’s own data.' },
     ],
@@ -373,7 +373,7 @@ export const HOME_COPY = {
     manualSections: [
       { title: '地图与星星', body: '星星代表一个地点记忆。你可以点击地图上的空白位置直接创建星星，也可以把星星工具拖到地图上创建；星星放好以后仍然可以拖动调整位置。点开星星后，可以写笔记、添加照片、查看坐标、复制坐标，也可以选择 Apple 地图、高德、百度或 Google 地图打开这个地点。' },
       { title: '定位与方向', body: '打开权限会请求真实 GPS 和手机方向。黑色原点代表你当前的位置，半透明探头表示手机朝向；浏览器和手机支持时，转动手机探头会跟着旋转，走动时位置会随着 GPS 更新。移动端 Safari 通常需要 HTTPS 和用户点击后才能读取方向，室内 GPS 也可能不如室外稳定。' },
-      { title: '我的记录', body: '记录来自星星里的笔记，时间以第一次创建为准，后续编辑不会改变创建时间。新建记录会显示在旧记录上方。进入记录详情后可以直接编辑文字和图片，图片下方也可以继续输入文字，改完以后用右侧展开工具里的保存按钮保存。日历只会在有文字、图片或星标的日期下面显示点，也可以取消筛选。' },
+      { title: '我的记录', body: '记录来自星星里的笔记，时间以第一次创建为准，后续编辑不会改变创建时间。新建记录会显示在旧记录上方，主动保存的空白笔记也会保留并显示。进入记录详情后可以直接编辑文字和图片，图片下方也可以继续输入文字，改完以后用右侧展开工具里的保存按钮保存。日历会在有已保存笔记或星标的日期下面显示点，也可以取消筛选。' },
       { title: '行程统计', body: '统计页会汇总星星数量、路线距离、常出现地点、排行和点状世界地图。柱状图颜色会跟随星星颜色，方便把统计数据和地图上的记忆对应起来。点状世界地图主要用于整体浏览，它可以打开成更完整的地图视图。' },
       { title: '账号与同步', body: '每个 ID 都是唯一的。第一次使用先注册，注册完成后再用同一个 ID 和密码登录。登录后星星、笔记、路线、主题、个人信息会保存到云端；不同账号即使在同一台设备上切换，也应该只看到各自的数据。' },
     ],
@@ -597,7 +597,7 @@ export const HOME_COPY = {
     manualSections: [
       { title: '지도와 별표', body: '별표는 하나의 장소 기억입니다. 지도 빈 곳을 탭해 바로 만들 수 있고, 별표 도구를 지도 위로 끌어 더 정확히 만들 수도 있습니다. 만든 뒤에도 별표를 끌어 위치를 조정할 수 있습니다. 별표를 열면 노트 작성, 사진 추가, 좌표 보기, 좌표 복사, 다른 지도 앱에서 열기를 할 수 있습니다.' },
       { title: '위치와 방향', body: '권한을 열면 실제 GPS와 휴대폰 방향을 요청합니다. 검은 원점은 현재 위치이고 반투명 표시는 휴대폰이 향하는 방향입니다. 모바일 Safari에서는 보통 HTTPS와 사용자 탭이 필요하며, 실내보다 실외 GPS가 더 안정적입니다.' },
-      { title: '기록', body: '기록은 별표 안의 노트에서 만들어지며 처음 만든 시간이 기준입니다. 새 기록은 오래된 기록보다 위에 표시됩니다. 상세 화면에서 텍스트와 이미지를 바로 편집하고, 펼쳐진 도구의 저장 버튼으로 변경 사항을 저장합니다. 캘린더는 내용이나 별표가 있는 날짜에만 점을 표시합니다.' },
+      { title: '기록', body: '기록은 별표 안의 노트에서 만들어지며 처음 만든 시간이 기준입니다. 새 기록은 오래된 기록보다 위에 표시되고, 사용자가 저장한 빈 노트도 유지되어 표시됩니다. 상세 화면에서 텍스트와 이미지를 바로 편집하고, 펼쳐진 도구의 저장 버튼으로 변경 사항을 저장합니다. 캘린더는 저장된 노트나 별표가 있는 날짜에 점을 표시합니다.' },
       { title: '통계', body: '통계 화면은 별표 수, 이동 거리, 자주 남긴 장소, 순위, 점 형태의 세계 지도를 요약합니다. 막대 색상은 별표 색상을 따라 지도 기억과 통계가 이어져 보이게 합니다.' },
       { title: '계정과 동기화', body: '각 ID는 고유합니다. 처음에는 가입하고, 가입 후 같은 ID와 비밀번호로 로그인합니다. 로그인하면 별표, 노트, 경로, 테마, 프로필이 클라우드에 저장되며 같은 기기에서 계정을 바꿔도 각자의 데이터만 보여야 합니다.' },
     ],

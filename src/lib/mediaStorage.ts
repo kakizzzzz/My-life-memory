@@ -74,12 +74,44 @@ export type StoredImageBlobDownload = {
   method: 'download' | 'signed-url';
 };
 
+type SignedUrlBatchItem = {
+  error: string | null;
+  path: string | null;
+  signedUrl: string | null;
+};
+
+type SignedUrlBatchResponse = {
+  data: SignedUrlBatchItem[] | null;
+  error: unknown;
+};
+
+export type WarmStorageImageUrlsProgress = {
+  completed: number;
+  ready: number;
+  total: number;
+};
+
+export type WarmStorageImageUrlsOptions = {
+  batchSize?: number;
+  maxConcurrentBatches?: number;
+  fallbackConcurrency?: number;
+  onBatchReady?: (progress: WarmStorageImageUrlsProgress) => void;
+  createSignedUrls?: (bucket: string, paths: string[]) => Promise<SignedUrlBatchResponse>;
+  createSignedUrl?: (metadata: StoredImageMetadata) => Promise<string>;
+};
+
+export type WarmStorageImageUrlsResult = WarmStorageImageUrlsProgress & {
+  failed: number;
+};
+
 type PendingMediaDelete = StoredImageMetadata & {
   deleteAfter?: number;
   immediate?: boolean;
 };
 
 const signedUrlCache = new Map<string, { src: string; expiresAt: number }>();
+const signedUrlRequestCache = new Map<string, Promise<string>>();
+const signedUrlWarmInFlight = new Map<string, Promise<void>>();
 
 export const isSupabaseMediaEnabled = Boolean(isCloudBackendEnabled && supabase);
 
@@ -245,6 +277,14 @@ export const buildStorageImageSrc = (metadata?: StoredImageMetadata | null) => {
     : storagePlaceholderSrc(metadata);
 };
 
+const cacheSignedImageUrl = (metadata: StoredImageMetadata, signedUrl: string) => {
+  if (!signedUrl) return;
+  signedUrlCache.set(cacheKeyForMetadata(metadata), {
+    src: signedUrl,
+    expiresAt: Date.now() + SIGNED_URL_TTL_SECONDS * 1000,
+  });
+};
+
 const createSignedImageUrlWithClient = async (
   metadata: StoredImageMetadata,
   client: NonNullable<typeof supabase>,
@@ -256,18 +296,25 @@ const createSignedImageUrlWithClient = async (
 
   if (error) throw error;
   const signedUrl = data?.signedUrl || '';
-  if (signedUrl) {
-    signedUrlCache.set(cacheKeyForMetadata(metadata), {
-      src: signedUrl,
-      expiresAt: Date.now() + SIGNED_URL_TTL_SECONDS * 1000,
-    });
-  }
+  cacheSignedImageUrl(metadata, signedUrl);
   return signedUrl;
 };
 
 export const createSignedImageUrl = async (metadata: StoredImageMetadata) => {
   if (!supabase) return '';
-  return createSignedImageUrlWithClient(metadata, supabase);
+  const cachedSrc = buildStorageImageSrc(metadata);
+  if (cachedSrc && !cachedSrc.startsWith('storage://')) return cachedSrc;
+
+  const key = cacheKeyForMetadata(metadata);
+  const inFlight = signedUrlRequestCache.get(key);
+  if (inFlight) return inFlight;
+
+  const request = createSignedImageUrlWithClient(metadata, supabase)
+    .finally(() => {
+      if (signedUrlRequestCache.get(key) === request) signedUrlRequestCache.delete(key);
+    });
+  signedUrlRequestCache.set(key, request);
+  return request;
 };
 
 const getErrorStatus = (error: unknown) => {
@@ -435,19 +482,167 @@ export const downloadStoredImageBlob = async (
   }
 };
 
-export const warmStorageImageUrls = async (metadataList: StoredImageMetadata[]) => {
-  if (!supabase || metadataList.length === 0) return;
-  const uniqueMetadata = metadataList.filter((metadata, index, list) => (
+const clampInteger = (value: number | undefined, fallback: number, minimum: number, maximum: number) => (
+  Math.max(minimum, Math.min(maximum, Math.floor(value ?? fallback)))
+);
+
+const runWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+) => {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await worker(items[index]);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+};
+
+export const warmStorageImageUrls = async (
+  metadataList: StoredImageMetadata[],
+  options: WarmStorageImageUrlsOptions = {},
+): Promise<WarmStorageImageUrlsResult> => {
+  const emptyResult = { completed: 0, ready: 0, total: 0, failed: 0 };
+  if (metadataList.length === 0 || (!supabase && !options.createSignedUrls)) return emptyResult;
+
+  const staleMetadata = uniqueMetadata(metadataList).filter(metadata => (
     metadata.provider === 'supabase' &&
     Boolean(metadata.path) &&
-    list.findIndex(item => item.bucket === metadata.bucket && item.path === metadata.path) === index
-  ));
-  const staleMetadata = uniqueMetadata.filter(metadata => (
     buildStorageImageSrc(metadata).startsWith('storage://')
   ));
-  if (staleMetadata.length === 0) return;
+  if (staleMetadata.length === 0) return emptyResult;
 
-  await Promise.allSettled(staleMetadata.map(metadata => createSignedImageUrl(metadata)));
+  const total = staleMetadata.length;
+  const batchSize = clampInteger(options.batchSize, 32, 1, 100);
+  const maxConcurrentBatches = clampInteger(options.maxConcurrentBatches, 2, 1, 4);
+  const fallbackConcurrency = clampInteger(options.fallbackConcurrency, 3, 1, 4);
+  const createSignedUrls = options.createSignedUrls ?? (async (bucket: string, paths: string[]) => {
+    if (!supabase) return { data: null, error: new Error('Supabase Storage is not configured.') };
+    return supabase.storage.from(bucket).createSignedUrls(paths, SIGNED_URL_TTL_SECONDS);
+  });
+  const createSignedUrl = options.createSignedUrl ?? createSignedImageUrl;
+
+  const pendingByBucket = new Map<string, StoredImageMetadata[]>();
+  const promisesToMetadata = new Map<Promise<void>, StoredImageMetadata[]>();
+
+  staleMetadata.forEach(metadata => {
+    const key = cacheKeyForMetadata(metadata);
+    const inFlight = signedUrlWarmInFlight.get(key);
+    if (inFlight) {
+      const current = promisesToMetadata.get(inFlight) || [];
+      current.push(metadata);
+      promisesToMetadata.set(inFlight, current);
+      return;
+    }
+
+    const bucket = metadata.bucket || MEDIA_BUCKET;
+    const bucketItems = pendingByBucket.get(bucket) || [];
+    bucketItems.push(metadata);
+    pendingByBucket.set(bucket, bucketItems);
+  });
+
+  const batches: StoredImageMetadata[][] = [];
+  pendingByBucket.forEach(bucketItems => {
+    for (let index = 0; index < bucketItems.length; index += batchSize) {
+      batches.push(bucketItems.slice(index, index + batchSize));
+    }
+  });
+
+  type BatchTask = {
+    metadata: StoredImageMetadata[];
+    promise: Promise<void>;
+    resolve: () => void;
+  };
+
+  const batchTasks: BatchTask[] = batches.map(batch => {
+    let resolve = () => {};
+    const promise = new Promise<void>(complete => {
+      resolve = complete;
+    });
+    batch.forEach(metadata => signedUrlWarmInFlight.set(cacheKeyForMetadata(metadata), promise));
+    promisesToMetadata.set(promise, batch);
+    return { metadata: batch, promise, resolve };
+  });
+
+  let completed = 0;
+  let ready = 0;
+  const notifications = Array.from(promisesToMetadata.entries()).map(async ([promise, metadata]) => {
+    await promise;
+    completed += metadata.length;
+    ready += metadata.filter(item => !buildStorageImageSrc(item).startsWith('storage://')).length;
+    options.onBatchReady?.({ completed, ready, total });
+  });
+
+  const warmBatch = async (batch: StoredImageMetadata[]) => {
+    const bucket = batch[0]?.bucket || MEDIA_BUCKET;
+    let unresolved = batch;
+    try {
+      const response = await createSignedUrls(bucket, batch.map(metadata => metadata.path));
+      if (response.error) throw response.error;
+
+      const resultsByPath = new Map<string, SignedUrlBatchItem>(
+        (response.data || [])
+          .filter(result => Boolean(result.path))
+          .map(result => [result.path!, result]),
+      );
+      unresolved = batch.filter(metadata => {
+        const result = resultsByPath.get(metadata.path);
+        if (!result?.signedUrl || result.error) return true;
+        cacheSignedImageUrl(metadata, result.signedUrl);
+        return false;
+      });
+    } catch (error) {
+      console.warn(`Could not warm signed image URL batch for ${bucket}:`, error);
+    }
+
+    if (unresolved.length === 0) return;
+    await runWithConcurrency(unresolved, fallbackConcurrency, async metadata => {
+      try {
+        const signedUrl = await createSignedUrl(metadata);
+        cacheSignedImageUrl(metadata, signedUrl);
+      } catch (error) {
+        console.warn(`Could not warm signed image URL for ${metadata.path}:`, error);
+      }
+    });
+  };
+
+  let nextBatchIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(maxConcurrentBatches, batchTasks.length) },
+    async () => {
+      while (nextBatchIndex < batchTasks.length) {
+        const taskIndex = nextBatchIndex;
+        nextBatchIndex += 1;
+        const task = batchTasks[taskIndex];
+        try {
+          await warmBatch(task.metadata);
+        } finally {
+          task.metadata.forEach(metadata => {
+            const key = cacheKeyForMetadata(metadata);
+            if (signedUrlWarmInFlight.get(key) === task.promise) signedUrlWarmInFlight.delete(key);
+          });
+          task.resolve();
+        }
+      }
+    },
+  );
+
+  await Promise.all([...workers, ...notifications]);
+  return {
+    completed,
+    ready,
+    total,
+    failed: Math.max(0, total - ready),
+  };
 };
 
 export const uploadImageToStorage = async (
