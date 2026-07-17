@@ -25,6 +25,7 @@ import {
   Settings,
   Share,
   ShieldCheck,
+  SquareMenu,
   Star,
   UserRound,
 } from 'lucide-react';
@@ -280,7 +281,7 @@ export function HomeScreen({
     { panel: 'mcp', label: homeCopy.mcpAccess, icon: <KeyRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
     { panel: 'permissions', label: homeCopy.openPermissionsHint, icon: <MapPin size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'manual', label: homeCopy.userManual, icon: <BookOpen size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
-    { panel: 'privacy', label: homeCopy.privacyNotice, icon: <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
+    { panel: 'privacy', label: homeCopy.privacyNotice, icon: <SquareMenu size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
     { panel: 'apiSecurity', label: homeCopy.apiSecurity, icon: <ShieldCheck size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />, hidden: !isCloudBackendEnabled },
     { panel: 'export', label: homeCopy.exportData, icon: <Download size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} /> },
   ];
