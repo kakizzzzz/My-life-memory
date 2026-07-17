@@ -54,8 +54,8 @@ The six views below follow the app's core journey: shape places with stars, pres
 - Write rich notes with styled text, photos, camera capture, full-screen editing, saved creation timestamps, and a private image gallery.
 - Browse records by timeline, month/year filters, calendar markers, and a dedicated search results page that lists every matching note with match counts.
 - Track adaptive movement routes, view route statistics, location rankings, star-colored bar charts, and a dotted world-map overview.
-- Review the privacy notice, change the account password, or permanently delete the account and its private media.
 - Connect an optional personal read-only MCP for evidence-based research across places, dates, routes, notes, and selected private photos.
+- Review the privacy notice, change the account password, or permanently delete the account and its private media.
 - Export all memories or a selected date range as a readable HTML report with note text, dates, coordinates, and embedded images instead of raw app-state JSON.
 - Sync user-scoped settings, stars, notes, and routes through normalized RLS-protected rows, with an IndexedDB outbox and optimistic conflict handling.
 - Soft-delete memories, retain the latest 20 historical versions per entity, and protect media referenced by active rows, deleted rows, history, conflicts, or pending local work.
