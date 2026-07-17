@@ -21,6 +21,7 @@ const memoryServerInstructions = [
   'My Life Memory is a private, read-only personal memory archive.',
   'When the user asks about their past places, trips, dates, routines, photos, routes, or experiences, call research_memory_context before answering.',
   'For every named country, city, town, village, neighbourhood, or administrative area, put only that geographic name in the place argument so the same spatial and temporal research process is used at every scale.',
+  'Keep user-relative phrases such as home, workplace, school, or where the user saw or did something in the query argument; never send those private aliases to public place resolution.',
   'Do not send private note text or the whole user request as the place argument.',
   'Do not treat a zero-result keyword search as proof that no memory exists; use geographic scope, note creation time, route evidence, and recent recorded context.',
   'The latest recorded memory is only the last place and time saved by the user, not proof of the user\'s current location.',
@@ -28,6 +29,7 @@ const memoryServerInstructions = [
   'When relevant notes contain image metadata and the connected client can process MCP image content, call get_memory_images with only those returned note ids.',
   'If image blocks are not returned, do not claim to have seen a photo or infer its visual contents from metadata.',
   'Answer only from returned records and clearly label travel-versus-daily classification as an inference with confidence and evidence.',
+  'A titleIndex is only the first review layer, and candidateNotes are review candidates rather than matching evidence. Use a candidate only when its text explicitly supports the question; otherwise report that no supporting memory was found and do not discuss unrelated records.',
   'If the tool returns no matching records, do not infer or invent memories.',
 ].join(' ');
 
@@ -177,7 +179,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('research_memory_context', {
     title: 'Research Memory Context',
-    description: 'Primary tool for natural-language questions about any country, city, town, village, date range, trip, routine, or remembered experience. It resolves geographic scope, groups records by creation time, compares the latest saved memory context, and returns an evidence-based travel/daily-life inference. Put only the geographic name in the place argument when one is mentioned; never send private note text to place resolution. Answer only from returned records and do not treat inference as stored fact.',
+    description: 'Primary tool for natural-language questions about any country, city, town, village, neighbourhood, date, trip, routine, personal place such as home/work/study, or where the user saw or did something. Keep personal relations in query and put only an explicit public geographic name in the place argument. It resolves evidence from the authenticated archive, searches titles before bodies, and may return bounded candidateNotes only for verification. Candidate notes are not evidence: if no passage directly supports the question, report no supporting memory and do not discuss unrelated records.',
     inputSchema: {
       query: z.string().min(1),
       place: z.string().max(160).optional(),
@@ -210,7 +212,7 @@ export const createMemoryMcpServer = () => {
 
   server.registerTool('search_memories', {
     title: 'Search My Life Memory',
-    description: 'Search authenticated-user memories. Exact text matches are returned first; if a non-empty search has no literal match, the server automatically retries with geographic and temporal research so place questions such as Japan travel do not fail merely because the notes omit that phrase. If the final count is 0, do not infer or invent.',
+    description: 'Search authenticated-user memories. Exact text matches are returned first; an empty literal result automatically retries contextual research for geographic and personal-place questions. If the final count is 0, titleIndex and candidateNotes remain review aids rather than evidence; do not infer, invent, or answer from unrelated memories.',
     inputSchema: {
       query: z.string().default(''),
       dateFrom: optionalDate,

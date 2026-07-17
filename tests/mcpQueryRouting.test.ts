@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   contextualSearchInput,
+  inferExplicitPlaceFromPersonalEvent,
   inferMemoryPlaceHint,
+  isPersonalMemoryContextQuery,
   mergeContextualSearchFallback,
   shouldUseContextualSearchFallback,
 } from '../supabase/functions/_shared/mcp-query-routing.mjs';
@@ -14,6 +16,36 @@ test('natural memory queries expose only a compact place hint', () => {
   assert.equal(inferMemoryPlaceHint('Was my time in Example City a trip or part of daily life?'), 'Example City');
   assert.equal(inferMemoryPlaceHint('架空町旅行の記録'), '架空町');
   assert.equal(inferMemoryPlaceHint('가상마을 여행 기록'), '가상마을');
+});
+
+test('private personal-place phrases never become public geocoder hints', () => {
+  const queries = [
+    '查看我家附近的笔记',
+    '我工作的地方有什么记录',
+    '我学习的地方',
+    '我看到海豚的地方',
+    '我做陶艺的地方',
+    'Where I saw the old train',
+  ];
+  queries.forEach(query => {
+    assert.equal(isPersonalMemoryContextQuery(query), true, query);
+    assert.equal(inferMemoryPlaceHint(query), '', query);
+  });
+  assert.deepEqual(contextualSearchInput({ query: '查看我家附近的笔记' }), {
+    query: '查看我家附近的笔记',
+    limit: 20,
+  });
+});
+
+test('an explicit public place inside a personal event query remains the first spatial scope', () => {
+  assert.equal(inferExplicitPlaceFromPersonalEvent('看看我2025年在示例城市看到的海豚'), '示例城市');
+  assert.equal(inferMemoryPlaceHint('看看我2025年在示例城市看到的海豚'), '示例城市');
+  assert.equal(inferMemoryPlaceHint('我在家看到一只猫'), '');
+  assert.deepEqual(contextualSearchInput({ query: '看看我2025年在示例城市看到的海豚' }), {
+    query: '看看我2025年在示例城市看到的海豚',
+    place: '示例城市',
+    limit: 20,
+  });
 });
 
 test('zero literal results retry context while exact matches remain exact', () => {

@@ -42,6 +42,10 @@ import {
   type MemoryPlaceResolutionSummary,
   type ResolvedMemoryPlace,
 } from '../_shared/memory-research.ts';
+import {
+  explicitMemoryNoteTitle,
+  isPersonalMemoryReference,
+} from '../_shared/memory-personal-context.ts';
 import { collectMemoryImageReferences } from '../_shared/memory-image-references.ts';
 
 const DEFAULT_CORS_HEADERS = {
@@ -427,21 +431,27 @@ serve(async request => {
         region && !resolveExactMemoryCountryRegion(region) ? region : ''
       );
       if (requestedPlace.length > 160) return fail('bad_request', 'place must be 160 characters or fewer.', 400);
+      const privatePlaceReference = isPersonalMemoryReference(requestedPlace);
+      const geocodablePlace = privatePlaceReference ? '' : requestedPlace;
 
       let resolvedPlace: ResolvedMemoryPlace | null = null;
-      let placeResolution: MemoryPlaceResolutionSummary = { status: 'not-requested' };
+      let placeResolution: MemoryPlaceResolutionSummary = privatePlaceReference ? {
+        status: 'not-requested',
+        query: requestedPlace,
+        message: 'Private personal-place references are resolved only from the authenticated user memory archive.',
+      } : { status: 'not-requested' };
       let placeCandidates: unknown[] = [];
-      const placeAsCountry = resolveExactMemoryCountryRegion(requestedPlace);
-      if (requestedPlace && !placeAsCountry && !hasCenterLat) {
+      const placeAsCountry = resolveExactMemoryCountryRegion(geocodablePlace);
+      if (geocodablePlace && !placeAsCountry && !hasCenterLat) {
         const starById = new Map(memory.stars.map(star => [star.id, star]));
         const latestNote = [...memory.notes]
           .filter(note => Number.isFinite(Number(note.created_at_ms)))
           .sort((left, right) => Number(right.created_at_ms || 0) - Number(left.created_at_ms || 0))[0];
         const latestStar = latestNote ? starById.get(latestNote.star_id) : null;
         const country = resolveMemoryCountryRegion(region)
-          || resolveMemoryCountryRegion(requestedPlace);
+          || resolveMemoryCountryRegion(geocodablePlace);
         const resolution = await resolveMemoryPlace({
-          place: requestedPlace,
+          place: geocodablePlace,
           countryCode: country?.region.code,
           memoryCoordinates: memory.stars.map(star => ({ lat: star.lat, lng: star.lng })),
           latestCoordinate: latestStar ? { lat: latestStar.lat, lng: latestStar.lng } : null,
@@ -498,6 +508,42 @@ serve(async request => {
           residualQuery,
         )];
       });
+      const titleIndex = research.titleNoteIds.flatMap(noteId => {
+        const note = noteById.get(noteId);
+        const star = note ? starById.get(note.star_id) : null;
+        if (!note || !star) return [];
+        const title = explicitMemoryNoteTitle(note);
+        return [{
+          id: note.id,
+          starId: note.star_id,
+          title: title || 'Untitled note',
+          hasExplicitTitle: Boolean(title),
+          createdAt: note.created_at_ms ?? star.created_at_ms,
+          coordinates: { lat: star.lat, lng: star.lng },
+          retrievalRole: 'title-index',
+        }];
+      });
+      const candidateNotes = research.candidateNoteIds.flatMap(noteId => {
+        const note = noteById.get(noteId);
+        const star = note ? starById.get(note.star_id) : null;
+        if (!note || !star) return [];
+        const summary = noteSummary(
+          note,
+          star,
+          starIndex.get(star.id) || 0,
+          (groupedNotes.get(star.id) || []).findIndex(item => item.id === note.id),
+        );
+        return [{
+          id: summary.id,
+          starId: summary.starId,
+          title: summary.title,
+          text: summary.text,
+          createdAt: summary.createdAt,
+          coordinates: summary.coordinates,
+          retrievalRole: 'candidate-only',
+          evidenceStatus: 'unverified',
+        }];
+      });
       const locations = research.selectedStarIds.flatMap(starId => {
         const star = starById.get(starId);
         return star ? [starSummary(star, starIndex.get(star.id) || 0, groupedNotes.get(star.id) || [])] : [];
@@ -511,6 +557,8 @@ serve(async request => {
         ...research,
         placeCandidates,
         notes,
+        titleIndex,
+        candidateNotes,
         locations,
         routes,
         records: notes,

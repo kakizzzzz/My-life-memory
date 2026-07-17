@@ -35,7 +35,7 @@ const readTools = [
   {
     name: 'research_memory_context',
     title: 'Research Memory Context',
-    description: 'Primary tool for natural-language questions about any country, city, town, village, date range, trip, routine, or remembered experience. It resolves geographic scope, groups records by creation time, compares the latest saved memory context, and returns an evidence-based travel/daily-life inference. Put only the geographic name in the place argument when one is mentioned; never send private note text to place resolution. Answer only from returned records and do not treat inference as stored fact.',
+    description: 'Primary tool for natural-language questions about any country, city, town, village, neighbourhood, date, trip, routine, personal place such as home/work/study, or where the user saw or did something. Keep personal relations in query and put only an explicit public geographic name in the place argument. It resolves evidence from the authenticated archive, searches titles before bodies, and may return bounded candidateNotes only for verification. Candidate notes are not evidence: if no passage directly supports the question, report no supporting memory and do not discuss unrelated records.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -92,7 +92,7 @@ const readTools = [
   {
     name: 'search_memories',
     title: 'Search My Life Memory',
-    description: 'Search authenticated-user memories. Exact text matches are returned first; if a non-empty search has no literal match, the server automatically retries with geographic and temporal research so place questions such as Japan travel do not fail merely because the notes omit that phrase. If the final count is 0, do not infer or invent.',
+    description: 'Search authenticated-user memories. Exact text matches are returned first; an empty literal result automatically retries contextual research for geographic and personal-place questions. If the final count is 0, titleIndex and candidateNotes remain review aids rather than evidence; do not infer, invent, or answer from unrelated memories.',
     inputSchema: {
       type: 'object',
       properties: {

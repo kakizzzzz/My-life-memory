@@ -2,7 +2,7 @@
 
 <div align="center">
   <h1>My Life Memory</h1>
-  <p>My Life Memory is a private spatial memory system for places, notes, photos, and routes. Trusted MCP-compatible AI clients can research that archive through user-controlled, read-only access.</p>
+  <p>My Life Memory is a private spatial memory system for places, notes, photos, and routes. AI clients the user trusts can research that archive through user-controlled, read-only MCP access.</p>
 </div>
 
 ---
@@ -59,7 +59,7 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 ## AI Memory Research via MCP
 
-My Life Memory can extend a private archive into a trusted AI conversation without placing an AI inside the app. A user-generated MCP token gives a compatible client read-only access to that account's places, dates, notes, routes, and only the related photos needed for a question; it cannot create, edit, or delete memories.
+My Life Memory can extend a private archive into a trusted AI conversation without placing an AI inside the app. A user-generated MCP token gives a compatible client read-only access to that account's places, dates, notes, routes, and a bounded set of selected photos linked to relevant notes; it cannot create, edit, or delete memories.
 
 Instead of stopping when an exact keyword is absent, the service can interpret named geographic areas, combine spatial, time, note, and route evidence, and return cautious context about a journey or everyday life. Vision-capable clients may inspect a small set of relevant photos after ownership is checked again, while text-only clients can ignore them. See [Memory API And MCP Reference](#memory-api-and-mcp-reference) for connection steps and the complete interface.
 
