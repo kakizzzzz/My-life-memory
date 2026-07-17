@@ -72,17 +72,17 @@ The route recorder follows real GPS movement without asking the user to choose a
 
 ## AI Memory Research via MCP
 
-MCP is an optional, read-only extension to the private memory archive. It cannot create, edit, or delete memories, and each token is scoped to the authenticated user who generated it.
+MCP is an optional, read-only extension for trusted AI clients. It can research only the authenticated user's memories and cannot create, edit, or delete them.
 
-> **Example question:** Was my time in Example City a trip or part of daily life? Show the evidence and inspect only the relevant photos.
+> **Example question:** What do my saved memories show about a past trip? Use the available evidence and inspect only the relevant photos.
 
-For this question, the intended research flow first calls `research_memory_context` to resolve the place and time scope, then returns matched dates, locations, notes, routes, evidence, and a cautious classification with confidence. When visual evidence is useful, a vision-capable client can pass only the relevant returned note IDs to `get_memory_images`; ownership and private Storage paths are checked again before at most six selected images are returned.
+`research_memory_context` finds relevant places, dates, notes, and routes, then returns evidence with a cautious inference. A vision-capable client can use `get_memory_images` to inspect only the related note photos after ownership is checked again.
 
 Three representative tools:
 
-- `research_memory_context` — contextual place, time, route, and note research with explicit evidence and inference boundaries.
-- `get_memory_images` — selective access to relevant private photos for vision-capable clients.
-- `get_day_memory` — the authenticated user's saved memories for one local date.
+- `research_memory_context` — evidence across related places, dates, notes, and routes.
+- `get_memory_images` — selected related photos for vision-capable clients.
+- `get_day_memory` — memories saved on one local date.
 
 The complete nine-tool interface and connection details are documented in [Memory API And MCP Reference](#memory-api-and-mcp-reference).
 
