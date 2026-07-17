@@ -50,41 +50,17 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 ## Features
 
-### Capture
-
-Map meaningful places with stars, arrange selected stars into numbered sequences for planning, and open saved coordinates in external map apps. Write styled notes, attach private photos, import photo GPS metadata, and record movement routes.
-
-### Research safely
-
-Give a trusted AI client user-scoped, read-only MCP access for evidence-based research across places, dates, notes, routes, and selected private photos tied to relevant notes.
-
-### Revisit
-
-Browse memories through timelines, calendars, search, route and location statistics, native map handoff, and readable date-range exports.
-
-## Spatial Memory Workflow
-
-Every memory begins with a star anchored to a real coordinate. A star can be placed by tapping or dragging on the map, created automatically from a photo with GPS metadata, recolored, moved later, or linked into a numbered place sequence. Opening a star reveals its coordinates and offers a deliberate handoff to a compatible native map app.
-
-Each star is also a place-specific notebook. It can hold multiple notes with immutable first-created timestamps, styled titles and body text, private photos, camera capture, and full-screen reading and editing. The same saved notes remain visible in **My records**, where newer entries appear first and calendar markers expose days with actual content.
-
-The route recorder follows real GPS movement without asking the user to choose a transport mode. It adapts filtering to accuracy and speed, supports pause and resume, separates unreliable gaps, and preserves distance, duration, and route shape. Search, monthly and annual views, location rankings, star-colored charts, the dotted world map, and date-range export then turn those individual place memories into a navigable personal history.
+- **Map and plan.** Place stars by tapping, dragging, or importing photo GPS; recolor or move them, arrange selected places into numbered sequences, and open coordinates in external map apps.
+- **Write and photograph.** Give each place multiple timestamped notes with styled text, private photos, camera capture, and focused reading and editing views.
+- **Track movement.** Record adaptive GPS routes without choosing a transport mode, pause and resume freely, separate unreliable gaps, and preserve distance, duration, and route shape.
+- **Revisit patterns.** Browse timelines, calendars, search results, monthly and annual views, location rankings, route statistics, star-colored charts, and the dotted world map.
+- **Keep control.** Sync memories within a private user-scoped account, create readable date-range exports, and manage privacy, access, and account deletion from the app.
 
 ## AI Memory Research via MCP
 
-MCP is an optional, read-only extension for trusted AI clients. It can research only the authenticated user's memories and cannot create, edit, or delete them.
+Trusted MCP-compatible AI clients can research only the authenticated user's saved places, dates, notes, routes, and selected related photos. Access is user-scoped and read-only: the client cannot create, edit, or delete memories, and answers are expected to stay grounded in returned evidence.
 
-> **Example question:** What do my saved memories show about a past trip? Use the available evidence and inspect only the relevant photos.
-
-`research_memory_context` finds relevant places, dates, notes, and routes, then returns evidence with a cautious inference. A vision-capable client can use `get_memory_images` to inspect only the related note photos after ownership is checked again.
-
-Three representative tools:
-
-- `research_memory_context` — evidence across related places, dates, notes, and routes.
-- `get_memory_images` — selected related photos for vision-capable clients.
-- `get_day_memory` — memories saved on one local date.
-
-The complete nine-tool interface and connection details are documented in [Memory API And MCP Reference](#memory-api-and-mcp-reference).
+Use it for questions such as what the archive shows about a past trip. Connection steps, the complete tool interface, retrieval behavior, and privacy boundaries are documented in [Memory API And MCP Reference](#memory-api-and-mcp-reference).
 
 ## OpenAI Build Week
 
