@@ -2,7 +2,7 @@
 
 <div align="center">
   <h1>My Life Memory</h1>
-  <p>My Life Memory is a private life-map app for saving places, notes, photos, routes, coordinates, and travel statistics in one personal memory space.</p>
+  <p>My Life Memory is a private life-map app for saving places, notes, photos, routes, coordinates, and travel statistics in one personal memory space, with optional read-only MCP access.</p>
 </div>
 
 ---
@@ -67,7 +67,7 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 My Life Memory existed before OpenAI Build Week, with its core map, place stars, memory notes, route recording, and foundational interface already in place.
 
-All visual design, UI/UX, interaction design, and product direction were created independently by me. I also made the feature decisions and led testing and acceptance. Codex was used under my direction for implementation, refactoring, debugging, testing, and documentation; the week's focus included normalized user-scoped storage, synchronization and conflict handling, the private media lifecycle, account lifecycle and privacy safeguards, the Memory API, and a read-only MCP for GPT-5.6-compatible AI clients.
+All visual design, UI/UX, interaction design, and product direction were created independently by me. I also made the feature decisions and led testing and acceptance. Codex was used under my direction for implementation, refactoring, debugging, testing, and documentation; the week's focus included normalized user-scoped storage, synchronization and conflict handling, the private media lifecycle, account lifecycle and privacy safeguards, the Memory API, and a read-only MCP service for MCP-compatible AI clients, including clients powered by GPT-5.6.
 
 GPT-5.6 helped translate my completed visual and interaction designs into frontend code, assisting with React and TypeScript structure and implementation. I defined the interaction logic and component behavior, and I also participated directly in debugging, testing, and iteration. On the backend, GPT-5.6 helped design and configure Supabase, including the data model, Row Level Security policies, Edge Functions, privacy safeguards, testing strategy, and deployment workflow. Through computer-use assistance, it also helped configure and verify parts of the Supabase setup. It additionally supported product review and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP.
 
@@ -137,6 +137,8 @@ Supported read actions:
 - `get_routes`
 - `summarize_memory_range`
 - `export_memory_report`
+
+These are Memory API action names. `get_note_media` is an internal authenticated action used to validate image-reference metadata; MCP clients use the public `get_memory_images` tool.
 
 `research_memory_context` is the preferred action for natural-language questions. It applies the same retrieval process to countries, cities, towns, villages, neighbourhoods, and administrative areas: resolve a spatial scope, retrieve matching locations/notes/routes, group notes by their first-created timestamps, compare the latest saved memory context, and return a cautious travel/daily-life inference with evidence and confidence. The latest saved memory is never presented as the user's verified current location. `search_memories` remains available as an exact substring search for compatibility.
 
