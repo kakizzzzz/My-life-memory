@@ -52,7 +52,7 @@ The six views below follow the app's core journey: shape places with stars, pres
 
 ### Capture
 
-Map meaningful places with stars, write styled notes, attach private photos, import photo GPS metadata, and record movement routes.
+Map meaningful places with stars, arrange selected stars into numbered sequences for planning, and open saved coordinates in external map apps. Write styled notes, attach private photos, import photo GPS metadata, and record movement routes.
 
 ### Research safely
 
