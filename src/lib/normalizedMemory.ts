@@ -10,6 +10,7 @@ import type {
 import type { StoredImageMetadata } from './mediaStorage';
 import type { CloudProfile } from './cloudBackend';
 import { createClientId } from './generalUtils';
+import { normalizeTimeZone } from './timeZone';
 
 export const NORMALIZED_MEMORY_MODEL_VERSION = 2;
 
@@ -39,7 +40,7 @@ export type MemorySettingsRow = {
   system_theme: Partial<SystemTheme> | null;
   language: string;
   profile_conflicts: ProfileConflictData[] | null;
-  profile_metadata: { avatarImage?: StoredImageMetadata } | null;
+  profile_metadata: { avatarImage?: StoredImageMetadata; timeZone?: string } | null;
   dataset_revision: number | null;
   data_model_version: number | null;
   migration_verified_at: string | null;
@@ -170,7 +171,10 @@ const settingsPayload = (state: PersistedAppState) => ({
   systemTheme: state.systemTheme || {},
   language: state.language || 'en',
   profileConflicts: state.profileConflicts || [],
-  profileMetadata: state.profile?.avatarImage ? { avatarImage: state.profile.avatarImage } : {},
+  profileMetadata: {
+    ...(state.profile?.avatarImage ? { avatarImage: state.profile.avatarImage } : {}),
+    timeZone: normalizeTimeZone(state.timeZone),
+  },
 });
 
 const profilePayload = (profile: CloudProfile) => ({
@@ -385,21 +389,23 @@ export const applyMemoryMutationsToSnapshot = ({
   mutations.forEach(item => {
     const payload = item.payload || {};
     if (item.type === 'settings_update') {
+      const profileMetadata = payload.profileMetadata && typeof payload.profileMetadata === 'object'
+        ? payload.profileMetadata as Record<string, unknown>
+        : {};
       nextState = {
         ...nextState,
         mapStyle: (payload.mapStyle as MapStyle | undefined) || nextState.mapStyle,
         systemTheme: (payload.systemTheme as Partial<SystemTheme> | undefined) || nextState.systemTheme,
         language: typeof payload.language === 'string' ? payload.language : nextState.language,
+        timeZone: normalizeTimeZone(profileMetadata.timeZone, nextState.timeZone),
         profileConflicts: Array.isArray(payload.profileConflicts)
           ? payload.profileConflicts as ProfileConflictData[]
           : nextState.profileConflicts,
         profile: {
           ...(nextState.profile || {}),
-          ...(
-            payload.profileMetadata && typeof payload.profileMetadata === 'object'
-              ? payload.profileMetadata as Record<string, unknown>
-              : {}
-          ),
+          ...(profileMetadata.avatarImage && typeof profileMetadata.avatarImage === 'object'
+            ? { avatarImage: profileMetadata.avatarImage as StoredImageMetadata }
+            : {}),
         },
       };
       return;
@@ -744,6 +750,7 @@ export const assembleNormalizedMemoryState = ({
     mapStyle: settings.map_style,
     systemTheme: settings.system_theme || {},
     language: settings.language || 'en',
+    timeZone: normalizeTimeZone(settings.profile_metadata?.timeZone),
     profileConflicts: Array.isArray(settings.profile_conflicts) ? settings.profile_conflicts : [],
     profile: {
       account: profile.account,

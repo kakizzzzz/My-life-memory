@@ -537,7 +537,7 @@ const publicScope = (scope: SpatialScope | null) => {
 export const researchMemoryContext = (
   memory: NormalizedMemoryRows,
   input: MemoryResearchInput,
-  timeZone = 'Asia/Shanghai',
+  timeZone = 'UTC',
 ) => {
   const query = String(input.query || '').trim();
   const inferredDateRange = inferMemoryQueryDateRange(query);

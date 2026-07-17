@@ -15,7 +15,6 @@ const explicitAccessToken = (env.MLM_SUPABASE_ACCESS_TOKEN || '').trim();
 const account = (env.MLM_ACCOUNT || '').trim().toLowerCase();
 const password = env.MLM_PASSWORD || '';
 const apiUrl = (env.MLM_MEMORY_API_URL || (supabaseUrl ? `${supabaseUrl}/functions/v1/memory-api` : '')).trim();
-const defaultTimeZone = env.MLM_TIME_ZONE || 'Asia/Shanghai';
 
 const memoryServerInstructions = [
   'My Life Memory is a private, read-only personal memory archive.',
@@ -103,7 +102,6 @@ const callMemoryApi = async (action, input = {}) => {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      timeZone: defaultTimeZone,
       ...input,
       action,
     }),

@@ -1,4 +1,4 @@
-export const dateKeyFor = (timestamp: unknown, timeZone = 'Asia/Shanghai') => {
+export const dateKeyFor = (timestamp: unknown, timeZone = 'UTC') => {
   if (timestamp === null || timestamp === undefined || timestamp === '') return '';
   const number = typeof timestamp === 'number' ? timestamp : Number(timestamp);
   if (!Number.isFinite(number)) return '';
@@ -20,7 +20,7 @@ export const isInDateRange = (
   timestamp: unknown,
   dateFrom = '',
   dateTo = '',
-  timeZone = 'Asia/Shanghai'
+  timeZone = 'UTC'
 ) => {
   const key = dateKeyFor(timestamp, timeZone);
   if (!key) return false;

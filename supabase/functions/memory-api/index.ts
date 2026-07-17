@@ -47,6 +47,10 @@ import {
   isPersonalMemoryReference,
 } from '../_shared/memory-personal-context.ts';
 import { collectMemoryImageReferences } from '../_shared/memory-image-references.ts';
+import {
+  normalizeTimeZone,
+  validTimeZoneOrNull,
+} from '../_shared/time-zone.ts';
 
 const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
@@ -325,7 +329,19 @@ serve(async request => {
       }
     }
 
-    const timeZone = getString(body.timeZone, 'Asia/Shanghai');
+    let timeZone = validTimeZoneOrNull(body.timeZone);
+    if (!timeZone) {
+      const { data: settings, error: settingsError } = await admin
+        .from('memory_settings')
+        .select('profile_metadata')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (settingsError) throw settingsError;
+      const profileMetadata = settings?.profile_metadata && typeof settings.profile_metadata === 'object'
+        ? settings.profile_metadata as Record<string, unknown>
+        : {};
+      timeZone = normalizeTimeZone(profileMetadata.timeZone);
+    }
     if (action === 'summarize_memory_range') {
       const dateFrom = getString(body.dateFrom);
       const dateTo = getString(body.dateTo);

@@ -234,7 +234,6 @@ const getConfig = () => {
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('MLM_SUPABASE_ANON_KEY') || '';
   const memoryApiInternalToken = Deno.env.get('MEMORY_API_INTERNAL_TOKEN') || '';
   const memoryApiUrl = Deno.env.get('MLM_MEMORY_API_URL') || (supabaseUrl ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/memory-api` : '');
-  const timeZone = Deno.env.get('MLM_TIME_ZONE') || 'Asia/Shanghai';
 
   return {
     supabaseUrl: supabaseUrl.replace(/\/$/, ''),
@@ -242,7 +241,6 @@ const getConfig = () => {
     supabaseAnonKey,
     memoryApiInternalToken,
     memoryApiUrl,
-    timeZone,
   };
 };
 
@@ -334,7 +332,6 @@ const callMemoryApi = async (config: ReturnType<typeof getConfig>, userId: strin
     },
     body: JSON.stringify({
       userId,
-      timeZone: config.timeZone,
       ...input,
       action,
     }),

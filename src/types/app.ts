@@ -118,6 +118,7 @@ export type RecordsByDateGroup = {
 export type PersistedAppState = {
   mapStyle?: MapStyle;
   systemTheme?: Partial<SystemTheme>;
+  timeZone?: string;
   profile?: Partial<UserProfile>;
   profileConflicts?: ProfileConflictData[];
   isSignedIn?: boolean;

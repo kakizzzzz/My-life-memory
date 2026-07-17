@@ -58,6 +58,7 @@ import {
   CLOUD_PASSWORD_MIN_LENGTH,
   DEFAULT_PROFILE,
 } from '../constants/appDefaults';
+import { useLocalTimeZone } from './useLocalTimeZone';
 import { DEFAULT_SYSTEM_THEME } from '../constants/theme';
 import { DEFAULT_MAP_STYLE } from '../constants/mapTiles';
 import type {
@@ -126,6 +127,7 @@ export const useCloudAuthSync = ({
   syncDefaultStarNearUser: (newLoc: [number, number], force?: boolean) => void;
   getLastGpsLocation: () => [number, number] | null;
 }) => {
+  const localTimeZone = useLocalTimeZone();
   const [authMode, setAuthMode] = React.useState<CloudAuthAction>('login');
   const [loginAccount, setLoginAccount] = React.useState('');
   const [loginPassword, setLoginPassword] = React.useState('');
@@ -195,6 +197,7 @@ export const useCloudAuthSync = ({
     return {
       mapStyle,
       systemTheme,
+      timeZone: localTimeZone,
       profile: getPublicProfileSnapshot(snapshotProfile),
       profileConflicts,
       isSignedIn: isCloudBackendEnabled ? false : isSignedIn,
@@ -202,7 +205,7 @@ export const useCloudAuthSync = ({
       stars,
       savedTracks,
     };
-  }, [isSignedIn, language, mapStyle, profile, profileConflicts, savedTracks, stars, systemTheme]);
+  }, [isSignedIn, language, localTimeZone, mapStyle, profile, profileConflicts, savedTracks, stars, systemTheme]);
   const latestAppStateRef = React.useRef<PersistedAppState>({});
   const latestProfileSnapshotRef = React.useRef<CloudProfile>({ account: '', name: '', avatarUrl: '' });
   latestAppStateRef.current = createAppStateSnapshot();
@@ -215,6 +218,7 @@ export const useCloudAuthSync = ({
   const createCleanCloudInitialState = React.useCallback((account: string): PersistedAppState => ({
     mapStyle: DEFAULT_MAP_STYLE,
     systemTheme: DEFAULT_SYSTEM_THEME,
+    timeZone: localTimeZone,
     profile: {
       account,
       name: buildDefaultProfileName(account),
@@ -225,7 +229,7 @@ export const useCloudAuthSync = ({
     language,
     stars: [createDefaultRecordStar()],
     savedTracks: [],
-  }), [buildDefaultProfileName, language]);
+  }), [buildDefaultProfileName, language, localTimeZone]);
 
   const applyCloudSnapshot = React.useCallback((cloudProfile: CloudProfile, cloudState: CloudAppState | null) => {
     const snapshotUserId = cloudAccountScopeUserIdRef.current;

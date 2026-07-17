@@ -9,6 +9,7 @@ import {
   rateLimitResponse,
   sanitizeHtmlFields,
 } from '../_shared/security.ts';
+import { normalizeTimeZone } from '../_shared/time-zone.ts';
 
 const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://kakizzzzz.github.io',
@@ -395,7 +396,9 @@ serve(async request => {
       profileConflicts: Array.isArray(initialState.profileConflicts)
         ? sanitizeCloudValue(initialState.profileConflicts)
         : [],
-      profileMetadata: {},
+      profileMetadata: {
+        timeZone: normalizeTimeZone(initialState.timeZone),
+      },
     },
     p_default_star: defaultStar,
     p_privacy_version: PRIVACY_NOTICE_VERSION,
