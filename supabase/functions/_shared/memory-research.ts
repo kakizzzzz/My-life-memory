@@ -11,7 +11,7 @@ import {
 import { isInDateRange } from './memory-date.ts';
 import { noteText, noteTitle } from './memory-presenters.ts';
 import {
-  buildSmallArchiveReview,
+  buildBoundedArchiveReview,
   findTargetEvidencePassages,
   resolvePersonalMemoryContext,
   type MemoryEvidencePassage,
@@ -22,6 +22,7 @@ import {
   inferMemoryQueryDateRange,
   type MemoryQueryDateRange,
 } from './memory-query-plan.ts';
+import { buildMemoryAnswerBoundary } from './memory-answer-boundary.ts';
 import { buildMemoryTemporalContext } from './time-zone.ts';
 import { MCP_MEMORY_INSTRUCTIONS } from './mcp-memory-contract.mjs';
 
@@ -546,7 +547,7 @@ export const researchMemoryContext = (
     [query, input.place, input.region].filter(Boolean).join(' '),
     personalRadius,
   );
-  const candidateReview = buildSmallArchiveReview(personalArchive, personalContext);
+  const candidateReview = buildBoundedArchiveReview(personalArchive, personalContext);
   const personalScope: PersonalScope | null = (
     personalContext.status === 'resolved' || personalContext.status === 'ambiguous'
   ) ? {
@@ -732,9 +733,21 @@ export const researchMemoryContext = (
       ? ['Routes were included only after one nearby personal anchor resolved and route intent was explicit.']
       : []),
   ];
+  const answerBoundary = buildMemoryAnswerBoundary({
+    queryPlan,
+    personalContext,
+    temporalResolutionRequired,
+    unresolvedPublicPlace,
+    hasMatchingRecords,
+    verifiedPlaceNames: input.resolvedPlace
+      ? [input.resolvedPlace.displayName || input.resolvedPlace.name].filter(Boolean)
+      : [],
+    evidenceNoteIds: evidencePassages.map(passage => passage.noteId),
+  });
 
   return {
     query,
+    answerBoundary,
     queryPlan,
     temporalContext,
     searchPlan: {

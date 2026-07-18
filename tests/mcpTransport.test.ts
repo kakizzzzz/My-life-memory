@@ -31,9 +31,11 @@ test('cloud MCP advertises the shared compositional and temporal research protoc
   assert.match(source, /RESEARCH_MEMORY_TOOL_DESCRIPTION/);
   assert.match(source, /buildMcpMemoryInstructions\(temporalPayload\?\.temporalContext\)/);
   assert.match(source, /version: MCP_SERVER_VERSION/);
-  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.4\.0'/);
+  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.4\.2'/);
   assert.match(contractSource, /Compose explicit public geography, exact dates, user-relative anchors/);
-  assert.match(contractSource, /Candidate notes are unverified review aids and are not evidence/);
+  assert.match(contractSource, /Candidate notes are unverified, coordinate-free review aids/);
+  assert.match(contractSource, /Never reverse-geocode returned coordinates/);
+  assert.match(contractSource, /answerBoundary is mandatory, not advisory/);
 });
 
 test('cloud and local MCP transports expose the same exact nine read-only tools', () => {

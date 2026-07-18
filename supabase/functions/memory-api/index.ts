@@ -52,6 +52,10 @@ import {
 } from '../_shared/mcp-query-routing.mjs';
 import { collectMemoryImageReferences } from '../_shared/memory-image-references.ts';
 import {
+  applyMemoryResearchDisclosureBoundary,
+  withoutMemoryCoordinates,
+} from '../_shared/memory-public-response.ts';
+import {
   buildMemoryTemporalContext,
   normalizeTimeZone,
   validTimeZoneOrNull,
@@ -517,12 +521,14 @@ serve(async request => {
         resolvedPlace,
         placeResolution,
       }, timeZone);
+      const publicResearch = applyMemoryResearchDisclosureBoundary(research);
+      const mayStateCoordinates = research.answerBoundary.mayStateCoordinates;
       const starById = new Map(memory.stars.map(star => [star.id, star]));
       const starIndex = new Map(memory.stars.map((star, index) => [star.id, index]));
       const noteById = new Map(memory.notes.map(note => [note.id, note]));
       const trackById = new Map(memory.tracks.map(track => [track.id, track]));
       const residualQuery = research.searchPlan.residualTextQuery;
-      const notes = research.selectedNoteIds.flatMap(noteId => {
+      const notesWithCoordinates = research.selectedNoteIds.flatMap(noteId => {
         const note = noteById.get(noteId);
         const star = note ? starById.get(note.star_id) : null;
         if (!note || !star) return [];
@@ -535,6 +541,9 @@ serve(async request => {
           residualQuery,
         )];
       });
+      const notes = mayStateCoordinates
+        ? notesWithCoordinates
+        : notesWithCoordinates.map(withoutMemoryCoordinates);
       const titleIndex = research.titleNoteIds.flatMap(noteId => {
         const note = noteById.get(noteId);
         const star = note ? starById.get(note.star_id) : null;
@@ -546,8 +555,8 @@ serve(async request => {
           title: title || 'Untitled note',
           hasExplicitTitle: Boolean(title),
           createdAt: note.created_at_ms ?? star.created_at_ms,
-          coordinates: { lat: star.lat, lng: star.lng },
           retrievalRole: 'title-index',
+          evidenceStatus: 'unverified',
         }];
       });
       const candidateNotes = research.candidateReview.candidateExcerpts.flatMap(candidate => {
@@ -562,22 +571,21 @@ serve(async request => {
           excerpts: candidate.excerpts,
           candidateScore: candidate.score,
           createdAt: note.created_at_ms ?? star.created_at_ms,
-          coordinates: { lat: star.lat, lng: star.lng },
           retrievalRole: 'candidate-only',
           evidenceStatus: 'unverified',
         }];
       });
-      const locations = research.selectedStarIds.flatMap(starId => {
+      const locations = mayStateCoordinates ? research.selectedStarIds.flatMap(starId => {
         const star = starById.get(starId);
         return star ? [starSummary(star, starIndex.get(star.id) || 0, groupedNotes.get(star.id) || [])] : [];
-      });
-      const routes = research.selectedTrackIds.flatMap(trackId => {
+      }) : [];
+      const routes = mayStateCoordinates ? research.selectedTrackIds.flatMap(trackId => {
         const track = trackById.get(trackId);
         return track ? [routeSummary(track, false)] : [];
-      });
+      }) : [];
       const returnedEntityCount = notes.length + locations.length + routes.length;
       return output({
-        ...research,
+        ...publicResearch,
         placeCandidates,
         notes,
         titleIndex,

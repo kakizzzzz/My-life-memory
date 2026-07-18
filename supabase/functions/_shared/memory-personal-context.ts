@@ -5,10 +5,9 @@ import type {
 } from './memory-record-types.ts';
 import { noteText } from './memory-presenters.ts';
 
-const SMALL_ARCHIVE_MAX_CHARACTERS = 8_000;
-const SMALL_ARCHIVE_MAX_NOTES = 40;
-const SMALL_ARCHIVE_MAX_CANDIDATES = 12;
-const SMALL_ARCHIVE_MAX_EXCERPT_CHARACTERS = 3_000;
+const MAX_CANDIDATE_NOTES = 6;
+const MAX_CANDIDATE_TITLES = 12;
+const MAX_CANDIDATE_EXCERPT_CHARACTERS = 1_200;
 const MAX_EVIDENCE_PASSAGES = 12;
 const MAX_IDENTITY_ANCHORS = 3;
 const MAX_EVENT_ANCHORS = 12;
@@ -42,8 +41,11 @@ const relationDefinitions: readonly RelationDefinition[] = [
       'ここが自宅', 'ここに住んで', '私の家', '여기가 우리 집', '여기에 살고',
     ],
     evidenceAliases: [
-      '我住在', '住的地方', '我的住处', '我的住處', '我的住所', '居住地', '我家',
-      'i live at', 'my apartment', 'my residence', '住んでいる', '自宅', '사는 곳', '우리 집',
+      '我住在', '我们住', '我們住', '住的地方', '我的住处', '我的住處', '我的住所', '居住地', '我家',
+      '家里', '家裡', '家中', '我住的房子', '这套房', '這套房', '这个房子', '這個房子',
+      '搬到这里', '搬到這裡', '搬进', '搬進', '回到我家',
+      'i live at', 'we live', 'my apartment', 'my residence', 'my house', 'moved into this home',
+      '住んでいる', '自宅', '住んでいる家', '사는 곳', '우리 집', '내 집',
     ],
   },
   {
@@ -57,13 +59,15 @@ const relationDefinitions: readonly RelationDefinition[] = [
     directEvidence: [
       '我在这里工作', '我在這裡工作', '这里是我工作的地方', '這裡是我工作的地方',
       '这是我的公司', '這是我的公司', '这是我的办公室', '這是我的辦公室',
+      '这是我的工位', '這是我的工位', '我的工位在这里', '我的工位在這裡',
+      '我每天在这里上班', '我每天在這裡上班',
       '工作地点在这里', '工作地點在這裡', '上班地点在这里', '上班地點在這裡',
       'i work here', 'this is my workplace', 'this is my office',
       'ここで働いて', 'ここが職場', '私の職場', '여기서 일해', '여기가 직장', '내 직장',
     ],
     evidenceAliases: [
-      '上班', '工作', '公司', '办公室', '辦公室', '单位', '單位',
-      'workplace', 'office', 'company', '仕事場', '職場', '会社', '회사', '직장',
+      '上班', '工作', '公司', '办公室', '辦公室', '单位', '單位', '工位', '通勤',
+      'workplace', 'office', 'company', 'desk at work', 'commute', '仕事場', '職場', '会社', '회사', '직장',
     ],
   },
   {
@@ -77,6 +81,8 @@ const relationDefinitions: readonly RelationDefinition[] = [
     directEvidence: [
       '我在这里学习', '我在這裡學習', '我在这里上学', '我在這裡上學',
       '这是我的学校', '這是我的學校', '这里是我上课的地方', '這裡是我上課的地方',
+      '这是我的校区', '這是我的校區', '这是我的教室', '這是我的教室',
+      '我每天在这里上课', '我每天在這裡上課',
       'i study here', 'this is my school', 'this is where i study',
       'ここで勉強', 'ここが学校', '私の学校', '여기서 공부', '여기가 학교', '내 학교',
     ],
@@ -89,7 +95,7 @@ const relationDefinitions: readonly RelationDefinition[] = [
     kind: 'observation',
     identity: false,
     queryAliases: [
-      '看到', '看见', '看見', '见到', '見到', '遇见', '遇見', '遇到', '发现', '發現', '拍到', '目睹',
+      '看到', '看见', '看見', '见到', '見到', '见过', '見過', '看过', '看過', '遇见', '遇見', '遇到', '发现', '發現', '拍到', '目睹',
       'where i saw', 'where did i see', 'where have i seen', 'i saw', 'i spotted', 'i observed',
       'where i met', 'where i found', 'where i spotted', 'where i photographed',
       '見た場所', '見つけた場所', '出会った場所', '見た', '見つけた', '出会った',
@@ -97,7 +103,7 @@ const relationDefinitions: readonly RelationDefinition[] = [
     ],
     directEvidence: [],
     evidenceAliases: [
-      '看到', '看见', '看見', '见到', '見到', '遇见', '遇見', '遇到', '发现', '發現', '拍到', '目睹',
+      '看到', '看见', '看見', '见到', '見到', '见过', '見過', '看过', '看過', '遇见', '遇見', '遇到', '发现', '發現', '拍到', '目睹',
       'saw', 'seen', 'spotted', 'observed', 'met', 'found', 'photographed',
       '見た', '見つけ', '出会', '봤', '보았', '만났', '발견',
     ],
@@ -121,15 +127,19 @@ const proximityTerms = [
 
 const locationQuestionTerms = [
   ...proximityTerms,
-  '地方', '地点', '地點', '位置', '哪里', '哪裡', '哪儿', '哪兒',
+  '地方', '地点', '地點', '位置', '哪里', '哪裡', '哪儿', '哪兒', '在哪', '在哪里', '在哪裡', '在哪儿', '在哪兒', '何处', '何處',
   'where', 'place', 'location', '場所', 'どこ', '곳', '어디',
 ];
 
 const removableQueryTerms = [
   '帮我', '幫我', '请', '請', '查看', '查找', '寻找', '尋找', '搜索', '搜尋', '看看', '告诉我', '告訴我',
-  '相关', '相關', '那些', '那个', '那個', '这个', '這個', '什么', '什麼', '哪些', '哪种', '哪種', '过', '過', '我的', '我', '的',
+  '相关', '相關', '那些', '那个', '那個', '这个', '這個', '那只', '那隻', '这只', '這隻', '那家', '这家', '這家',
+  '一个', '一個', '一只', '一隻', '一件', '一张', '一張', '一处', '一處', '一家', '一台', '一辆', '一輛',
+  '一份', '一块', '一塊', '某个', '某個', '某只', '某隻', '某件', '某张', '某張', '某处', '某處', '某家',
+  '某台', '某辆', '某輛', '某份', '某块', '某塊',
+  '那里', '那裡', '这里', '這裡', '什么', '什麼', '哪些', '哪种', '哪種', '过', '過', '我的', '我', '的',
   '笔记', '筆記', '记录', '記錄', '记忆', '記憶', '照片', '相片', '路线', '路線',
-  'please', 'show', 'find', 'search', 'tell', 'about', 'related', 'notes', 'records', 'memories', 'photos', 'routes', 'what', 'which', 'my', 'i', 'it', 'this', 'that', 'these', 'those', 'them',
+  'please', 'show', 'find', 'search', 'tell', 'about', 'related', 'notes', 'records', 'memories', 'photos', 'routes', 'what', 'which', 'my', 'i', 'it', 'this', 'that', 'these', 'those', 'them', 'some',
   'in', 'at', 'on', '見せて', '探して', '記録', '思い出', '写真', 'で', 'に', 'を', 'が',
   '찾아', '보여', '기록', '추억', '사진', '무엇', '어떤', '내', '나의', '에서', '에', '을', '를', '이', '가', '다',
   ...locationQuestionTerms,
@@ -264,6 +274,7 @@ const boundedPassage = (value: string) => value.length <= MAX_PASSAGE_CHARACTERS
   : `${value.slice(0, MAX_PASSAGE_CHARACTERS - 1).trimEnd()}…`;
 
 const splitPassages = (value: string) => stripHtml(value)
+  .replace(/(?:，|,)\s*(?=(?:但是|但|不过|不過|后来|後來|然后|然後|however|but|then|その後|でも|하지만|그런데))/giu, '。')
   .split(/(?<=[。！？!?；;])|\n+/u)
   .map(part => part.trim())
   .filter(Boolean)
@@ -278,18 +289,18 @@ const splitPassages = (value: string) => stripHtml(value)
 
 const userAttributionPattern = /(?:我|我的|本人|我们|我們|\b(?:i|my|we|our)\b|私|僕|自分|내|나의|우리)/iu;
 const thirdPartyPattern = /(?:朋友|同事|客户|客戶|家人|父母|妈妈|媽媽|爸爸|孩子|老师|老師|老板|老闆|雇主|候选人|候選人)(?:的|家|住|工作|上班|学习|學習|学校|學校|办公室|辦公室)|(?:他说|他說|她说|她說)|\b(?:my\s+(?:friend|colleague|client|customer|parent|mother|father|child|teacher|boss|employer)|(?:friend|colleague|client|customer|parent|teacher|boss|candidate)(?:'s|\s+(?:lives|works|studies)))\b|\b(?:he|she)\s+(?:said|lives|works|studies)\b|(?:友達|同僚|顧客|家族|先生|上司)(?:の|が住|が働|の家|の職場|の学校)|(?:친구|동료|고객|가족|선생님|상사)(?:의|가\s*살|가\s*일|의\s*집|의\s*직장|의\s*학교)/iu;
-const negationPattern = /(?:不是|并非|並非|不在这里|不在這裡|没有在这里|沒有在這裡|从不|從不|并不|並不|\b(?:not|never|do\s+not|does\s+not|did\s+not|don['’]?t|doesn['’]?t|didn['’]?t)\b|ではない|じゃない|住んでいない|働いていない|아니|않|없)/iu;
+const negationPattern = /(?:不是|并非|並非|不在这里|不在這裡|没有在这里|沒有在這裡|从不|從不|并不|並不|(?:没|沒|没有|沒有|未曾|不曾)(?:真的|实际|實際)?(?:看到|看见|看見|见到|見到|见过|見過|遇见|遇見|遇到|发现|發現|拍到|吃|喝|买|買|去过|去過|参加|參加)|\b(?:not|never|do\s+not|does\s+not|did\s+not|don['’]?t|doesn['’]?t|didn['’]?t|couldn['’]?t)\b|ではない|じゃない|住んでいない|働いていない|見なかった|見ていない|食べなかった|行かなかった|아니|않|없|못\s*(?:봤|보았|먹|갔))/iu;
 const thirdPartyQuotePattern = /(?:朋友|同事|客户|客戶|他|她|friend|colleague|client|he|she|友達|同僚|친구|동료).{0,12}(?:说|說|said|言った|말했)[：:]?["“‘「『]/iu;
 
 const directIdentityShape = (relation: PersonalAnchorRelation, text: string) => {
   const source = normalizeText(text);
   if (relation === 'home') {
-    return /(?:我.{0,16}(?:住|居住).{0,12}(?:这里|這裡|此处|此處)|\bi\s+(?:live|reside)\s+here\b|(?:私|僕).{0,12}(?:ここに住|ここで暮)|(?:나|내가|저).{0,12}여기.{0,8}(?:살|거주))/iu.test(source);
+    return /(?:我.{0,16}(?:住|居住).{0,12}(?:这里|這裡|这边|這邊|此处|此處)|(?:这里|這裡|这边|這邊|此处|此處).{0,16}(?:是|就是).{0,8}(?:我家|我的家|我住的(?:房子|地方|公寓))|(?:回到|回了|到了|搬到|搬进|搬進|住进|住進).{0,8}(?:我家|家里|家裡|家中|这套房|這套房|这个房子|這個房子)|(?:我|我们|我們).{0,12}(?:租|买|買|装修|裝修|住).{0,12}(?:这套|這套|这个|這個).{0,4}(?:房子|公寓)|\bi\s+(?:live|reside)\s+here\b|\b(?:this|here).{0,20}(?:my home|where i live)\b|\b(?:returned|moved)\s+(?:to|into)\s+my\s+home\b|(?:私|僕).{0,12}(?:ここに住|ここで暮)|(?:ここ|ここが).{0,12}(?:自宅|住んでいる家)|(?:나|내가|저).{0,12}여기.{0,8}(?:살|거주)|(?:여기|이곳).{0,12}(?:우리 집|내 집))/iu.test(source);
   }
   if (relation === 'work') {
-    return /(?:我.{0,20}(?:这里|這裡|这间|這間|此处|此處).{0,16}(?:工作|上班)|我.{0,20}(?:工作|上班).{0,16}(?:这里|這裡|这间|這間|此处|此處)|\bi\s+(?:work|worked)\s+here\b|(?:私|僕).{0,12}ここで働|(?:나|내가|저).{0,12}여기.{0,8}(?:일|근무))/iu.test(source);
+    return /(?:我.{0,20}(?:这里|這裡|这间|這間|此处|此處).{0,16}(?:工作|上班)|我.{0,20}(?:工作|上班|通勤).{0,16}(?:这里|這裡|这间|這間|此处|此處)|(?:这里|這裡|此处|此處).{0,12}(?:是|就是).{0,8}(?:我的(?:公司|办公室|辦公室|工位)|我工作|我上班)|\bi\s+(?:work|worked)\s+here\b|\bthis\s+is\s+my\s+(?:workplace|office|desk\s+at\s+work)\b|(?:私|僕).{0,12}ここで働|(?:나|내가|저).{0,12}여기.{0,8}(?:일|근무))/iu.test(source);
   }
-  return /(?:我.{0,20}(?:这里|這裡|这间|這間|此处|此處).{0,16}(?:学习|學習|上学|上學|上课|上課)|我.{0,20}(?:学习|學習|上学|上學|上课|上課).{0,16}(?:这里|這裡|这间|這間|此处|此處)|\bi\s+(?:study|studied|attend\s+school)\s+here\b|(?:私|僕).{0,12}ここで(?:勉強|学)|(?:나|내가|저).{0,12}여기.{0,8}(?:공부|학교))/iu.test(source);
+  return /(?:我.{0,20}(?:这里|這裡|这间|這間|此处|此處).{0,16}(?:学习|學習|上学|上學|上课|上課)|我.{0,20}(?:学习|學習|上学|上學|上课|上課).{0,16}(?:这里|這裡|这间|這間|此处|此處)|(?:这里|這裡|此处|此處).{0,12}(?:是|就是).{0,8}(?:我的(?:学校|學校|校区|校區|教室)|我学习|我學習|我上课|我上課)|\bi\s+(?:study|studied|attend\s+school)\s+here\b|\bthis\s+is\s+my\s+(?:school|campus|classroom)\b|(?:私|僕).{0,12}ここで(?:勉強|学)|(?:나|내가|저).{0,12}여기.{0,8}(?:공부|학교))/iu.test(source);
 };
 
 const attributionFor = (text: string): MemoryEvidencePassage['attribution'] => {
@@ -668,7 +679,7 @@ export type SmallArchiveCandidateExcerpt = {
 
 export type SmallArchiveReview = {
   available: boolean;
-  mode: 'none' | 'small-archive-candidate-review';
+  mode: 'none' | 'bounded-archive-candidate-review';
   archiveNoteCount: number;
   archiveTextCharacters: number;
   titleNoteIds: string[];
@@ -677,7 +688,7 @@ export type SmallArchiveReview = {
   instruction: string;
 };
 
-export const buildSmallArchiveReview = (
+export const buildBoundedArchiveReview = (
   memory: NormalizedMemoryRows,
   personalContext: PersonalContextResolution,
 ): SmallArchiveReview => {
@@ -692,9 +703,7 @@ export const buildSmallArchiveReview = (
   ), 0);
   const eligible = personalContext.requested
     && personalContext.status === 'not-found'
-    && searchable.length > 0
-    && searchable.length <= SMALL_ARCHIVE_MAX_NOTES
-    && characters <= SMALL_ARCHIVE_MAX_CHARACTERS;
+    && searchable.length > 0;
   if (!eligible) return {
     available: false,
     mode: 'none',
@@ -709,22 +718,26 @@ export const buildSmallArchiveReview = (
   const relationTerms = relationDefinitions
     .filter(definition => personalContext.relations.includes(definition.kind))
     .flatMap(definition => [...definition.directEvidence, ...definition.evidenceAliases]);
+  const scoreText = (value: string) => {
+    const normalizedPassage = normalizeText(value);
+    const compact = normalizeCompact(value);
+    const targetMatches = personalContext.targetTerms.filter(term => compact.includes(term));
+    const actionMatches = matchingAliases(normalizedPassage, personalContext.actionTerms);
+    const relationMatches = matchingAliases(normalizedPassage, relationTerms);
+    return (targetMatches.length * 6) + (actionMatches.length ? 3 : 0) + (relationMatches.length ? 2 : 0);
+  };
   const ranked = searchable.flatMap(entry => {
+    const titleScore = entry.title ? scoreText(entry.title) : 0;
     const scored = entry.passages.map(passage => {
-      const normalizedPassage = normalizeText(passage);
-      const compact = normalizeCompact(passage);
-      const targetMatches = personalContext.targetTerms.filter(term => compact.includes(term));
-      const actionMatches = matchingAliases(normalizedPassage, personalContext.actionTerms);
-      const relationMatches = matchingAliases(normalizedPassage, relationTerms);
-      const score = (targetMatches.length * 6) + (actionMatches.length ? 3 : 0) + (relationMatches.length ? 2 : 0);
-      return { text: boundedPassage(passage), score };
+      return { text: boundedPassage(passage), score: scoreText(passage) };
     }).filter(item => item.score > 0)
       .sort((left, right) => right.score - left.score || left.text.localeCompare(right.text));
-    if (!scored.length) return [];
+    if (!scored.length && titleScore === 0) return [];
     return [{
       noteId: entry.id,
       excerpts: scored.slice(0, 2).map(item => item.text),
-      score: scored[0].score,
+      score: Math.max(titleScore, scored[0]?.score || 0),
+      titleScore,
       createdAt: entry.createdAt,
     }];
   }).sort((left, right) => right.score - left.score
@@ -733,9 +746,9 @@ export const buildSmallArchiveReview = (
 
   let usedCharacters = 0;
   const candidateExcerpts: SmallArchiveCandidateExcerpt[] = [];
-  for (const candidate of ranked.slice(0, SMALL_ARCHIVE_MAX_CANDIDATES)) {
+  for (const candidate of ranked.slice(0, MAX_CANDIDATE_NOTES)) {
     const excerpts = candidate.excerpts.filter(excerpt => {
-      if (usedCharacters + excerpt.length > SMALL_ARCHIVE_MAX_EXCERPT_CHARACTERS) return false;
+      if (usedCharacters + excerpt.length > MAX_CANDIDATE_EXCERPT_CHARACTERS) return false;
       usedCharacters += excerpt.length;
       return true;
     });
@@ -743,16 +756,20 @@ export const buildSmallArchiveReview = (
   }
   return {
     available: true,
-    mode: 'small-archive-candidate-review',
+    mode: 'bounded-archive-candidate-review',
     archiveNoteCount: searchable.length,
     archiveTextCharacters: characters,
-    titleNoteIds: [...searchable]
-      .sort((left, right) => right.createdAt - left.createdAt || left.id.localeCompare(right.id))
-      .map(entry => entry.id),
+    titleNoteIds: ranked
+      .filter(entry => entry.titleScore > 0)
+      .slice(0, MAX_CANDIDATE_TITLES)
+      .map(entry => entry.noteId),
     candidateNoteIds: candidateExcerpts.map(candidate => candidate.noteId),
     candidateExcerpts,
     instruction: candidateExcerpts.length
-      ? 'Review titleIndex first. candidateNotes contains only bounded, ranked excerpts for verification. Candidates are unverified and are not evidence; use one only when its excerpt directly answers the question.'
+      ? 'candidateNotes contains only bounded, ranked excerpts for user review. Candidates are unverified and are not evidence; never answer the requested location from a candidate.'
       : 'No plausible candidate passage matched the requested relation, action, or target. Report that no supporting memory was found and do not describe unrelated records.',
   };
 };
+
+// Kept as a compatibility alias for existing imports and external tests.
+export const buildSmallArchiveReview = buildBoundedArchiveReview;

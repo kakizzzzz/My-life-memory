@@ -186,7 +186,7 @@ test('multiple identity anchors remain ambiguous instead of silently choosing on
   assert.match(result.instruction, /disambiguate/i);
 });
 
-test('small archives expose title metadata but do not invent unrelated candidates', () => {
+test('bounded review does not expose unrelated titles or invent unrelated candidates', () => {
   const lunch = star('lunch', 31.2, 121.4, 1);
   const walk = star('walk', 31.3, 121.5, 2);
   const archive = memory(
@@ -202,12 +202,12 @@ test('small archives expose title metadata but do not invent unrelated candidate
 
   assert.equal(personal.status, 'not-found');
   assert.equal(review.available, true);
-  assert.deepEqual(new Set(review.titleNoteIds), new Set(['lunch-note', 'walk-note']));
+  assert.deepEqual(review.titleNoteIds, []);
   assert.deepEqual(review.candidateNoteIds, []);
   assert.deepEqual(result.selectedNoteIds, []);
   assert.deepEqual(result.selectedStarIds, []);
   assert.deepEqual(result.selectedTrackIds, []);
-  assert.deepEqual(new Set(result.titleNoteIds), new Set(['lunch-note', 'walk-note']));
+  assert.deepEqual(result.titleNoteIds, []);
   assert.deepEqual(result.candidateNoteIds, []);
   assert.match(result.instruction, /no plausible candidate/i);
   assert.match(result.instruction, /do not describe unrelated records/i);
@@ -231,21 +231,23 @@ test('small archive candidate excerpts remain bounded and separate from evidence
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.every(excerpt => excerpt.length <= 240), true);
 });
 
-test('large archives do not bulk-return note bodies for candidate review', () => {
+test('large archives scan server-side but return only bounded relevant candidate excerpts', () => {
   const stars = Array.from({ length: 41 }, (_, index) => star(`star-${index}`, 31 + index / 1_000, 121, 1));
   const notes = stars.map((item, index) => note({
     id: `note-${index}`,
     starId: item.id,
     day: 1,
     title: `记录 ${index}`,
-    content: '普通内容。',
+    content: index === 40 ? '我家附近有一家店，但没有说明这个星标就是家。' : '普通内容。',
   }));
   const result = researchMemoryContext(memory(stars, notes), { query: '我家附近的笔记' });
 
-  assert.equal(result.candidateReview.available, false);
+  assert.equal(result.candidateReview.available, true);
   assert.deepEqual(result.titleNoteIds, []);
-  assert.deepEqual(result.candidateNoteIds, []);
-  assert.match(result.instruction, /do not substitute/i);
+  assert.deepEqual(result.candidateNoteIds, ['note-40']);
+  assert.equal(result.candidateReview.candidateExcerpts.length, 1);
+  assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.length, 1);
+  assert.match(result.instruction, /unverified/i);
 });
 
 test('Memory API keeps title review and body candidates separate from evidence records', () => {
@@ -255,4 +257,6 @@ test('Memory API keeps title review and body candidates separate from evidence r
   assert.match(source, /retrievalRole: 'title-index'/);
   assert.match(source, /retrievalRole: 'candidate-only'/);
   assert.match(source, /records: notes/);
+  const candidateBlock = source.slice(source.indexOf('const titleIndex'), source.indexOf('const locations'));
+  assert.doesNotMatch(candidateBlock, /coordinates:/);
 });

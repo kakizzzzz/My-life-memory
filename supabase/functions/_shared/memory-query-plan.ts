@@ -90,7 +90,7 @@ const answerIntentFor = (query: string): MemoryQueryPlan['answerIntent'] => {
   if (/(?:比较|對比|相比|difference|compare|versus|比較|비교)/iu.test(query)) return 'compare';
   if (/(?:旅行还是日常|旅行還是日常|travel or daily|trip or routine|分類|分类|분류)/iu.test(query)) return 'classify';
   if (/(?:总结|總結|概括|整理|summary|summarize|要約|정리|요약)/iu.test(query)) return 'summarize';
-  if (/(?:哪里|哪裡|哪儿|哪兒|位置|地点|地點|where|location|どこ|場所|어디|곳)/iu.test(query)) return 'locate';
+  if (/(?:哪里|哪裡|哪儿|哪兒|在哪|在哪里|在哪裡|在哪儿|在哪兒|何处|何處|位置|地点|地點|where|location|どこ|場所|어디|곳)/iu.test(query)) return 'locate';
   return 'list';
 };
 

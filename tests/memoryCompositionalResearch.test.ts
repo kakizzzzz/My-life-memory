@@ -124,6 +124,137 @@ test('direct first-person identity evidence resolves across supported languages'
   });
 });
 
+test('body-only domestic context can establish home without a matching title', () => {
+  const place = star('body-home', 31.2, 121.4);
+  const result = researchMemoryContext(memory(
+    [place],
+    [note({
+      id: 'body-home-note',
+      starId: place.id,
+      title: '搬来的第一周',
+      content: '搬到这里以后，我们住进了这套房子，终于慢慢安定下来了。',
+    })],
+  ), { query: '我家在哪里？' });
+
+  assert.equal(result.personalContext.status, 'resolved');
+  assert.deepEqual(result.selectedNoteIds, ['body-home-note']);
+  assert.equal(result.answerBoundary.status, 'supported');
+  assert.equal(result.answerBoundary.exactPersonalAnchorQuestion, true);
+  assert.equal(result.answerBoundary.placeNamePolicy, 'explicit-evidence-only');
+  assert.deepEqual(result.answerBoundary.verifiedPlaceNames, []);
+  assert.match(result.answerBoundary.suggestedReply, /不要补充城市、街区、建筑或地址/u);
+});
+
+test('colloquial exact-anchor wording resolves body evidence without inventing a place name', () => {
+  const home = star('colloquial-home', 31.2, 121.4);
+  const result = researchMemoryContext(memory(
+    [home],
+    [note({ id: 'colloquial-home-note', starId: home.id, content: '搬到这里后，我们住进了这套房子。' })],
+  ), { query: '我家在哪' });
+
+  assert.equal(result.queryPlan.answerIntent, 'locate');
+  assert.equal(result.answerBoundary.exactPersonalAnchorQuestion, true);
+  assert.equal(result.answerBoundary.mandatory, true);
+  assert.equal(result.answerBoundary.answerMode, 'evidence-only');
+  assert.equal(result.answerBoundary.mustUseSuggestedReply, false);
+  assert.deepEqual(result.answerBoundary.allowedEvidenceNoteIds, ['colloquial-home-note']);
+  assert.deepEqual(result.answerBoundary.verifiedPlaceNames, []);
+});
+
+test('work and study anchors accept explicit first-person body evidence', () => {
+  const office = star('desk', 31.2, 121.4);
+  const school = star('classroom', 31.3, 121.5);
+  const archive = memory(
+    [office, school],
+    [
+      note({ id: 'desk-note', starId: office.id, content: '这是我的工位，我每天在这里上班。' }),
+      note({ id: 'class-note', starId: school.id, content: '这是我的教室，我每天在这里上课。' }),
+    ],
+  );
+
+  assert.deepEqual(researchMemoryContext(archive, { query: '我工作在哪' }).selectedStarIds, ['desk']);
+  assert.deepEqual(researchMemoryContext(archive, { query: '我学习的地方在哪' }).selectedStarIds, ['classroom']);
+});
+
+test('negated observations do not become evidence while later positive clauses still can', () => {
+  const negative = star('negative-observation', 31.2, 121.4);
+  const mixed = star('mixed-observation', 31.3, 121.5);
+  const archive = memory(
+    [negative, mixed],
+    [
+      note({ id: 'negative-note', starId: negative.id, content: '我没有看到蓝色的鸟。' }),
+      note({ id: 'mixed-note', starId: mixed.id, content: '一开始没看到蓝色的鸟，但是后来我看到了蓝色的鸟。' }),
+    ],
+  );
+  const result = researchMemoryContext(archive, { query: '我在哪见过那只蓝色的鸟' });
+
+  assert.deepEqual(result.queryPlan.eventRelations, ['observation']);
+  assert.deepEqual(result.queryPlan.targetTerms, ['蓝色', '鸟']);
+  assert.deepEqual(result.selectedNoteIds, ['mixed-note']);
+  assert.equal(result.evidencePassages.every(passage => !passage.negated), true);
+});
+
+test('generic object pointers do not hide the target in first-person observation queries', () => {
+  const building = star('blue-building', 31.2, 121.4);
+  const unrelated = star('unrelated-building', 31.3, 121.5);
+  const archive = memory(
+    [building, unrelated],
+    [
+      note({ id: 'blue-building-note', starId: building.id, content: '散步时我看到了那栋蓝色房子。' }),
+      note({ id: 'unrelated-building-note', starId: unrelated.id, content: '这里有一栋普通房子。' }),
+    ],
+  );
+  const result = researchMemoryContext(archive, { query: '我看到的一个蓝色房子在哪里？' });
+
+  assert.deepEqual(result.queryPlan.anchorRelations, []);
+  assert.deepEqual(result.queryPlan.eventRelations, ['observation']);
+  assert.deepEqual(result.queryPlan.targetTerms, ['蓝色房子']);
+  assert.deepEqual(result.selectedNoteIds, ['blue-building-note']);
+  assert.equal(result.answerBoundary.status, 'supported');
+});
+
+test('generic activity objects use the same evidence path without a personal anchor', () => {
+  const fabricShop = star('fabric-shop', 31.2, 121.4);
+  const cafe = star('cafe', 31.3, 121.5);
+  const result = researchMemoryContext(memory(
+    [fabricShop, cafe],
+    [
+      note({ id: 'fabric-note', starId: fabricShop.id, content: '我在这里买过蓝色布料。' }),
+      note({ id: 'coffee-note', starId: cafe.id, content: '我在这里买过咖啡。' }),
+    ],
+  ), { query: '我在哪买过一块蓝色布料？' });
+
+  assert.deepEqual(result.queryPlan.anchorRelations, []);
+  assert.deepEqual(result.queryPlan.eventRelations, ['activity']);
+  assert.deepEqual(result.queryPlan.targetTerms, ['蓝色布料']);
+  assert.deepEqual(result.selectedNoteIds, ['fabric-note']);
+});
+
+test('weak home wording remains review-only and cannot authorize a location answer', () => {
+  const possible = star('possible-home', 31.2, 121.4);
+  const result = researchMemoryContext(memory(
+    [possible],
+    [note({
+      id: 'possible-home-note',
+      starId: possible.id,
+      title: '河边散步',
+      content: '我家附近有一条河，但这句话没有说明这个星标就是我家。',
+    })],
+  ), { query: '我家在哪里？' });
+
+  assert.equal(result.personalContext.status, 'not-found');
+  assert.deepEqual(result.selectedNoteIds, []);
+  assert.deepEqual(result.selectedStarIds, []);
+  assert.deepEqual(result.candidateNoteIds, ['possible-home-note']);
+  assert.equal(result.answerBoundary.status, 'not-found');
+  assert.equal(result.answerBoundary.mandatory, true);
+  assert.equal(result.answerBoundary.answerMode, 'state-no-answer');
+  assert.equal(result.answerBoundary.mustUseSuggestedReply, true);
+  assert.equal(result.answerBoundary.mayUseCandidateNotesAsAnswer, false);
+  assert.equal(result.answerBoundary.mayStateCoordinates, false);
+  assert.match(result.answerBoundary.suggestedReply, /没有足够的第一人称证据/u);
+});
+
 test('two independent corroborating passages can resolve an anchor but duplicates cannot inflate confidence', () => {
   const place = star('corroborated-home', 31.2, 121.4);
   const distinct = resolvePersonalMemoryContext(memory(
@@ -164,6 +295,8 @@ test('dated personal queries select the matching anchor episode while undated qu
   assert.equal(oldResult.personalContext.status, 'resolved');
   assert.deepEqual(oldResult.personalContext.anchors.map(anchor => anchor.starId), ['old-home']);
   assert.equal(undated.personalContext.status, 'ambiguous');
+  assert.equal(undated.answerBoundary.status, 'ambiguous');
+  assert.equal(undated.answerBoundary.mayStateCoordinates, false);
   assert.deepEqual(new Set(undated.personalContext.anchors.map(anchor => anchor.starId)), new Set(['old-home', 'new-home']));
   assert.equal(undated.latestRecordedMemory, null);
 });
@@ -238,6 +371,44 @@ test('work-nearby activity queries return only supported activity notes', () => 
 
   assert.equal(result.personalContext.status, 'resolved');
   assert.deepEqual(result.selectedNoteIds, ['meal-note']);
+});
+
+test('study-nearby activity queries compose an anchor with a fuzzy photographed object', () => {
+  const classroom = star('study-anchor', 31.2, 121.4);
+  const sunset = star('sunset-photo', 31.204, 121.404);
+  const distantSunset = star('distant-sunset', 30.2, 120.4);
+  const result = researchMemoryContext(memory(
+    [classroom, sunset, distantSunset],
+    [
+      note({ id: 'study-note', starId: classroom.id, content: '这是我的教室，我每天在这里上课。' }),
+      note({ id: 'sunset-note', starId: sunset.id, content: '放学后我在这里拍了一张粉色晚霞。' }),
+      note({ id: 'far-sunset-note', starId: distantSunset.id, content: '我在这里拍了一张粉色晚霞。' }),
+    ],
+  ), { query: '我学习的地方附近拍过的一个粉色晚霞在哪里？', radiusKm: 2 });
+
+  assert.equal(result.personalContext.status, 'resolved');
+  assert.deepEqual(result.queryPlan.anchorRelations, ['study']);
+  assert.deepEqual(result.queryPlan.eventRelations, ['activity']);
+  assert.deepEqual(result.queryPlan.targetTerms, ['粉色晚霞']);
+  assert.deepEqual(result.selectedNoteIds, ['sunset-note']);
+});
+
+test('an unresolved fuzzy workplace never returns an unrelated recent memory', () => {
+  const companyVisit = star('company-visit-only', 31.2, 121.4);
+  const recent = star('recent-noise', 31.3, 121.5, '2026-07-10');
+  const result = researchMemoryContext(memory(
+    [companyVisit, recent],
+    [
+      note({ id: 'visit-note', starId: companyVisit.id, content: '今天参观了一家公司。' }),
+      note({ id: 'recent-note', starId: recent.id, createdAt: '2026-07-10', content: '最近拍了一张普通照片。' }),
+    ],
+  ), { query: '我工作的地方在哪？' });
+
+  assert.equal(result.personalContext.status, 'not-found');
+  assert.deepEqual(result.selectedNoteIds, []);
+  assert.deepEqual(result.selectedStarIds, []);
+  assert.equal(result.answerBoundary.mustUseSuggestedReply, true);
+  assert.equal(result.latestRecordedMemory, null);
 });
 
 test('a target title may pair with its own body action but never with another note body', () => {

@@ -119,3 +119,28 @@
 - Decision: personal aliases and entire natural-language event sentences are never sent to public geocoding; only the extracted explicit public place span may leave the authenticated research path.
 - Decision: no schema change is objectively required for this retrieval-only upgrade.
 - Decision: deploy only `mcp` and `memory-api`; do not run migrations, `supabase db push`, or redeploy unrelated Functions.
+
+## Follow-up: Weak-client Hallucination Hardening
+
+- Baseline HEAD: `e3049e2d3b7d7f43f8b30d0d73bb3cd7f281b38c`
+- Objective: prevent weaker MCP clients from inventing a place when a personal anchor is missing or ambiguous, while improving deterministic body-text retrieval for fuzzy home/work/study and event questions.
+- Files inspected: shared MCP contract, local and cloud transports, query routing, query planning, personal-context extraction, compositional research, Memory API response assembly, and related MCP/research tests.
+- [Complete] Add a mandatory evidence-only answer boundary with explicit no-answer and disambiguation behavior.
+- [Complete] Keep bounded candidate passages coordinate-free and separate from evidence for archives of any size.
+- [Complete] Expand colloquial query and negation coverage without introducing a backend model or paid API.
+- [Complete] Redact coordinates, routes, and image access from unresolved or ambiguous public responses.
+- [Complete] Run targeted tests, `npm run lint`, Edge checks, the full unit suite, mobile WebKit E2E, and production build.
+- Decision: no database migration is required; this remains deterministic, authenticated-user-scoped retrieval.
+- Decision: preserve exactly nine public read-only MCP tools and deploy only `mcp` and `memory-api` after validation.
+- Targeted compositional, routing, transport, and disclosure suite: 49 passed, 0 failed.
+- `npm run lint`: passed after the response-boundary implementation.
+- Added generic non-home regression coverage for first-person observations, purchases, study-nearby photos, and unresolved workplace language; no relation-specific shortcut was introduced.
+- Final targeted compositional, routing, transport, disclosure, and research suite: 61 passed, 0 failed.
+- Final `npm run lint`: passed with exit code 0.
+- `npm run lint:edge`: could not start because no global `deno` binary is installed (`sh: deno: command not found`, exit 127).
+- Equivalent `npx --yes deno check` passed for all six production Edge Functions.
+- Final `npm test`: 183 passed, 0 failed.
+- Final `npm run build`: passed; Vite transformed 2,247 modules. The existing large-chunk advisory remains non-blocking.
+- Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
+- Final `git diff --check`: passed with no whitespace errors.
+- Final secret-pattern review found environment-variable names and authorization tests only; no real Supabase token, service-role value, invite code, MCP token, or password was added.
