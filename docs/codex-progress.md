@@ -2,9 +2,10 @@
 
 ## Current Baseline
 
-- HEAD: `6d3bd28293c793d157080c7ddfe737a9fadb1bd0`
+- Initial HEAD: `6d3bd28293c793d157080c7ddfe737a9fadb1bd0`
 - Branch: `main`
 - Implementation commit: `314d50b` (`feat: compose evidence-grounded memory research`)
+- Test and documentation commit: `8118f9d` (`test: cover compositional MCP retrieval`)
 - Objective: upgrade the existing nine-tool, read-only MCP into a compositional, evidence-grounded personal-memory retrieval system without changing the database schema or unrelated UI.
 
 ## Files Inspected
@@ -61,8 +62,8 @@
 
 ## Remaining Items
 
-- Commit the regression tests and documentation on `main`.
-- Production deployment of the updated Supabase `mcp` and `memory-api` Functions is intentionally outside this implementation pass unless separately requested.
+- No implementation, test, or documentation item remains for this repository task.
+- Production deployment of the updated Supabase `mcp` and `memory-api` Functions was not requested and was intentionally not performed in this pass.
 
 ## Commands Run
 
@@ -81,6 +82,7 @@
 - `node --import tsx --test tests/exportImages.test.ts`
 - Targeted `rg`, `sed`, and `git diff` review of README, public-place resolution, and the production Memory API call path.
 - Secret-pattern scan for Supabase personal/service-role keys, long-lived MCP tokens, and committed credentials.
+- Two atomic commits were created and pushed to `origin/main`; the final code-bearing remote HEAD before this progress-only update was `8118f9d`.
 
 ## Test Results
 
