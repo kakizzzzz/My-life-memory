@@ -12,6 +12,7 @@ import {
   RESEARCH_MEMORY_TOOL_DESCRIPTION,
   SEARCH_MEMORY_TOOL_DESCRIPTION,
 } from '../supabase/functions/_shared/mcp-memory-contract.mjs';
+import { memoryResearchOutputSchema } from './memory-output-schema.mjs';
 
 const env = process.env;
 
@@ -113,6 +114,17 @@ const textResult = value => ({
   ],
 });
 
+const memoryResearchText = value => (
+  value?.status === 'supported'
+    ? JSON.stringify(value, null, 2)
+    : String(value?.directive?.exactText || '')
+);
+
+const memoryResearchResult = value => ({
+  content: [{ type: 'text', text: memoryResearchText(value) }],
+  structuredContent: value,
+});
+
 const searchMemoriesWithContextFallback = async input => {
   const exact = await callMemoryApi('search_memories', input);
   if (!shouldUseContextualSearchFallback(exact, input)) return exact;
@@ -167,7 +179,20 @@ const semanticReview = z.object({
   })).max(6).optional(),
 }).refine(value => value.requestCandidates === true || Boolean(value.decisions?.length), {
   message: 'Request a candidate batch or submit at least one exact-quote decision.',
-}).optional();
+}).describe('Deprecated compatibility input. Host-model verdicts are ignored and cannot promote candidate text into evidence.').optional();
+
+const semanticHints = z.object({
+  concepts: z.array(z.object({
+    surface: z.string().min(1).max(48),
+    broadTerms: z.array(z.string().min(1).max(48)).max(8),
+  }).strict()).max(6),
+}).strict().optional();
+
+const referenceConfirmation = z.object({
+  continuationToken: z.string().min(1).max(16_384),
+  selectedOptionId: z.string().min(1).max(80).optional(),
+  answer: z.enum(['confirm', 'reject', 'none']),
+}).strict().optional();
 
 export const createMemoryMcpServer = async () => {
   const temporalPayload = await callMemoryApi('get_temporal_context').catch(() => null);
@@ -191,13 +216,16 @@ export const createMemoryMcpServer = async () => {
       centerLng: z.number().min(-180).max(180).optional(),
       radiusKm: z.number().min(0.1).max(1000).default(5),
       limit: z.number().int().min(1).max(100).default(30),
+      semanticHints,
+      referenceConfirmation,
       semanticReview,
     },
+    outputSchema: memoryResearchOutputSchema,
     annotations: {
       readOnlyHint: true,
       openWorldHint: true,
     },
-  }, async input => textResult(await callMemoryApi('research_memory_context', input)));
+  }, async input => memoryResearchResult(await callMemoryApi('research_memory_context', input)));
 
   server.registerTool('get_memory_images', {
     title: 'Read Relevant Memory Photos',
@@ -225,7 +253,12 @@ export const createMemoryMcpServer = async () => {
       readOnlyHint: true,
       openWorldHint: false,
     },
-  }, async input => textResult(await searchMemoriesWithContextFallback(input)));
+  }, async input => {
+    const result = await searchMemoriesWithContextFallback(input);
+    return result?.resolvedAction === 'research_memory_context'
+      ? { content: [{ type: 'text', text: memoryResearchText(result) }] }
+      : textResult(result);
+  });
 
   server.registerTool('list_locations', {
     title: 'List Memory Locations',

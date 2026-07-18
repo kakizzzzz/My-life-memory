@@ -23,10 +23,7 @@ import {
   type MemoryQueryDateRange,
 } from './memory-query-plan.ts';
 import { buildMemoryAnswerBoundary } from './memory-answer-boundary.ts';
-import {
-  applyMemorySemanticReview,
-  type MemorySemanticReviewInput,
-} from './memory-semantic-review.ts';
+import type { MemorySemanticReviewInput } from './memory-semantic-review.ts';
 import { buildMemoryTemporalContext } from './time-zone.ts';
 import { MCP_MEMORY_INSTRUCTIONS } from './mcp-memory-contract.mjs';
 
@@ -55,7 +52,17 @@ export type MemoryResearchInput = {
   placeSource?: 'explicit-argument' | 'query-span';
   resolvedPlace?: ResolvedMemoryPlace | null;
   placeResolution?: MemoryPlaceResolutionSummary | null;
+  confirmedReference?: ConfirmedMemoryReference | null;
+  // Accepted for backward compatibility only. Host-model candidate verdicts
+  // no longer have authority to promote unverified text into evidence.
   semanticReview?: MemorySemanticReviewInput | null;
+};
+
+export type ConfirmedMemoryReference = {
+  noteId: string;
+  starId: string;
+  relation: 'home' | 'work' | 'study' | 'observation' | 'activity';
+  label: string;
 };
 
 export type ResolvedMemoryPlace = {
@@ -516,6 +523,89 @@ const publicScope = (scope: SpatialScope | null) => {
   };
 };
 
+const resolutionFromUserConfirmation = ({
+  memory,
+  base,
+  queryPlan,
+  confirmed,
+}: {
+  memory: NormalizedMemoryRows;
+  base: PersonalContextResolution;
+  queryPlan: ReturnType<typeof buildMemoryQueryPlan>;
+  confirmed: ConfirmedMemoryReference | null | undefined;
+}): PersonalContextResolution => {
+  if (!confirmed) return base;
+  const note = memory.notes.find(candidate => candidate.id === confirmed.noteId);
+  const star = memory.stars.find(candidate => candidate.id === confirmed.starId);
+  if (!note || !star || note.star_id !== star.id) return base;
+  const anchorRelation = confirmed.relation === 'home'
+    || confirmed.relation === 'work'
+    || confirmed.relation === 'study';
+  const eventRelation = confirmed.relation === 'observation'
+    || confirmed.relation === 'activity';
+  const allowed = anchorRelation
+    ? queryPlan.anchorRelations.includes(confirmed.relation as 'home' | 'work' | 'study')
+    : queryPlan.eventRelations.includes(confirmed.relation as 'observation' | 'activity')
+      || queryPlan.targetTerms.length > 0
+      || queryPlan.referenceIntent.deictic;
+  if (!allowed) return base;
+  const createdAt = note.created_at_ms ?? star.created_at_ms;
+  const passage: MemoryEvidencePassage = {
+    noteId: note.id,
+    starId: star.id,
+    source: 'title',
+    text: String(confirmed.label || 'User-confirmed memory reference').slice(0, 240),
+    relation: confirmed.relation,
+    evidenceStrength: 'corroborating',
+    attribution: 'user',
+    negated: false,
+    matchedTerms: [...new Set([
+      ...queryPlan.targetTerms,
+      ...queryPlan.actionTerms,
+      confirmed.label,
+    ].map(value => String(value || '').trim()).filter(Boolean))],
+    createdAt,
+    coordinates: { lat: star.lat, lng: star.lng },
+    reviewSource: 'user-confirmed-reference',
+  };
+  return {
+    ...base,
+    requested: true,
+    status: 'resolved',
+    relations: [...new Set([...base.relations, confirmed.relation])],
+    anchorRelations: anchorRelation
+      ? [...new Set([...base.anchorRelations, confirmed.relation as 'home' | 'work' | 'study'])]
+      : base.anchorRelations,
+    eventRelations: eventRelation
+      ? [...new Set([...base.eventRelations, confirmed.relation as 'observation' | 'activity'])]
+      : base.eventRelations,
+    confidence: 0.72,
+    confidenceBand: 'medium',
+    matchSource: 'title',
+    anchors: [{
+      starId: star.id,
+      noteId: note.id,
+      coordinates: { lat: star.lat, lng: star.lng },
+      createdAt,
+      score: 6,
+      matchedRelations: [confirmed.relation],
+      matchedTerms: passage.matchedTerms,
+    }],
+    episodes: anchorRelation ? [{
+      relation: confirmed.relation as 'home' | 'work' | 'study',
+      starId: star.id,
+      evidenceNoteIds: [note.id],
+      firstEvidenceAt: createdAt,
+      lastEvidenceAt: createdAt,
+      evidenceStrength: 'corroborated',
+    }] : [],
+    evidencePassages: [passage],
+    evidenceNoteIds: [note.id],
+    decisionReasons: ['The user explicitly confirmed this opaque reference option for the current query.'],
+    instruction: 'Answer from this user-confirmed reference only for the current query. Do not generalize it into a permanent identity fact.',
+  };
+};
+
 export const researchMemoryContext = (
   memory: NormalizedMemoryRows,
   input: MemoryResearchInput,
@@ -565,17 +655,13 @@ export const researchMemoryContext = (
     [query, input.place, input.region].filter(Boolean).join(' '),
     personalRadius,
   );
-  const candidateReview = buildBoundedArchiveReview(personalArchive, deterministicPersonalContext, {
-    candidateOffset: input.semanticReview?.candidateOffset,
-  });
-  const semanticReviewResult = applyMemorySemanticReview({
+  const candidateReview = buildBoundedArchiveReview(personalArchive, deterministicPersonalContext);
+  const personalContext = resolutionFromUserConfirmation({
     memory: personalArchive,
+    base: deterministicPersonalContext,
     queryPlan,
-    baseResolution: deterministicPersonalContext,
-    candidateReview,
-    input: input.semanticReview,
+    confirmed: input.confirmedReference,
   });
-  const personalContext = semanticReviewResult.resolution;
   const personalScope: PersonalScope | null = (
     personalContext.status === 'resolved' || personalContext.status === 'ambiguous'
   ) ? {
@@ -613,14 +699,14 @@ export const researchMemoryContext = (
     const deterministicTargetEvidence = requiresTargetEvidence
       ? findTargetEvidencePassages(note, star, personalContext)
       : [];
-    const reviewedTargetEvidence = requiresTargetEvidence
+    const confirmedTargetEvidence = requiresTargetEvidence
       ? personalContext.evidencePassages.filter(passage => (
         passage.noteId === note.id
-        && passage.reviewSource === 'host-ai-review'
+        && passage.reviewSource === 'user-confirmed-reference'
         && personalContext.eventRelations.includes(passage.relation as 'observation' | 'activity')
       ))
       : [];
-    const targetEvidence = [...deterministicTargetEvidence, ...reviewedTargetEvidence]
+    const targetEvidence = [...deterministicTargetEvidence, ...confirmedTargetEvidence]
       .filter((passage, index, passages) => passages.findIndex(candidate => (
         candidate.noteId === passage.noteId
         && candidate.relation === passage.relation
@@ -725,8 +811,6 @@ export const researchMemoryContext = (
       ? input.placeResolution?.status === 'ambiguous'
         ? 'The explicit public place has multiple plausible resolutions. Present the bounded place candidates and ask the user to disambiguate; do not search or merge unrelated locations.'
         : 'The explicit public place could not be resolved. Report that place resolution failed and do not substitute unrelated memories.'
-    : semanticReviewResult.state.required
-      ? semanticReviewResult.state.instruction
     : personalContext.status === 'ambiguous'
     ? personalContext.instruction
     : unresolvedPersonalContext && candidateReview.available
@@ -788,8 +872,8 @@ export const researchMemoryContext = (
     personalContext,
     temporalResolutionRequired,
     unresolvedPublicPlace,
-    semanticReviewRequired: semanticReviewResult.state.required,
-    semanticClarification: semanticReviewResult.state.clarification,
+    semanticReviewRequired: false,
+    semanticClarification: null,
     hasMatchingRecords,
     verifiedPlaceNames: input.resolvedPlace
       ? [input.resolvedPlace.displayName || input.resolvedPlace.name].filter(Boolean)
@@ -808,7 +892,13 @@ export const researchMemoryContext = (
       updatedAtRole: 'storage-mutation-time-not-proof-of-user-edit' as const,
       instruction: 'Use currentLocalDate only to resolve relative query dates. A note happened on createdAt. updatedAt is a storage mutation timestamp and must not be described as a deliberate user edit.',
     },
-    semanticReview: semanticReviewResult.state,
+    semanticReview: {
+      required: false,
+      phase: 'not-needed' as const,
+      usesExternalModelService: false as const,
+      candidatesExposed: false,
+      instruction: 'Host-model candidate verdicts are not accepted as evidence. Fuzzy references require explicit user confirmation.',
+    },
     searchPlan: {
       mode: personalContext.status === 'resolved'
         ? (personalContext.proximityRequested ? 'personal-nearby' : 'personal-context')
@@ -839,6 +929,7 @@ export const researchMemoryContext = (
       : classification.confidenceBand,
     decisionReasons,
     candidateReview,
+    candidateScopeNoteIds: personalArchive.notes.map(note => note.id),
     latestRecordedMemory: !personalContext.requested && allLatestEntry ? {
       noteId: allLatestEntry.note.id,
       starId: allLatestEntry.star.id,

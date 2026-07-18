@@ -208,16 +208,14 @@ test('the first unresolved public response withholds all unverified candidate te
   assert.deepEqual(result.selectedNoteIds, []);
   assert.deepEqual(result.selectedStarIds, []);
   assert.deepEqual(result.selectedTrackIds, []);
-  assert.equal(result.semanticReview.phase, 'candidate-access-required');
-  assert.deepEqual(result.semanticReview.candidateNoteIds, []);
+  assert.equal(result.semanticReview.phase, 'not-needed');
   const disclosed = applyMemoryResearchDisclosureBoundary(result as unknown as Record<string, unknown>);
-  assert.deepEqual(disclosed.titleNoteIds, []);
-  assert.deepEqual(disclosed.candidateNoteIds, []);
-  assert.deepEqual((disclosed.candidateReview as { candidateExcerpts: unknown[] }).candidateExcerpts, []);
-  assert.match(result.instruction, /deliberately withheld/i);
+  assert.equal(disclosed.status, 'not-found');
+  assert.equal(disclosed.evidence, null);
+  assert.doesNotMatch(JSON.stringify(disclosed), /candidate|titleIndex|coordinates|午餐|河边/u);
 });
 
-test('small archive candidate excerpts remain bounded and separate from evidence records', () => {
+test('legacy candidate requests cannot expose small-archive candidate text publicly', () => {
   const possibleHome = star('possible-home', 31.2, 121.4, 1);
   const unrelated = star('unrelated', 31.3, 121.5, 2);
   const archive = memory(
@@ -233,14 +231,17 @@ test('small archive candidate excerpts remain bounded and separate from evidence
   });
 
   assert.deepEqual(result.selectedNoteIds, []);
-  assert.equal(result.semanticReview.candidatesExposed, true);
+  assert.equal(result.semanticReview.candidatesExposed, false);
   assert.equal(result.candidateNoteIds[0], 'possible');
   assert.equal(result.candidateReview.candidateExcerpts.length <= 4, true);
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.length <= 2, true);
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.every(excerpt => excerpt.length <= 240), true);
+  const disclosed = applyMemoryResearchDisclosureBoundary(result as unknown as Record<string, unknown>);
+  assert.equal(disclosed.status, 'not-found');
+  assert.doesNotMatch(JSON.stringify(disclosed), /possible|搬家|咖啡店|candidate/u);
 });
 
-test('large archives scan server-side but return only bounded relevant candidate excerpts', () => {
+test('large archives may rank internally but never disclose candidate batches', () => {
   const stars = Array.from({ length: 41 }, (_, index) => star(`star-${index}`, 31 + index / 1_000, 121, 1));
   const notes = stars.map((item, index) => note({
     id: `note-${index}`,
@@ -259,19 +260,15 @@ test('large archives scan server-side but return only bounded relevant candidate
   assert.equal(result.candidateNoteIds[0], 'note-40');
   assert.equal(result.candidateReview.candidateExcerpts.length <= 4, true);
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.length, 1);
-  assert.equal(result.semanticReview.reviewableCandidatePassageCount, 24);
-  assert.equal(result.semanticReview.reviewTruncated, true);
-  assert.match(result.instruction, /Do not answer from candidateNotes/i);
+  assert.equal(result.semanticReview.candidatesExposed, false);
+  const disclosed = applyMemoryResearchDisclosureBoundary(result as unknown as Record<string, unknown>);
+  assert.equal(disclosed.status, 'not-found');
+  assert.doesNotMatch(JSON.stringify(disclosed), /note-40|candidate|普通内容/u);
 });
 
-test('Memory API keeps title review and body candidates separate from evidence records', () => {
+test('Memory API projects research through the strict public response boundary', () => {
   const source = readFileSync(new URL('../supabase/functions/memory-api/index.ts', import.meta.url), 'utf8');
-  assert.match(source, /titleIndex/);
-  assert.match(source, /candidateNotes/);
-  assert.match(source, /retrievalRole: 'title-index'/);
-  assert.match(source, /retrievalRole: 'candidate-only'/);
-  assert.match(source, /records: notes/);
-  const candidateBlock = source.slice(source.indexOf('const titleIndex'), source.indexOf('const locations'));
-  assert.doesNotMatch(candidateBlock, /coordinates:/);
-  assert.doesNotMatch(candidateBlock, /starId:/);
+  assert.match(source, /projectPublicMemoryResearchResponse/);
+  assert.match(source, /referenceConfirmation/);
+  assert.doesNotMatch(source, /publicResearch\.(?:candidateNotes|candidateReview|titleIndex)/u);
 });

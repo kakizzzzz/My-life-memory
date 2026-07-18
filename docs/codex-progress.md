@@ -2,6 +2,7 @@
 
 ## Current Baseline
 
+- Current redesign baseline HEAD: `dcc130999b05faea8a3cad12d61f03f0a6e7aebc`
 - Initial HEAD: `6d3bd28293c793d157080c7ddfe737a9fadb1bd0`
 - Branch: `main`
 - Implementation commit: `314d50b` (`feat: compose evidence-grounded memory research`)
@@ -9,6 +10,28 @@
 - Host-review hardening commit: `e6af2f3564ae34c668fcf84ca13ed67f36669573` (`fix: harden evidence-grounded MCP fallback`)
 - Deployed source HEAD: `e6af2f3564ae34c668fcf84ca13ed67f36669573`
 - Objective: upgrade the existing nine-tool, read-only MCP into a compositional, evidence-grounded personal-memory retrieval system without changing the database schema or unrelated UI.
+
+## Follow-up: Evidence Firewall And User-confirmed References
+
+- Baseline HEAD: `dcc130999b05faea8a3cad12d61f03f0a6e7aebc`
+- Objective: prevent weak MCP clients from narrating rejected candidates or contradicting the user by replacing the staged host-verdict path with strict public response projection and user-confirmed reference resolution.
+- [Complete] Inspect the current query plan, semantic review, disclosure boundary, Memory API response assembly, local MCP, cloud MCP, and related tests.
+- [Complete] Replace denylist redaction with status-specific allowlist response DTOs and mandatory machine directives.
+- [Complete] Add neutral reference options and an authenticated, revision-bound, expiring continuation token.
+- [Complete] Add user confirmation as the only promotion path for fuzzy references; host-model suggestions remain retrieval hints only.
+- [Complete] Add structured MCP output, weak-client data-minimization tests, and local/cloud transport parity.
+- [Complete] Verify the local SDK at runtime and add a top-level object compatibility schema so `tools/list` publishes `outputSchema` while exact four-state validation remains enforced.
+- [Complete] Run lint, Edge checks, unit tests, production build, mobile WebKit E2E, and final diff review.
+- [Pending] Commit and push `main`, deploy only `mcp` and `memory-api`, and verify production authentication plus GitHub workflows.
+- Decision: preserve exactly nine public read-only tools, add no database migration, and add no backend model, embedding service, vector database, or paid model call.
+- Decision: non-supported responses must contain no candidate body, title, score, date, coordinates, routes, images, classification, totals, rejection reasons, or free-form internal reasoning.
+- Completed phase notes: non-supported DTOs now use a strict four-state allowlist; neutral option labels reveal no archive title, excerpt, date, score, coordinate, or place; the continuation token is encrypted, authenticated-user scoped, query-bound, revision-bound, and expiring; legacy host semantic verdicts remain accepted only for input compatibility and cannot promote evidence.
+- Completed transport work: both MCP implementations now advertise the same structured research schema; research returns `structuredContent`, while non-supported text content is exactly the server directive with no appended narration.
+- Local SDK runtime result: an in-memory MCP client now confirms that `tools/list` includes the structured object schema and that calls validate `structuredContent`; non-supported responses with forbidden fields are rejected.
+- Validation results: focused evidence-firewall checks passed, `npm run lint` passed, the exact `npm test` script passed 201/201, `npm run build` passed, and `npm run test:e2e` passed 1/1 mobile WebKit test.
+- Edge validation: `npm run lint:edge` could not start because no global `deno` binary is installed. The equivalent `npx --yes deno check` passed all six production Edge Functions.
+- Fixed during validation: strict JSON Schema literal typing, canonical Base64URL token validation so equivalent non-canonical ciphertext encodings are rejected, and explicit MCP instruction wording required by the existing safety regressions.
+- Documentation result: README now describes the strict four-state evidence firewall and opaque user-confirmation flow instead of the retired candidate-body host-verdict workflow.
 
 ## Files Inspected
 
@@ -85,6 +108,7 @@
 - `npm run build`
 - `npm run test:e2e`
 - `node --import tsx --test tests/mcpQueryRouting.test.ts tests/memoryQueryPlan.test.ts tests/memoryPersonalContext.test.ts tests/memoryCompositionalResearch.test.ts tests/memoryResearch.test.ts tests/timeZone.test.ts tests/mcpTransport.test.ts`
+- `node --import tsx --test tests/mcpOutputSchema.test.ts tests/mcpTransport.test.ts tests/memoryPublicResponse.test.ts tests/memoryReferenceConfirmation.test.ts`
 - `node --import tsx --test tests/exportImages.test.ts`
 - Targeted `rg`, `sed`, and `git diff` review of README, public-place resolution, and the production Memory API call path.
 - Secret-pattern scan for Supabase personal/service-role keys, long-lived MCP tokens, and committed credentials.

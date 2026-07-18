@@ -15,6 +15,12 @@ export type MemoryQueryDateRange = {
 
 export type MemoryQueryPlan = {
   originalQuery: string;
+  utteranceMode: 'direct-question' | 'reference-statement' | 'follow-up' | 'correction';
+  referenceIntent: {
+    deictic: boolean;
+    targetSurface: string | null;
+    evaluativePredicate: string | null;
+  };
   publicPlace: {
     value: string;
     source: 'explicit-argument' | 'query-span';
@@ -85,6 +91,18 @@ const relativeTimePattern = /(?:今天|今日|昨天|昨日|前天|这几天|這
 const routeIntentPattern = /(?:路线|路線|轨迹|軌跡|走过|走過|跑步|骑行|騎行|route|track|walked|walking|ran|running|cycled|cycling|経路|ルート|歩いた|走った|경로|이동|걸었|달렸)/iu;
 const routeTargetNoise = /^(?:走|走过|走過|跑步|骑行|騎行|路线|路線|轨迹|軌跡|route|track|walk|walked|walking|run|ran|running|cycle|cycled|cycling|経路|ルート|歩いた|走った|경로|이동|걸었|달렸)$/iu;
 const imageIntentPattern = /(?:图片|圖像|照片|相片|影像|拍的|photo|image|picture|photograph|写真|画像|사진|이미지)/iu;
+const deicticPattern = /(?:那个|那個|这个|這個|那只|那隻|这只|這隻|那里|那裡|\b(?:that|this)\s+(?:one|place|location|thing|animal|object)\b|あの|その|그곳|그\s*장소|그것|저곳|저\s*장소)/iu;
+const questionShapePattern = /[?？]|(?:哪里|哪裡|哪儿|哪兒|在哪|在哪里|在哪裡|什么|什麼|哪些|where|what|which|どこ|何|어디|무엇)/iu;
+const correctionPattern = /(?:不是|不对|不對|我说的是|我說的是|更正|no[,，]?\s*i mean|not that|correction|違う|そうではなく|아니|내가 말한 건)/iu;
+const followUpPattern = /^(?:是|对|對|没错|沒錯|不是|都不是|第[一二三四\d]+个|第[一二三四\d]+個|yes|no|that one|none|the first|the second|そう|違う|どれでもない|맞아|아니|둘 다 아니)/iu;
+const evaluativePredicatePattern = /(?:很有趣|有趣|很漂亮|漂亮|很好看|好看|很特别|很特別|喜欢|喜歡|interesting|beautiful|pretty|special|memorable|liked|favorite|favourite|面白い|きれい|綺麗|特別|好き|재미있|예쁘|특별|좋아)/iu;
+
+const utteranceModeFor = (query: string): MemoryQueryPlan['utteranceMode'] => {
+  if (correctionPattern.test(query)) return 'correction';
+  if (followUpPattern.test(query.trim())) return 'follow-up';
+  if (deicticPattern.test(query) && !questionShapePattern.test(query)) return 'reference-statement';
+  return 'direct-question';
+};
 
 const answerIntentFor = (query: string): MemoryQueryPlan['answerIntent'] => {
   if (/(?:比较|對比|相比|difference|compare|versus|比較|비교)/iu.test(query)) return 'compare';
@@ -127,6 +145,10 @@ export const buildMemoryQueryPlan = ({
   } : null;
   const dateRange = explicitRange || inferred;
   const routeIntent = routeIntentPattern.test(originalQuery);
+  const targetTerms = routeIntent
+    ? targetIntent.targetTerms.filter(term => !routeTargetNoise.test(term))
+    : targetIntent.targetTerms;
+  const evaluativePredicate = originalQuery.match(evaluativePredicatePattern)?.[0] || null;
   const spatialRelation = personal.proximityRequested
     ? 'nearby'
     : radiusProvided
@@ -136,14 +158,18 @@ export const buildMemoryQueryPlan = ({
         : 'none';
   return {
     originalQuery,
+    utteranceMode: utteranceModeFor(originalQuery),
+    referenceIntent: {
+      deictic: deicticPattern.test(originalQuery),
+      targetSurface: targetTerms[0] || null,
+      evaluativePredicate,
+    },
     publicPlace: inferredPublicPlace
       ? { value: inferredPublicPlace, source: suppliedPublicPlace ? publicPlaceSource : 'query-span' }
       : null,
     anchorRelations: personal.anchorRelations,
     eventRelations: personal.eventRelations,
-    targetTerms: routeIntent
-      ? targetIntent.targetTerms.filter(term => !routeTargetNoise.test(term))
-      : targetIntent.targetTerms,
+    targetTerms,
     actionTerms: personal.actionTerms,
     spatialRelation,
     routeIntent,

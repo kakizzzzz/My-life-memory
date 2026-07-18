@@ -23,6 +23,8 @@ import {
   mergeContextualSearchFallback,
   shouldUseContextualSearchFallback,
 } from '../_shared/mcp-query-routing.mjs';
+import { MEMORY_RESEARCH_OUTPUT_SCHEMA } from '../_shared/mcp-memory-public-schema.mjs';
+import { memoryResearchTextContent } from '../_shared/memory-public-response.ts';
 
 const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -38,6 +40,7 @@ const optionalDateSchema = {
 
 const semanticReviewSchema = {
   type: 'object',
+  description: 'Deprecated compatibility input. Host-model verdicts are ignored and cannot promote candidate text into evidence.',
   properties: {
     requestCandidates: {
       type: 'boolean',
@@ -68,6 +71,44 @@ const semanticReviewSchema = {
   additionalProperties: false,
 };
 
+const semanticHintsSchema = {
+  type: 'object',
+  description: 'Optional query-only vocabulary hints supplied by the host model. They may rank neutral reference candidates but can never become memory evidence.',
+  properties: {
+    concepts: {
+      type: 'array',
+      maxItems: 6,
+      items: {
+        type: 'object',
+        properties: {
+          surface: { type: 'string', minLength: 1, maxLength: 48 },
+          broadTerms: {
+            type: 'array',
+            maxItems: 8,
+            items: { type: 'string', minLength: 1, maxLength: 48 },
+          },
+        },
+        required: ['surface', 'broadTerms'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['concepts'],
+  additionalProperties: false,
+};
+
+const referenceConfirmationSchema = {
+  type: 'object',
+  description: 'Explicit user confirmation or rejection of a neutral option returned by an earlier ambiguous response.',
+  properties: {
+    continuationToken: { type: 'string', minLength: 1, maxLength: 16384 },
+    selectedOptionId: { type: 'string', minLength: 1, maxLength: 80 },
+    answer: { type: 'string', enum: ['confirm', 'reject', 'none'] },
+  },
+  required: ['continuationToken', 'answer'],
+  additionalProperties: false,
+};
+
 const readTools = [
   {
     name: 'research_memory_context',
@@ -93,11 +134,14 @@ const readTools = [
         centerLng: { type: 'number', minimum: -180, maximum: 180 },
         radiusKm: { type: 'number', minimum: 0.1, maximum: 1000, default: 5 },
         limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+        semanticHints: semanticHintsSchema,
+        referenceConfirmation: referenceConfirmationSchema,
         semanticReview: semanticReviewSchema,
       },
       required: ['query'],
       additionalProperties: false,
     },
+    outputSchema: MEMORY_RESEARCH_OUTPUT_SCHEMA,
     annotations: {
       readOnlyHint: true,
       openWorldHint: true,
@@ -508,13 +552,17 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
       );
       payload = mergeContextualSearchFallback(payload, contextual);
     }
+    const isResearch = toolName === 'research_memory_context';
+    const isContextualFallback = toolName === 'search_memories'
+      && payload?.resolvedAction === 'research_memory_context';
     return rpcResult(id, {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(payload, null, 2),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: isResearch || isContextualFallback
+          ? memoryResearchTextContent(payload)
+          : JSON.stringify(payload, null, 2),
+      }],
+      ...(isResearch ? { structuredContent: payload } : {}),
     });
   }
 

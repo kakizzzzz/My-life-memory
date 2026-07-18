@@ -30,6 +30,7 @@ import {
   isFiniteCoordinate,
   isInDateRange,
   noteSummary,
+  noteTitle,
   notesByStarId,
   routeSummary,
   starSummary,
@@ -46,7 +47,6 @@ import type {
   MemorySemanticReviewInput,
 } from '../_shared/memory-semantic-review.ts';
 import {
-  explicitMemoryNoteTitle,
   isPersonalMemoryReference,
 } from '../_shared/memory-personal-context.ts';
 import {
@@ -55,9 +55,19 @@ import {
 } from '../_shared/mcp-query-routing.mjs';
 import { collectMemoryImageReferences } from '../_shared/memory-image-references.ts';
 import {
-  applyMemoryResearchDisclosureBoundary,
-  withoutMemoryCoordinates,
+  projectPublicMemoryResearchResponse,
+  type MemoryReferenceClarification,
 } from '../_shared/memory-public-response.ts';
+import {
+  buildMemoryReferenceOptions,
+  buildMemoryReferenceQuestion,
+  buildMemoryReferenceRefinementQuestion,
+  type MemorySemanticHints,
+} from '../_shared/memory-reference-candidates.ts';
+import {
+  createMemoryReferenceToken,
+  verifyMemoryReferenceToken,
+} from '../_shared/memory-reference-token.ts';
 import {
   buildMemoryTemporalContext,
   normalizeTimeZone,
@@ -174,6 +184,77 @@ const semanticReviewInput = (value: unknown): {
     },
   };
 };
+
+type ReferenceConfirmationInput = {
+  continuationToken: string;
+  selectedOptionId?: string;
+  answer: 'confirm' | 'reject' | 'none';
+};
+
+const referenceConfirmationInput = (value: unknown): {
+  value?: ReferenceConfirmationInput;
+  error?: string;
+} => {
+  if (value === undefined || value === null) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { error: 'referenceConfirmation must be an object.' };
+  }
+  const record = value as Record<string, unknown>;
+  const continuationToken = getString(record.continuationToken).trim();
+  const selectedOptionId = getString(record.selectedOptionId).trim();
+  const answer = getString(record.answer);
+  if (!continuationToken || continuationToken.length > 16_384) {
+    return { error: 'referenceConfirmation.continuationToken is invalid.' };
+  }
+  if (selectedOptionId.length > 80) {
+    return { error: 'referenceConfirmation.selectedOptionId is invalid.' };
+  }
+  if (!['confirm', 'reject', 'none'].includes(answer)) {
+    return { error: 'referenceConfirmation.answer must be confirm, reject, or none.' };
+  }
+  return {
+    value: {
+      continuationToken,
+      ...(selectedOptionId ? { selectedOptionId } : {}),
+      answer: answer as ReferenceConfirmationInput['answer'],
+    },
+  };
+};
+
+const semanticHintsInput = (value: unknown): {
+  value?: MemorySemanticHints;
+  error?: string;
+} => {
+  if (value === undefined || value === null) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { error: 'semanticHints must be an object.' };
+  }
+  const concepts = (value as Record<string, unknown>).concepts;
+  if (!Array.isArray(concepts) || concepts.length > 6) {
+    return { error: 'semanticHints.concepts must contain at most 6 items.' };
+  }
+  const parsed = concepts.map(concept => {
+    if (!concept || typeof concept !== 'object' || Array.isArray(concept)) return null;
+    const record = concept as Record<string, unknown>;
+    const surface = getString(record.surface).trim();
+    const broadTerms = record.broadTerms;
+    if (!surface || surface.length > 48 || !Array.isArray(broadTerms) || broadTerms.length > 8) return null;
+    const terms = broadTerms.map(term => getString(term).trim());
+    if (terms.some(term => !term || term.length > 48)) return null;
+    return { surface, broadTerms: [...new Set(terms)] };
+  });
+  if (parsed.some(concept => !concept)) {
+    return { error: 'Each semanticHints concept requires a surface and bounded broadTerms.' };
+  }
+  return { value: { concepts: parsed as NonNullable<typeof parsed[number]>[] } };
+};
+
+const noteHasStoredImages = (note: NoteRow) => Boolean(
+  note.image_url
+  || note.image_urls?.length
+  || note.images?.length
+  || /data-media-(?:path|key)=/i.test(`${note.title_html} ${note.content_html}`)
+);
 
 const memoryLoadOptions = (action: string, body: Record<string, unknown>): NormalizedMemoryLoadOptions => {
   const date = getString(body.date);
@@ -515,6 +596,10 @@ serve(async request => {
       const limit = Math.min(Math.max(getNumber(body.limit, 30), 1), 100);
       const semanticReview = semanticReviewInput(body.semanticReview);
       if (semanticReview.error) return fail('bad_request', semanticReview.error, 400);
+      const semanticHints = semanticHintsInput(body.semanticHints);
+      if (semanticHints.error) return fail('bad_request', semanticHints.error, 400);
+      const referenceConfirmation = referenceConfirmationInput(body.referenceConfirmation);
+      if (referenceConfirmation.error) return fail('bad_request', referenceConfirmation.error, 400);
       const inferredQueryPlace = !place && !region ? inferMemoryPlaceHint(query) : '';
       const requestedPlace = place || (
         region && !resolveExactMemoryCountryRegion(region) ? region : inferredQueryPlace
@@ -535,7 +620,6 @@ serve(async request => {
           ? 'Private personal-place references are resolved only from the authenticated user memory archive.'
           : 'The value was not an explicit public geographic place and was not sent to the public geocoder.',
       } : { status: 'not-requested' };
-      let placeCandidates: unknown[] = [];
       const placeAsCountry = resolveExactMemoryCountryRegion(geocodablePlace);
       if (geocodablePlace && !placeAsCountry && !hasCenterLat) {
         const country = resolveMemoryCountryRegion(region)
@@ -549,7 +633,6 @@ serve(async request => {
         });
         resolvedPlace = resolution.resolvedPlace;
         placeResolution = resolution.summary;
-        placeCandidates = resolution.candidates;
       } else if (placeAsCountry) {
         placeResolution = {
           status: 'resolved',
@@ -566,6 +649,59 @@ serve(async request => {
         };
       }
 
+      const confirmationSecret = Deno.env.get('MEMORY_REFERENCE_CONFIRMATION_SECRET')
+        || internalToken
+        || serviceRoleKey;
+      let confirmedReference: {
+        noteId: string;
+        starId: string;
+        relation: 'home' | 'work' | 'study' | 'observation' | 'activity';
+        label: string;
+      } | null = null;
+      let referenceClarification: MemoryReferenceClarification | null = null;
+      const confirmation = referenceConfirmation.value;
+      if (confirmation) {
+        const verified = await verifyMemoryReferenceToken({
+          secret: confirmationSecret,
+          token: confirmation.continuationToken,
+          userId,
+          query,
+          revision: memory.revision,
+        });
+        if (!verified.valid || confirmation.answer !== 'confirm') {
+          const exactText = buildMemoryReferenceRefinementQuestion(query);
+          referenceClarification = {
+            exactText,
+            kind: 'request-facet',
+            options: [],
+            continuationToken: null,
+            requestedFacets: ['time', 'place', 'title-word', 'object-name', 'activity'],
+          };
+        } else {
+          const selected = confirmation.selectedOptionId
+            ? verified.options.find(option => option.optionId === confirmation.selectedOptionId)
+            : verified.options.length === 1 ? verified.options[0] : null;
+          if (!selected) {
+            const options = verified.options.map(option => ({ optionId: option.optionId, label: option.label }));
+            const exactText = buildMemoryReferenceQuestion(query, options.map(option => option.label));
+            referenceClarification = {
+              exactText,
+              kind: options.length === 1 ? 'yes-no' : 'choose-option',
+              options,
+              continuationToken: confirmation.continuationToken,
+              requestedFacets: ['time', 'place', 'title-word', 'object-name', 'activity'],
+            };
+          } else {
+            confirmedReference = {
+              noteId: selected.noteId,
+              starId: selected.starId,
+              relation: selected.relation,
+              label: selected.label,
+            };
+          }
+        }
+      }
+
       const research = researchMemoryContext(memory, {
         query,
         place: requestedPlace,
@@ -579,81 +715,113 @@ serve(async request => {
         placeSource,
         resolvedPlace,
         placeResolution,
+        confirmedReference,
+        // Retained only so old clients do not fail validation. Host-model
+        // semantic verdicts are deliberately ignored by the research layer.
         semanticReview: semanticReview.value,
       }, timeZone);
-      const publicResearch = applyMemoryResearchDisclosureBoundary(research);
-      const mayStateCoordinates = research.answerBoundary.mayStateCoordinates;
-      const candidatesExposed = research.semanticReview.candidatesExposed === true;
+
+      if (!referenceClarification
+        && research.answerBoundary.status === 'not-found'
+        && (research.personalContext.requested
+          || research.queryPlan.referenceIntent.deictic
+          || research.queryPlan.utteranceMode !== 'direct-question')) {
+        const internalOptions = buildMemoryReferenceOptions({
+          memory,
+          queryPlan: research.queryPlan,
+          semanticHints: semanticHints.value,
+          allowedNoteIds: research.candidateScopeNoteIds,
+        });
+        if (internalOptions.length) {
+          const issued = await createMemoryReferenceToken({
+            secret: confirmationSecret,
+            userId,
+            query,
+            revision: memory.revision,
+            options: internalOptions,
+          });
+          const exactText = buildMemoryReferenceQuestion(
+            query,
+            issued.options.map(option => option.label),
+          );
+          referenceClarification = {
+            exactText,
+            kind: issued.options.length === 1 ? 'yes-no' : 'choose-option',
+            options: issued.options,
+            continuationToken: issued.token,
+            requestedFacets: ['time', 'place', 'title-word', 'object-name', 'activity'],
+          };
+        }
+      }
+
       const starById = new Map(memory.stars.map(star => [star.id, star]));
       const starIndex = new Map(memory.stars.map((star, index) => [star.id, index]));
       const noteById = new Map(memory.notes.map(note => [note.id, note]));
       const trackById = new Map(memory.tracks.map(track => [track.id, track]));
-      const residualQuery = research.searchPlan.residualTextQuery;
-      const notesWithCoordinates = research.selectedNoteIds.flatMap(noteId => {
+      const evidenceNoteIds = new Set(research.evidencePassages.map(passage => passage.noteId));
+      const records = research.selectedNoteIds.flatMap(noteId => {
+        if (!evidenceNoteIds.has(noteId)) return [];
         const note = noteById.get(noteId);
         const star = note ? starById.get(note.star_id) : null;
         if (!note || !star) return [];
-        const siblings = groupedNotes.get(star.id) || [];
-        return [noteSummary(
-          note,
-          star,
-          starIndex.get(star.id) || 0,
-          siblings.findIndex(item => item.id === note.id),
-          residualQuery,
-        )];
-      });
-      const notes = mayStateCoordinates
-        ? notesWithCoordinates
-        : notesWithCoordinates.map(withoutMemoryCoordinates);
-      const titleIndex = (candidatesExposed ? research.titleNoteIds : []).flatMap(noteId => {
-        const note = noteById.get(noteId);
-        const star = note ? starById.get(note.star_id) : null;
-        if (!note || !star) return [];
-        const title = explicitMemoryNoteTitle(note);
+        const excerpt = research.evidencePassages
+          .filter(passage => passage.noteId === note.id)
+          .map(passage => passage.text.trim())
+          .filter(Boolean)
+          .join(' ')
+          .slice(0, 240);
         return [{
           id: note.id,
-          title: title || 'Untitled note',
-          hasExplicitTitle: Boolean(title),
+          starId: star.id,
+          title: noteTitle(note),
+          excerpt,
           createdAt: note.created_at_ms ?? star.created_at_ms,
-          retrievalRole: 'title-index',
-          evidenceStatus: 'unverified',
+          hasImages: noteHasStoredImages(note),
+          coordinates: { lat: star.lat, lng: star.lng },
         }];
       });
-      const candidateNotes = (candidatesExposed ? research.candidateReview.candidateExcerpts : []).flatMap(candidate => {
-        const note = noteById.get(candidate.noteId);
-        const star = note ? starById.get(note.star_id) : null;
-        if (!note || !star) return [];
-        return [{
-          id: note.id,
-          title: explicitMemoryNoteTitle(note) || 'Untitled note',
-          text: candidate.excerpts.join('\n'),
-          excerpts: candidate.excerpts,
-          candidateScore: candidate.score,
-          createdAt: note.created_at_ms ?? star.created_at_ms,
-          retrievalRole: 'candidate-only',
-          evidenceStatus: 'unverified',
-        }];
-      });
-      const locations = mayStateCoordinates ? research.selectedStarIds.flatMap(starId => {
+      const evidenceStarIds = new Set([
+        ...records.map(record => record.starId),
+        ...research.evidencePassages.map(passage => passage.starId),
+      ]);
+      const locations = [...evidenceStarIds].flatMap(starId => {
         const star = starById.get(starId);
-        return star ? [starSummary(star, starIndex.get(star.id) || 0, groupedNotes.get(star.id) || [])] : [];
-      }) : [];
-      const routes = mayStateCoordinates ? research.selectedTrackIds.flatMap(trackId => {
+        return star ? [{
+          id: star.id,
+          index: starIndex.get(star.id) || 0,
+          coordinates: { lat: star.lat, lng: star.lng },
+          noteCount: (groupedNotes.get(star.id) || []).length,
+        }] : [];
+      });
+      const routes = research.queryPlan.routeIntent ? research.selectedTrackIds.flatMap(trackId => {
         const track = trackById.get(trackId);
-        return track ? [routeSummary(track, false)] : [];
+        if (!track) return [];
+        const summary = routeSummary(track, false);
+        return [{
+          id: summary.id,
+          durationSeconds: summary.durationSeconds,
+          distance: summary.distance,
+          createdAt: summary.createdAt,
+          segmentCount: summary.segmentCount,
+          pointCount: summary.pointCount,
+        }];
       }) : [];
-      const returnedEntityCount = notes.length + locations.length + routes.length;
-      return output({
-        ...publicResearch,
-        placeCandidates,
-        notes,
-        titleIndex,
-        candidateNotes,
+      const publicResearch = projectPublicMemoryResearchResponse({
+        research,
+        records,
         locations,
         routes,
-        records: notes,
-        returnedEntityCount,
-      }, returnedEntityCount, query || requestedPlace || region);
+        referenceClarification,
+      });
+      return jsonResponse({
+        ok: true,
+        source: 'my-life-memory-normalized-v2',
+        action,
+        query,
+        timestamp: new Date().toISOString(),
+        temporalContext,
+        ...publicResearch,
+      }, 200, corsHeaders);
     }
 
     if (action === 'get_location_memory') {

@@ -132,6 +132,8 @@ const locationQuestionTerms = [
   'where', 'place', 'location', '場所', 'どこ', '곳', '어디',
 ];
 
+const referenceStatementPattern = /(?:那个|那個|这个|這個|那只|那隻|这只|這隻|那个地方|那個地方|这个地方|這個地方|\b(?:that|this)\s+(?:one|place|location|thing|animal|object)\b|あの(?:場所|もの|子)|その(?:場所|もの|子)|그(?:곳|장소|것|아이)|저(?:곳|장소|것)).{0,80}(?:地方|地点|地點|位置|place|location|場所|ところ|곳|장소)/iu;
+
 const removableQueryTerms = [
   '帮我', '幫我', '请', '請', '查看', '查找', '寻找', '尋找', '搜索', '搜尋', '看看', '告诉我', '告訴我',
   '相关', '相關', '那些', '那个', '那個', '这个', '這個', '那只', '那隻', '这只', '這隻', '那家', '这家', '這家',
@@ -139,6 +141,9 @@ const removableQueryTerms = [
   '一份', '一块', '一塊', '某个', '某個', '某只', '某隻', '某件', '某张', '某張', '某处', '某處', '某家',
   '某台', '某辆', '某輛', '某份', '某块', '某塊',
   '那里', '那裡', '这里', '這裡', '什么', '什麼', '哪些', '哪种', '哪種', '过', '過', '我的', '我', '的',
+  '很有趣', '有趣', '很漂亮', '漂亮', '很好看', '好看', '很特别', '很特別', '特别', '特別', '喜欢', '喜歡',
+  'interesting', 'beautiful', 'pretty', 'special', 'memorable', 'liked', 'favorite', 'favourite',
+  '面白い', 'きれい', '綺麗', '特別', '好き', '재미있', '예쁘', '특별', '좋아',
   '笔记', '筆記', '记录', '記錄', '记忆', '記憶', '照片', '相片', '路线', '路線',
   'please', 'show', 'find', 'search', 'tell', 'about', 'related', 'notes', 'records', 'memories', 'photos', 'routes', 'what', 'which', 'my', 'i', 'it', 'this', 'that', 'these', 'those', 'them', 'some',
   'the', 'a', 'an', 'do', 'does', 'did', 'have', 'has', 'had', 'ever', 'was', 'were', 'is', 'are', 'been',
@@ -226,6 +231,7 @@ export const analyzePersonalContextQuery = (value: unknown): PersonalContextInte
     : matchedActivityGroup;
   const hasLocationShape = matchingAliases(source, locationQuestionTerms).length > 0;
   if (effectiveActivityGroup && hasLocationShape && !relations.includes('activity')) relations.push('activity');
+  if (!relations.length && referenceStatementPattern.test(source) && hasLocationShape) relations.push('observation');
   const actionTerms = effectiveActivityGroup ? [...effectiveActivityGroup] : [];
   const targetTerms = extractTargetTerms(source, relations, actionTerms);
   const anchorRelations = relations.filter((relation): relation is PersonalAnchorRelation => (
@@ -337,7 +343,7 @@ export type MemoryEvidencePassage = {
   matchedTerms: string[];
   createdAt: number | null;
   coordinates: { lat: number; lng: number };
-  reviewSource?: 'host-ai-review';
+  reviewSource?: 'host-ai-review' | 'user-confirmed-reference';
 };
 
 const passageRecord = (

@@ -246,13 +246,13 @@ test('weak home wording remains review-only and cannot authorize a location answ
   assert.deepEqual(result.selectedNoteIds, []);
   assert.deepEqual(result.selectedStarIds, []);
   assert.deepEqual(result.candidateNoteIds, ['possible-home-note']);
-  assert.equal(result.answerBoundary.status, 'needs-candidate-review');
+  assert.equal(result.answerBoundary.status, 'not-found');
   assert.equal(result.answerBoundary.mandatory, true);
-  assert.equal(result.answerBoundary.answerMode, 'retry-with-bounds');
+  assert.equal(result.answerBoundary.answerMode, 'state-no-answer');
   assert.equal(result.answerBoundary.mustUseSuggestedReply, true);
   assert.equal(result.answerBoundary.mayUseCandidateNotesAsAnswer, false);
   assert.equal(result.answerBoundary.mayStateCoordinates, false);
-  assert.match(result.answerBoundary.suggestedReply, /Do not answer yet/u);
+  assert.match(result.answerBoundary.suggestedReply, /没有足够.*证据/u);
 });
 
 test('two independent corroborating passages can resolve an anchor but duplicates cannot inflate confidence', () => {
@@ -514,8 +514,8 @@ test('temporary rehabilitation stays cannot resolve home or authorize coordinate
   const first = researchMemoryContext(archive, { query: '我家在哪里？' });
 
   assert.equal(first.personalContext.status, 'not-found');
-  assert.equal(first.semanticReview.required, true);
-  assert.equal(first.answerBoundary.status, 'needs-candidate-review');
+  assert.equal(first.semanticReview.required, false);
+  assert.equal(first.answerBoundary.status, 'not-found');
   assert.deepEqual(first.selectedNoteIds, []);
   assert.deepEqual(first.selectedStarIds, []);
 
@@ -532,14 +532,13 @@ test('temporary rehabilitation stays cannot resolve home or authorize coordinate
   });
 
   assert.equal(reviewed.personalContext.status, 'not-found');
-  assert.equal(reviewed.semanticReview.phase, 'review-invalid');
-  assert.match(reviewed.semanticReview.decisions[0].reason, /temporary-or-institutional-stay/u);
+  assert.equal(reviewed.semanticReview.phase, 'not-needed');
   assert.equal(reviewed.answerBoundary.status, 'not-found');
   assert.deepEqual(reviewed.selectedNoteIds, []);
   assert.deepEqual(reviewed.selectedStarIds, []);
 });
 
-test('the existing host AI may promote one exact subtle passage only after server validation', () => {
+test('legacy host review cannot promote a subtle passage but explicit user confirmation can', () => {
   const home = star('subtle-home', 31.2, 121.4);
   const archive = memory(
     [home],
@@ -553,20 +552,11 @@ test('the existing host AI may promote one exact subtle passage only after serve
   const first = researchMemoryContext(archive, { query: '我家在哪里？' });
 
   assert.equal(first.personalContext.status, 'not-found');
-  assert.equal(first.semanticReview.phase, 'candidate-access-required');
+  assert.equal(first.semanticReview.phase, 'not-needed');
   assert.equal(first.semanticReview.usesExternalModelService, false);
   assert.equal(first.semanticReview.candidatesExposed, false);
-  assert.deepEqual(first.semanticReview.candidateNoteIds, []);
 
-  const candidates = researchMemoryContext(archive, {
-    query: '我家在哪里？',
-    semanticReview: { requestCandidates: true, candidateOffset: 0 },
-  });
-  assert.equal(candidates.semanticReview.phase, 'awaiting-host-review');
-  assert.equal(candidates.semanticReview.candidatesExposed, true);
-  assert.deepEqual(candidates.semanticReview.candidateNoteIds, ['subtle-home-note']);
-
-  const reviewed = researchMemoryContext(archive, {
+  const ignored = researchMemoryContext(archive, {
     query: '我家在哪里？',
     semanticReview: {
       decisions: [{
@@ -577,40 +567,48 @@ test('the existing host AI may promote one exact subtle passage only after serve
       }],
     },
   });
+  assert.equal(ignored.personalContext.status, 'not-found');
+  assert.equal(ignored.answerBoundary.status, 'not-found');
 
-  assert.equal(reviewed.personalContext.status, 'resolved');
-  assert.equal(reviewed.personalContext.confidenceBand, 'low');
-  assert.equal(reviewed.answerBoundary.status, 'supported');
-  assert.deepEqual(reviewed.selectedNoteIds, ['subtle-home-note']);
-  assert.equal(reviewed.evidencePassages[0].reviewSource, 'host-ai-review');
+  const confirmed = researchMemoryContext(archive, {
+    query: '我家在哪里？',
+    confirmedReference: {
+      noteId: 'subtle-home-note',
+      starId: home.id,
+      relation: 'home',
+      label: 'Possible location 1',
+    },
+  });
+  assert.equal(confirmed.personalContext.status, 'resolved');
+  assert.equal(confirmed.answerBoundary.status, 'supported');
+  assert.deepEqual(confirmed.selectedNoteIds, ['subtle-home-note']);
+  assert.equal(confirmed.evidencePassages[0].reviewSource, 'user-confirmed-reference');
 });
 
-test('host-assisted evidence at two personal locations remains ambiguous', () => {
+test('an explicit confirmation selects one candidate without merging other locations', () => {
   const firstHome = star('subtle-home-a', 31.2, 121.4);
   const secondHome = star('subtle-home-b', 31.3, 121.5);
-  const quoteA = '搬家以后，这套房子成了我们长期安顿生活的地方。';
-  const quoteB = '换了住处之后，这套房成了我们每天生活和休息的地方。';
   const archive = memory(
     [firstHome, secondHome],
     [
-      note({ id: 'subtle-a', starId: firstHome.id, content: quoteA }),
-      note({ id: 'subtle-b', starId: secondHome.id, content: quoteB }),
+      note({ id: 'subtle-a', starId: firstHome.id, content: 'A possible long-term place.' }),
+      note({ id: 'subtle-b', starId: secondHome.id, content: 'Another possible long-term place.' }),
     ],
   );
-  const reviewed = researchMemoryContext(archive, {
+  const confirmed = researchMemoryContext(archive, {
     query: '我家在哪里？',
-    semanticReview: {
-      decisions: [
-        { noteId: 'subtle-a', verdict: 'supports', relation: 'home', evidenceQuote: quoteA },
-        { noteId: 'subtle-b', verdict: 'supports', relation: 'home', evidenceQuote: quoteB },
-      ],
+    confirmedReference: {
+      noteId: 'subtle-a',
+      starId: firstHome.id,
+      relation: 'home',
+      label: 'Possible location 1',
     },
   });
 
-  assert.equal(reviewed.personalContext.status, 'ambiguous');
-  assert.equal(reviewed.answerBoundary.status, 'ambiguous');
-  assert.equal(reviewed.answerBoundary.mayStateCoordinates, false);
-  assert.deepEqual(reviewed.selectedTrackIds, []);
+  assert.equal(confirmed.personalContext.status, 'resolved');
+  assert.equal(confirmed.answerBoundary.status, 'supported');
+  assert.deepEqual(confirmed.selectedStarIds, [firstHome.id]);
+  assert.equal(confirmed.selectedStarIds.includes(secondHome.id), false);
 });
 
 test('host review cannot turn workplace or school visits into user anchors', () => {
@@ -649,12 +647,12 @@ test('host review cannot turn workplace or school visits into user anchors', () 
   });
 
   assert.equal(work.personalContext.status, 'not-found');
-  assert.match(work.semanticReview.decisions[0].reason, /incidental-workplace-visit/u);
+  assert.equal(work.semanticReview.phase, 'not-needed');
   assert.equal(study.personalContext.status, 'not-found');
-  assert.match(study.semanticReview.decisions[0].reason, /incidental-study-place-visit/u);
+  assert.equal(study.semanticReview.phase, 'not-needed');
 });
 
-test('host review may interpret a subtle event only from an exact candidate passage', () => {
+test('a subtle event remains unsupported until the user confirms the reference', () => {
   const mural = star('mural', 31.2, 121.4);
   const quote = '那天与壁画不期而遇，我停下来端详了很久。';
   const archive = memory(
@@ -663,9 +661,9 @@ test('host review may interpret a subtle event only from an exact candidate pass
   );
   const first = researchMemoryContext(archive, { query: '我在哪里看到过壁画？' });
   assert.equal(first.personalContext.status, 'not-found');
-  assert.equal(first.semanticReview.required, true);
+  assert.equal(first.semanticReview.required, false);
 
-  const reviewed = researchMemoryContext(archive, {
+  const ignored = researchMemoryContext(archive, {
     query: '我在哪里看到过壁画？',
     semanticReview: {
       decisions: [{
@@ -676,13 +674,23 @@ test('host review may interpret a subtle event only from an exact candidate pass
       }],
     },
   });
+  assert.equal(ignored.personalContext.status, 'not-found');
 
-  assert.equal(reviewed.personalContext.status, 'resolved');
-  assert.deepEqual(reviewed.selectedNoteIds, ['mural-note']);
-  assert.equal(reviewed.evidencePassages.some(passage => (
+  const confirmed = researchMemoryContext(archive, {
+    query: '我在哪里看到过壁画？',
+    confirmedReference: {
+      noteId: 'mural-note',
+      starId: mural.id,
+      relation: 'observation',
+      label: 'Possible record 1',
+    },
+  });
+  assert.equal(confirmed.personalContext.status, 'resolved');
+  assert.deepEqual(confirmed.selectedNoteIds, ['mural-note']);
+  assert.equal(confirmed.evidencePassages.some(passage => (
     passage.noteId === 'mural-note'
       && passage.role === 'target'
-      && passage.reviewSource === 'host-ai-review'
+      && passage.reviewSource === 'user-confirmed-reference'
   )), true);
 });
 

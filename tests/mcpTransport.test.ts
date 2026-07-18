@@ -5,7 +5,7 @@ import test from 'node:test';
 const source = readFileSync(new URL('../supabase/functions/mcp/index.ts', import.meta.url), 'utf8');
 const localSource = readFileSync(new URL('../mcp/memory-server.mjs', import.meta.url), 'utf8');
 const contractSource = readFileSync(new URL('../supabase/functions/_shared/mcp-memory-contract.mjs', import.meta.url), 'utf8');
-const semanticReviewSource = readFileSync(new URL('../supabase/functions/_shared/memory-semantic-review.ts', import.meta.url), 'utf8');
+const publicSchemaSource = readFileSync(new URL('../supabase/functions/_shared/mcp-memory-public-schema.mjs', import.meta.url), 'utf8');
 
 test('cloud MCP accepts native client origins while retaining bearer authentication', () => {
   assert.doesNotMatch(source, /isOriginAllowed\(request\)/);
@@ -32,25 +32,27 @@ test('cloud MCP advertises the shared compositional and temporal research protoc
   assert.match(source, /RESEARCH_MEMORY_TOOL_DESCRIPTION/);
   assert.match(source, /buildMcpMemoryInstructions\(temporalPayload\?\.temporalContext\)/);
   assert.match(source, /version: MCP_SERVER_VERSION/);
-  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.6\.0'/);
+  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.7\.0'/);
   assert.match(contractSource, /Compose explicit public geography, exact dates, user-relative anchors/);
-  assert.match(contractSource, /Candidate notes are unverified, coordinate-free review aids/);
-  assert.match(contractSource, /physically withheld from the first unresolved response/);
-  assert.match(contractSource, /aliases, nicknames, paraphrases, and implicit descriptions/);
-  assert.match(contractSource, /ask for a rough time, place, title word, object name, or activity/);
-  assert.match(contractSource, /Never reverse-geocode returned coordinates/);
-  assert.match(contractSource, /answerBoundary is mandatory, not advisory/);
-  assert.match(contractSource, /My Life Memory does not contain, call, or pay for a model service/);
-  assert.match(contractSource, /storage mutation timestamp, never as proof/);
+  assert.match(contractSource, /repeat directive\.exactText exactly and add nothing/i);
+  assert.match(contractSource, /Neutral clarification options are not evidence/);
+  assert.match(contractSource, /Never choose an option on the user’s behalf/);
+  assert.match(contractSource, /Host-model semantic judgments cannot promote candidates into evidence/);
+  assert.match(contractSource, /contains no backend model, embeddings service, vector database, or paid inference API/);
 });
 
-test('semantic fallback is an exact-quote protocol and never calls a model service', () => {
-  assert.match(source, /semanticReview: semanticReviewSchema/);
-  assert.match(localSource, /semanticReview,/);
-  assert.match(semanticReviewSource, /usesExternalModelService: false/);
-  assert.match(semanticReviewSource, /exact quote/i);
-  assert.doesNotMatch(semanticReviewSource, /fetch\s*\(/);
-  assert.doesNotMatch(semanticReviewSource, /OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|QWEN_API_KEY/);
+test('both transports expose structured evidence-firewall output and user confirmation input', () => {
+  assert.match(source, /outputSchema: MEMORY_RESEARCH_OUTPUT_SCHEMA/);
+  assert.match(source, /structuredContent: payload/);
+  assert.match(source, /referenceConfirmation: referenceConfirmationSchema/);
+  assert.match(source, /semanticHints: semanticHintsSchema/);
+  assert.match(localSource, /outputSchema: memoryResearchOutputSchema/);
+  assert.match(localSource, /structuredContent: value/);
+  assert.match(localSource, /referenceConfirmation/);
+  assert.match(localSource, /semanticHints/);
+  assert.match(publicSchemaSource, /oneOf: \[supported, ambiguous, notFound, candidateReview\]/);
+  assert.match(publicSchemaSource, /additionalProperties: false/);
+  assert.doesNotMatch(contractSource, /OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|QWEN_API_KEY/);
 });
 
 test('cloud and local MCP transports expose the same exact nine read-only tools', () => {
