@@ -186,7 +186,8 @@
 - [Complete] Require full word or phrase boundaries for Latin country aliases and prefer canonical countries over territory aliases when names conflict.
 - [Complete] Remove multilingual function words from target extraction so an action involving a different object cannot satisfy the query.
 - [Complete] Align the local and cloud nine-tool contracts, public response boundary, tests, and README.
-- [In progress] Commit, push, deploy only `mcp` and `memory-api`, then verify production authentication and GitHub deployment.
+- [Complete] Commit and push the staged semantic-review implementation as code-bearing commit `389bc58`.
+- [Complete] Deploy only `mcp` and `memory-api`, then verify production authentication and GitHub deployment.
 - Decision: My Life Memory continues to contain no model runtime or model API. Semantic interpretation is performed only by the AI application already handling the conversation, using bounded authenticated-user excerpts.
 - Decision: candidate passages are review material, never evidence. The host must return an exact quote and the server revalidates ownership, relation, negation, exclusions, and target linkage before any coordinate-bearing result is allowed.
 - Targeted compositional, semantic-review, country-routing, disclosure, and transport suite: 62 passed, 0 failed.
@@ -197,3 +198,6 @@
 - Final `npm run build`: passed; Vite transformed 2,247 modules. The existing large-chunk advisory remains non-blocking.
 - Final `npm run test:e2e`: 1/1 mobile WebKit test passed after rerunning outside the restricted port-binding sandbox.
 - Secret-pattern scan found no committed Supabase personal access token.
+- Supabase deployment: `mcp` and `memory-api` both returned `Deployed Functions.` with exit code 0 on 2026-07-18; no migration or `supabase db push` was run.
+- Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; unauthenticated `memory-api` returned HTTP 401 with `A valid user token is required.`
+- GitHub verification: CI run `29639644009` and Pages run `29639703319` both completed successfully for `389bc58a90501e13610b774f94d99cbae0e9a685`.
