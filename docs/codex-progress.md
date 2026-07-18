@@ -6,6 +6,7 @@
 - Branch: `main`
 - Implementation commit: `314d50b` (`feat: compose evidence-grounded memory research`)
 - Test and documentation commit: `8118f9d` (`test: cover compositional MCP retrieval`)
+- Deployed source HEAD: `e9e01dbd07c1194b135d05e9180306d5eeedcfac`
 - Objective: upgrade the existing nine-tool, read-only MCP into a compositional, evidence-grounded personal-memory retrieval system without changing the database schema or unrelated UI.
 
 ## Files Inspected
@@ -35,6 +36,7 @@
 6. [Complete] Bounded candidate review that remains separate from evidence.
 7. [Complete] Regression, negative, metamorphic, transport, and timezone tests added.
 8. [Complete] README synchronization, full validation, and final diff review.
+9. [Complete] Production deployment and online endpoint verification.
 
 ## Completed Items
 
@@ -59,11 +61,14 @@
 - Hardened the positive geocoder gate against private aliases and full event sentences in Chinese, English, Japanese, and Korean while preserving explicit public-place extraction.
 - Confirmed candidate notes remain unverified and separate from `records`, selected image note IDs are a subset of evidence note IDs, and resolved nearby routes require an unambiguous personal anchor.
 - Confirmed no database migration or unrelated UI change was introduced.
+- Deployed the updated `mcp` and `memory-api` Edge Functions to Supabase project `mbclmtoxxxxahbzissgm` from source HEAD `e9e01db`.
+- Confirmed both production endpoints are online and reject unauthenticated requests with structured HTTP 401 responses.
+- Confirmed GitHub Pages workflow #239 completed successfully from `e9e01db` and deployed the matching frontend build.
 
 ## Remaining Items
 
 - No implementation, test, or documentation item remains for this repository task.
-- Production deployment of the updated Supabase `mcp` and `memory-api` Functions was not requested and was intentionally not performed in this pass.
+- No production migration or `supabase db push` was required or performed.
 
 ## Commands Run
 
@@ -83,6 +88,11 @@
 - Targeted `rg`, `sed`, and `git diff` review of README, public-place resolution, and the production Memory API call path.
 - Secret-pattern scan for Supabase personal/service-role keys, long-lived MCP tokens, and committed credentials.
 - Two atomic commits were created and pushed to `origin/main`; the final code-bearing remote HEAD before this progress-only update was `8118f9d`.
+- `npx --yes supabase@latest functions deploy mcp --project-ref mbclmtoxxxxahbzissgm --no-verify-jwt`
+- `npx --yes supabase@latest functions deploy memory-api --project-ref mbclmtoxxxxahbzissgm --no-verify-jwt`
+- Unauthenticated `curl` checks against the production `mcp` and `memory-api` endpoints.
+- Read-only Supabase dashboard verification of both Function deployment timestamps.
+- Read-only GitHub Actions verification of CI #131 and Pages #239 for `e9e01db`.
 
 ## Test Results
 
@@ -94,6 +104,10 @@
 - `npm run test:e2e`: passed 1/1 mobile WebKit test.
 - Final focused privacy/query-plan suite: 15 tests passed, 0 failures.
 - Isolated image-export suite: 7 tests passed, 0 failures.
+- Supabase CLI deployment: both Functions returned `Deployed Functions.` with exit code 0.
+- Production `mcp` verification: HTTP 401 with JSON-RPC `Unauthorized`, confirming the updated endpoint is reachable and authentication remains enforced.
+- Production `memory-api` verification: HTTP 401 with `A valid user token is required.`, confirming the endpoint is reachable and authentication remains enforced.
+- GitHub Actions: CI #131 passed and Pages #239 passed for commit `e9e01db`.
 
 ## Known Failures Or Decisions
 
@@ -104,3 +118,4 @@
 - Decision: numeric confidence remains only for backward compatibility and will be labeled as heuristic rather than calibrated probability.
 - Decision: personal aliases and entire natural-language event sentences are never sent to public geocoding; only the extracted explicit public place span may leave the authenticated research path.
 - Decision: no schema change is objectively required for this retrieval-only upgrade.
+- Decision: deploy only `mcp` and `memory-api`; do not run migrations, `supabase db push`, or redeploy unrelated Functions.
