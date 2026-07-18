@@ -10,6 +10,7 @@ import {
   researchMemoryContext,
   type ResolvedMemoryPlace,
 } from '../supabase/functions/_shared/memory-research.ts';
+import { applyMemoryResearchDisclosureBoundary } from '../supabase/functions/_shared/memory-public-response.ts';
 import type {
   NormalizedMemoryRows,
   NoteRow,
@@ -186,7 +187,7 @@ test('multiple identity anchors remain ambiguous instead of silently choosing on
   assert.match(result.instruction, /disambiguate/i);
 });
 
-test('bounded review does not expose unrelated titles or invent unrelated candidates', () => {
+test('the first unresolved public response withholds all unverified candidate text', () => {
   const lunch = star('lunch', 31.2, 121.4, 1);
   const walk = star('walk', 31.3, 121.5, 2);
   const archive = memory(
@@ -203,14 +204,17 @@ test('bounded review does not expose unrelated titles or invent unrelated candid
   assert.equal(personal.status, 'not-found');
   assert.equal(review.available, true);
   assert.deepEqual(review.titleNoteIds, []);
-  assert.deepEqual(review.candidateNoteIds, []);
+  assert.equal(review.candidateNoteIds.length > 0, true);
   assert.deepEqual(result.selectedNoteIds, []);
   assert.deepEqual(result.selectedStarIds, []);
   assert.deepEqual(result.selectedTrackIds, []);
-  assert.deepEqual(result.titleNoteIds, []);
-  assert.deepEqual(result.candidateNoteIds, []);
-  assert.match(result.instruction, /no plausible candidate/i);
-  assert.match(result.instruction, /do not describe unrelated records/i);
+  assert.equal(result.semanticReview.phase, 'candidate-access-required');
+  assert.deepEqual(result.semanticReview.candidateNoteIds, []);
+  const disclosed = applyMemoryResearchDisclosureBoundary(result as unknown as Record<string, unknown>);
+  assert.deepEqual(disclosed.titleNoteIds, []);
+  assert.deepEqual(disclosed.candidateNoteIds, []);
+  assert.deepEqual((disclosed.candidateReview as { candidateExcerpts: unknown[] }).candidateExcerpts, []);
+  assert.match(result.instruction, /deliberately withheld/i);
 });
 
 test('small archive candidate excerpts remain bounded and separate from evidence records', () => {
@@ -223,10 +227,15 @@ test('small archive candidate excerpts remain bounded and separate from evidence
       note({ id: 'unrelated-note', starId: unrelated.id, day: 2, title: '公园', content: '普通的散步。' }),
     ],
   );
-  const result = researchMemoryContext(archive, { query: '我家附近的笔记' });
+  const result = researchMemoryContext(archive, {
+    query: '我家附近的笔记',
+    semanticReview: { requestCandidates: true, candidateOffset: 0 },
+  });
 
   assert.deepEqual(result.selectedNoteIds, []);
-  assert.deepEqual(result.candidateNoteIds, ['possible']);
+  assert.equal(result.semanticReview.candidatesExposed, true);
+  assert.equal(result.candidateNoteIds[0], 'possible');
+  assert.equal(result.candidateReview.candidateExcerpts.length <= 4, true);
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.length <= 2, true);
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.every(excerpt => excerpt.length <= 240), true);
 });
@@ -240,14 +249,19 @@ test('large archives scan server-side but return only bounded relevant candidate
     title: `记录 ${index}`,
     content: index === 40 ? '我家附近有一家店，但没有说明这个星标就是家。' : '普通内容。',
   }));
-  const result = researchMemoryContext(memory(stars, notes), { query: '我家附近的笔记' });
+  const result = researchMemoryContext(memory(stars, notes), {
+    query: '我家附近的笔记',
+    semanticReview: { requestCandidates: true, candidateOffset: 0 },
+  });
 
   assert.equal(result.candidateReview.available, true);
   assert.deepEqual(result.titleNoteIds, []);
-  assert.deepEqual(result.candidateNoteIds, ['note-40']);
-  assert.equal(result.candidateReview.candidateExcerpts.length, 1);
+  assert.equal(result.candidateNoteIds[0], 'note-40');
+  assert.equal(result.candidateReview.candidateExcerpts.length <= 4, true);
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.length, 1);
-  assert.match(result.instruction, /unverified/i);
+  assert.equal(result.semanticReview.reviewableCandidatePassageCount, 24);
+  assert.equal(result.semanticReview.reviewTruncated, true);
+  assert.match(result.instruction, /Do not answer from candidateNotes/i);
 });
 
 test('Memory API keeps title review and body candidates separate from evidence records', () => {
@@ -259,4 +273,5 @@ test('Memory API keeps title review and body candidates separate from evidence r
   assert.match(source, /records: notes/);
   const candidateBlock = source.slice(source.indexOf('const titleIndex'), source.indexOf('const locations'));
   assert.doesNotMatch(candidateBlock, /coordinates:/);
+  assert.doesNotMatch(candidateBlock, /starId:/);
 });

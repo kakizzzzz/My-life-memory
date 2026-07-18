@@ -162,14 +162,28 @@ const aliasIndex = MEMORY_COUNTRY_REGIONS.flatMap(region => (
   region.aliases.map(alias => ({
     alias,
     normalized: normalizeCompact(alias),
+    canonicalRank: normalizeCompact(region.name) === normalizeCompact(alias)
+      ? 2
+      : normalizeCompact(region.name).includes(normalizeCompact(alias))
+        ? 1
+        : 0,
     region,
   }))
 )).filter(entry => entry.normalized.length >= 2)
-  .sort((left, right) => right.normalized.length - left.normalized.length);
+  .sort((left, right) => right.normalized.length - left.normalized.length
+    || right.canonicalRank - left.canonicalRank
+    || left.region.code.localeCompare(right.region.code));
 
-const shortAsciiTokenMatches = (source: string, alias: string) => {
-  const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(source);
+const latinCountryAlias = (value: string) => /^[\p{Script=Latin}\p{N}\s.'’()&-]+$/u.test(value);
+
+const boundedLatinAliasMatches = (source: string, alias: string) => {
+  const escaped = alias
+    .normalize('NFKC')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+');
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(
+    source.normalize('NFKC'),
+  );
 };
 
 export const resolveMemoryCountryRegion = (value: string) => {
@@ -177,9 +191,8 @@ export const resolveMemoryCountryRegion = (value: string) => {
   const normalizedSource = normalizeCompact(source);
   if (!normalizedSource) return null;
   for (const entry of aliasIndex) {
-    const isShortAscii = /^[a-z]{2}$/i.test(entry.alias);
-    const matches = isShortAscii
-      ? shortAsciiTokenMatches(source, entry.alias)
+    const matches = latinCountryAlias(entry.alias)
+      ? boundedLatinAliasMatches(source, entry.alias)
       : normalizedSource.includes(entry.normalized);
     if (matches) return {
       region: entry.region,
@@ -552,7 +565,9 @@ export const researchMemoryContext = (
     [query, input.place, input.region].filter(Boolean).join(' '),
     personalRadius,
   );
-  const candidateReview = buildBoundedArchiveReview(personalArchive, deterministicPersonalContext);
+  const candidateReview = buildBoundedArchiveReview(personalArchive, deterministicPersonalContext, {
+    candidateOffset: input.semanticReview?.candidateOffset,
+  });
   const semanticReviewResult = applyMemorySemanticReview({
     memory: personalArchive,
     queryPlan,
@@ -724,10 +739,17 @@ export const researchMemoryContext = (
             ? 'Use only the returned records. Classification is an inference, not a stored fact.'
             : 'No matching records after geographic and temporal retrieval. Do not infer or invent.';
 
-  const anchorEvidence: ResearchEvidencePassage[] = personalContext.evidencePassages.map(passage => ({
-    ...passage,
-    role: passage.evidenceStrength === 'direct' ? 'anchor' : 'corroboration',
-  }));
+  const seenAnchorEvidence = new Set<string>();
+  const anchorEvidence: ResearchEvidencePassage[] = personalContext.evidencePassages
+    .filter(passage => (
+      passage.relation === 'home' || passage.relation === 'work' || passage.relation === 'study'
+    ))
+    .map(passage => {
+      const anchorKey = `${passage.relation}:${passage.starId}`;
+      const role = seenAnchorEvidence.has(anchorKey) ? 'corroboration' as const : 'anchor' as const;
+      seenAnchorEvidence.add(anchorKey);
+      return { ...passage, role };
+    });
   const targetEvidence: ResearchEvidencePassage[] = selectedEntries.flatMap(entry => (
     entry.targetEvidence.map(passage => ({ ...passage, role: 'target' as const }))
   ));
@@ -767,6 +789,7 @@ export const researchMemoryContext = (
     temporalResolutionRequired,
     unresolvedPublicPlace,
     semanticReviewRequired: semanticReviewResult.state.required,
+    semanticClarification: semanticReviewResult.state.clarification,
     hasMatchingRecords,
     verifiedPlaceNames: input.resolvedPlace
       ? [input.resolvedPlace.displayName || input.resolvedPlace.name].filter(Boolean)

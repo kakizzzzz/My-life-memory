@@ -240,6 +240,13 @@ test('country matching distinguishes exact country names from city plus country'
   assert.equal(resolveMemoryCountryRegion('Example Town, Japan')?.region.code, 'JP');
 });
 
+test('Latin country aliases require complete word or phrase boundaries', () => {
+  assert.equal(resolveMemoryCountryRegion('Where did I see the animal?'), null);
+  assert.equal(resolveMemoryCountryRegion('A token can contain an accidental country abbreviation.'), null);
+  assert.equal(resolveMemoryCountryRegion('Memories from Japan')?.region.code, 'JP');
+  assert.equal(resolveMemoryCountryRegion('A trip through the United Kingdom')?.region.code, 'GB');
+});
+
 test('MCP instructions require compositional research and prohibit invented memories', () => {
   assert.match(MCP_MEMORY_INSTRUCTIONS, /public country, city, town, village/i);
   assert.match(MCP_MEMORY_INSTRUCTIONS, /place argument/i);

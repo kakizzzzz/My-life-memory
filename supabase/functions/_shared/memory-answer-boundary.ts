@@ -83,6 +83,7 @@ export const buildMemoryAnswerBoundary = ({
   temporalResolutionRequired,
   unresolvedPublicPlace,
   semanticReviewRequired = false,
+  semanticClarification = null,
   hasMatchingRecords,
   verifiedPlaceNames = [],
   evidenceNoteIds = [],
@@ -92,6 +93,7 @@ export const buildMemoryAnswerBoundary = ({
   temporalResolutionRequired: boolean;
   unresolvedPublicPlace: boolean;
   semanticReviewRequired?: boolean;
+  semanticClarification?: { suggestedQuestion: string } | null;
   hasMatchingRecords: boolean;
   verifiedPlaceNames?: string[];
   evidenceNoteIds?: string[];
@@ -137,7 +139,26 @@ export const buildMemoryAnswerBoundary = ({
     verifiedPlaceNames: [],
     allowedEvidenceNoteIds: [],
     requiredAction: 'retry-with-bounds',
-    suggestedReply: 'Do not answer yet. Review only the bounded candidateNotes, then call research_memory_context again with the same query and exact-quote semanticReview decisions. If the client cannot perform this review, state that the archive does not contain enough verified evidence.',
+    suggestedReply: 'Do not answer yet and do not describe any candidate as a memory fact. Follow semanticReview.instruction: request a bounded candidate batch when candidatesExposed is false, or submit exact-quote decisions after reviewing an exposed batch. If the client cannot complete the next tool call, state that the archive does not contain enough verified evidence.',
+    forbiddenInferences,
+  };
+
+  if (semanticClarification) return {
+    mandatory: true,
+    status: 'ambiguous',
+    answerMode: 'ask-for-disambiguation',
+    evidenceOnly: true,
+    exactPersonalAnchorQuestion,
+    candidateNotesAreEvidence: false,
+    mayUseCandidateNotesAsAnswer: false,
+    mustUseSuggestedReply: true,
+    mayStateCoordinates: false,
+    coordinatePolicy: 'forbidden',
+    placeNamePolicy: 'explicit-evidence-only',
+    verifiedPlaceNames: [],
+    allowedEvidenceNoteIds: [],
+    requiredAction: 'ask-for-disambiguation',
+    suggestedReply: semanticClarification.suggestedQuestion,
     forbiddenInferences,
   };
 

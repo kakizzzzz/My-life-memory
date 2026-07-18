@@ -39,6 +39,16 @@ const optionalDateSchema = {
 const semanticReviewSchema = {
   type: 'object',
   properties: {
+    requestCandidates: {
+      type: 'boolean',
+      description: 'Set true only after the first response requests semantic review. The returned batch is still unverified and must not be used as an answer.',
+    },
+    candidateOffset: {
+      type: 'integer',
+      minimum: 0,
+      maximum: 1000000,
+      description: 'Use 0 for the first bounded candidate batch or the exact nextCandidateOffset returned by the previous batch.',
+    },
     decisions: {
       type: 'array',
       maxItems: 6,
@@ -55,7 +65,6 @@ const semanticReviewSchema = {
       },
     },
   },
-  required: ['decisions'],
   additionalProperties: false,
 };
 

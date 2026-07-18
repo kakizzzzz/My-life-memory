@@ -553,9 +553,18 @@ test('the existing host AI may promote one exact subtle passage only after serve
   const first = researchMemoryContext(archive, { query: '我家在哪里？' });
 
   assert.equal(first.personalContext.status, 'not-found');
-  assert.equal(first.semanticReview.phase, 'awaiting-host-review');
+  assert.equal(first.semanticReview.phase, 'candidate-access-required');
   assert.equal(first.semanticReview.usesExternalModelService, false);
-  assert.deepEqual(first.semanticReview.candidateNoteIds, ['subtle-home-note']);
+  assert.equal(first.semanticReview.candidatesExposed, false);
+  assert.deepEqual(first.semanticReview.candidateNoteIds, []);
+
+  const candidates = researchMemoryContext(archive, {
+    query: '我家在哪里？',
+    semanticReview: { requestCandidates: true, candidateOffset: 0 },
+  });
+  assert.equal(candidates.semanticReview.phase, 'awaiting-host-review');
+  assert.equal(candidates.semanticReview.candidatesExposed, true);
+  assert.deepEqual(candidates.semanticReview.candidateNoteIds, ['subtle-home-note']);
 
   const reviewed = researchMemoryContext(archive, {
     query: '我家在哪里？',

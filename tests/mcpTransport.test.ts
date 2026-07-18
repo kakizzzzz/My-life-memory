@@ -32,9 +32,12 @@ test('cloud MCP advertises the shared compositional and temporal research protoc
   assert.match(source, /RESEARCH_MEMORY_TOOL_DESCRIPTION/);
   assert.match(source, /buildMcpMemoryInstructions\(temporalPayload\?\.temporalContext\)/);
   assert.match(source, /version: MCP_SERVER_VERSION/);
-  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.5\.0'/);
+  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.6\.0'/);
   assert.match(contractSource, /Compose explicit public geography, exact dates, user-relative anchors/);
   assert.match(contractSource, /Candidate notes are unverified, coordinate-free review aids/);
+  assert.match(contractSource, /physically withheld from the first unresolved response/);
+  assert.match(contractSource, /aliases, nicknames, paraphrases, and implicit descriptions/);
+  assert.match(contractSource, /ask for a rough time, place, title word, object name, or activity/);
   assert.match(contractSource, /Never reverse-geocode returned coordinates/);
   assert.match(contractSource, /answerBoundary is mandatory, not advisory/);
   assert.match(contractSource, /My Life Memory does not contain, call, or pay for a model service/);

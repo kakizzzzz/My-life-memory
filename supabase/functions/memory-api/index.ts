@@ -129,7 +129,17 @@ const semanticReviewInput = (value: unknown): {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { error: 'semanticReview must be an object.' };
   }
-  const decisions = (value as Record<string, unknown>).decisions;
+  const record = value as Record<string, unknown>;
+  const requestCandidates = record.requestCandidates;
+  if (requestCandidates !== undefined && typeof requestCandidates !== 'boolean') {
+    return { error: 'semanticReview.requestCandidates must be a boolean.' };
+  }
+  const rawCandidateOffset = record.candidateOffset;
+  const candidateOffset = rawCandidateOffset === undefined ? 0 : Number(rawCandidateOffset);
+  if (!Number.isInteger(candidateOffset) || candidateOffset < 0 || candidateOffset > 1_000_000) {
+    return { error: 'semanticReview.candidateOffset must be an integer between 0 and 1000000.' };
+  }
+  const decisions = record.decisions === undefined ? [] : record.decisions;
   if (!Array.isArray(decisions) || decisions.length > 6) {
     return { error: 'semanticReview.decisions must contain at most 6 items.' };
   }
@@ -153,7 +163,16 @@ const semanticReviewInput = (value: unknown): {
   if (parsed.some(decision => !decision)) {
     return { error: 'Each semantic review decision must contain a valid noteId, verdict, relation, and exact evidenceQuote.' };
   }
-  return { value: { decisions: parsed as NonNullable<typeof parsed[number]>[] } };
+  if (requestCandidates !== true && parsed.length === 0) {
+    return { error: 'semanticReview must request candidates or contain at least one decision.' };
+  }
+  return {
+    value: {
+      requestCandidates: requestCandidates === true,
+      candidateOffset,
+      decisions: parsed as NonNullable<typeof parsed[number]>[],
+    },
+  };
 };
 
 const memoryLoadOptions = (action: string, body: Record<string, unknown>): NormalizedMemoryLoadOptions => {
@@ -564,6 +583,7 @@ serve(async request => {
       }, timeZone);
       const publicResearch = applyMemoryResearchDisclosureBoundary(research);
       const mayStateCoordinates = research.answerBoundary.mayStateCoordinates;
+      const candidatesExposed = research.semanticReview.candidatesExposed === true;
       const starById = new Map(memory.stars.map(star => [star.id, star]));
       const starIndex = new Map(memory.stars.map((star, index) => [star.id, index]));
       const noteById = new Map(memory.notes.map(note => [note.id, note]));
@@ -585,14 +605,13 @@ serve(async request => {
       const notes = mayStateCoordinates
         ? notesWithCoordinates
         : notesWithCoordinates.map(withoutMemoryCoordinates);
-      const titleIndex = research.titleNoteIds.flatMap(noteId => {
+      const titleIndex = (candidatesExposed ? research.titleNoteIds : []).flatMap(noteId => {
         const note = noteById.get(noteId);
         const star = note ? starById.get(note.star_id) : null;
         if (!note || !star) return [];
         const title = explicitMemoryNoteTitle(note);
         return [{
           id: note.id,
-          starId: note.star_id,
           title: title || 'Untitled note',
           hasExplicitTitle: Boolean(title),
           createdAt: note.created_at_ms ?? star.created_at_ms,
@@ -600,13 +619,12 @@ serve(async request => {
           evidenceStatus: 'unverified',
         }];
       });
-      const candidateNotes = research.candidateReview.candidateExcerpts.flatMap(candidate => {
+      const candidateNotes = (candidatesExposed ? research.candidateReview.candidateExcerpts : []).flatMap(candidate => {
         const note = noteById.get(candidate.noteId);
         const star = note ? starById.get(note.star_id) : null;
         if (!note || !star) return [];
         return [{
           id: note.id,
-          starId: star.id,
           title: explicitMemoryNoteTitle(note) || 'Untitled note',
           text: candidate.excerpts.join('\n'),
           excerpts: candidate.excerpts,

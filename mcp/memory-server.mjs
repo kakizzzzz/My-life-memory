@@ -157,12 +157,16 @@ const getMemoryImageResult = async input => {
 
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
 const semanticReview = z.object({
+  requestCandidates: z.boolean().optional(),
+  candidateOffset: z.number().int().min(0).max(1_000_000).optional(),
   decisions: z.array(z.object({
     noteId: z.string().min(1).max(200),
     verdict: z.enum(['supports', 'rejects', 'uncertain']),
     relation: z.enum(['home', 'work', 'study', 'observation', 'activity']),
     evidenceQuote: z.string().min(1).max(240),
-  })).max(6),
+  })).max(6).optional(),
+}).refine(value => value.requestCandidates === true || Boolean(value.decisions?.length), {
+  message: 'Request a candidate batch or submit at least one exact-quote decision.',
 }).optional();
 
 export const createMemoryMcpServer = async () => {

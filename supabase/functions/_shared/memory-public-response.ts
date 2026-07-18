@@ -19,11 +19,32 @@ const redactPassages = (value: unknown) => (
  */
 export const applyMemoryResearchDisclosureBoundary = <T extends UnknownRecord>(research: T): T => {
   const boundary = asRecord(research.answerBoundary);
-  if (boundary.mayStateCoordinates !== false) return research;
-
-  const personalContext = asRecord(research.personalContext);
-  return {
+  const semanticReview = asRecord(research.semanticReview);
+  const candidateReview = asRecord(research.candidateReview);
+  const candidatesExposed = semanticReview.candidatesExposed === true;
+  const hasHiddenCandidatePayload = !candidatesExposed && (
+    (Array.isArray(candidateReview.titleNoteIds) && candidateReview.titleNoteIds.length > 0)
+    || (Array.isArray(candidateReview.candidateNoteIds) && candidateReview.candidateNoteIds.length > 0)
+    || (Array.isArray(candidateReview.candidateExcerpts) && candidateReview.candidateExcerpts.length > 0)
+    || (Array.isArray(research.titleNoteIds) && research.titleNoteIds.length > 0)
+    || (Array.isArray(research.candidateNoteIds) && research.candidateNoteIds.length > 0)
+  );
+  const candidateSafeResearch = hasHiddenCandidatePayload ? {
     ...research,
+    candidateReview: {
+      ...candidateReview,
+      titleNoteIds: [],
+      candidateNoteIds: [],
+      candidateExcerpts: [],
+    },
+    titleNoteIds: [],
+    candidateNoteIds: [],
+  } as T : research;
+  if (boundary.mayStateCoordinates !== false) return candidateSafeResearch;
+
+  const personalContext = asRecord(candidateSafeResearch.personalContext);
+  return {
+    ...candidateSafeResearch,
     personalContext: {
       ...personalContext,
       anchors: Array.isArray(personalContext.anchors)
@@ -31,7 +52,7 @@ export const applyMemoryResearchDisclosureBoundary = <T extends UnknownRecord>(r
         : [],
       evidencePassages: redactPassages(personalContext.evidencePassages),
     },
-    evidencePassages: redactPassages(research.evidencePassages),
+    evidencePassages: redactPassages(candidateSafeResearch.evidencePassages),
     clusters: [],
     latestRecordedMemory: null,
     selectedImageNoteIds: [],

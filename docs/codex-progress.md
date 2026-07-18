@@ -173,3 +173,27 @@
 - Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
 - Final `git diff --check`: passed with no whitespace errors.
 - Final secret-pattern review found environment-variable names and authorization tests only; no real Supabase token, service-role value, invite code, MCP token, or password was added.
+
+## Follow-up: Staged Generic Semantic Review
+
+- Baseline HEAD: `a0e5f9eba73a0d7c1537cb58b9f2c039ed9fd286`
+- Objective: prevent weak MCP clients from narrating unverified candidates while retaining a model-free, generic path for the host AI to interpret aliases and implicit language such as a pet name, a personal routine, or a subtly described place.
+- [Complete] Hide candidate text from the first unresolved response and require an explicit same-tool candidate request.
+- [Complete] Add bounded candidate pagination with lexical-first ranking and archive-wide fallback.
+- [Complete] Require a separate exact-quote decision call before any candidate can become evidence or expose coordinates.
+- [Complete] Add generic clarification-only handling for plausible aliases, nicknames, paraphrases, and implicit descriptions that lack a literal evidence bridge.
+- [Complete] Remove candidate star identifiers from unverified Memory API review payloads.
+- [Complete] Require full word or phrase boundaries for Latin country aliases and prefer canonical countries over territory aliases when names conflict.
+- [Complete] Remove multilingual function words from target extraction so an action involving a different object cannot satisfy the query.
+- [Complete] Align the local and cloud nine-tool contracts, public response boundary, tests, and README.
+- [In progress] Commit, push, deploy only `mcp` and `memory-api`, then verify production authentication and GitHub deployment.
+- Decision: My Life Memory continues to contain no model runtime or model API. Semantic interpretation is performed only by the AI application already handling the conversation, using bounded authenticated-user excerpts.
+- Decision: candidate passages are review material, never evidence. The host must return an exact quote and the server revalidates ownership, relation, negation, exclusions, and target linkage before any coordinate-bearing result is allowed.
+- Targeted compositional, semantic-review, country-routing, disclosure, and transport suite: 62 passed, 0 failed.
+- Final `npm run lint`: passed with exit code 0.
+- `npm run lint:edge`: could not start because no global `deno` binary is installed (`sh: deno: command not found`, exit 127).
+- Equivalent `npx --yes deno check` passed for all six production Edge Functions.
+- Final `npm test`: 199 passed, 0 failed.
+- Final `npm run build`: passed; Vite transformed 2,247 modules. The existing large-chunk advisory remains non-blocking.
+- Final `npm run test:e2e`: 1/1 mobile WebKit test passed after rerunning outside the restricted port-binding sandbox.
+- Secret-pattern scan found no committed Supabase personal access token.

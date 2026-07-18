@@ -5,7 +5,8 @@ import type {
 } from './memory-record-types.ts';
 import { noteText } from './memory-presenters.ts';
 
-const MAX_CANDIDATE_NOTES = 6;
+const MAX_CANDIDATE_PASSAGES = 4;
+const MAX_CANDIDATE_SCAN_PASSAGES = 24;
 const MAX_CANDIDATE_TITLES = 12;
 const MAX_CANDIDATE_EXCERPT_CHARACTERS = 1_200;
 const MAX_EVIDENCE_PASSAGES = 12;
@@ -140,8 +141,9 @@ const removableQueryTerms = [
   '那里', '那裡', '这里', '這裡', '什么', '什麼', '哪些', '哪种', '哪種', '过', '過', '我的', '我', '的',
   '笔记', '筆記', '记录', '記錄', '记忆', '記憶', '照片', '相片', '路线', '路線',
   'please', 'show', 'find', 'search', 'tell', 'about', 'related', 'notes', 'records', 'memories', 'photos', 'routes', 'what', 'which', 'my', 'i', 'it', 'this', 'that', 'these', 'those', 'them', 'some',
-  'in', 'at', 'on', '見せて', '探して', '記録', '思い出', '写真', 'で', 'に', 'を', 'が',
-  '찾아', '보여', '기록', '추억', '사진', '무엇', '어떤', '내', '나의', '에서', '에', '을', '를', '이', '가', '다',
+  'the', 'a', 'an', 'do', 'does', 'did', 'have', 'has', 'had', 'ever', 'was', 'were', 'is', 'are', 'been',
+  'in', 'at', 'on', '見せて', '探して', '記録', '思い出', '写真', 'あの', 'この', 'その', 'で', 'に', 'を', 'が', 'は',
+  '찾아', '보여', '기록', '추억', '사진', '무엇', '어떤', '그', '이', '저', '내', '나의', '에서', '에', '을', '를', '이', '가', '다', '지',
   ...locationQuestionTerms,
 ];
 
@@ -196,7 +198,7 @@ const extractTargetTerms = (
     .map(normalizeCompact)
     .filter(term => term && !/^\d+$/u.test(term))
     .filter(term => !/^(?:19|20)\d{2}(?:年|년)?$/u.test(term))
-    .filter(term => !['过', '了', '在', 'near', 'did'].includes(term))
+    .filter(term => !['过', '了', '在', 'near'].includes(term))
     .filter(term => term.length >= 2 || /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(term)))
     .slice(0, 6);
 };
@@ -364,6 +366,20 @@ const notePassages = (note: NoteRow) => ([
   ...(explicitMemoryNoteTitle(note) ? [{ source: 'title' as const, text: explicitMemoryNoteTitle(note) }] : []),
   ...splitPassages(note.content_html || note.content || noteText(note)).map(text => ({ source: 'body' as const, text })),
 ]);
+
+export const memoryNoteContainsExactQuote = (note: NoteRow, value: unknown) => {
+  const quote = String(value || '').trim().replace(/…$/u, '').trim();
+  if (!quote || quote.length > MAX_PASSAGE_CHARACTERS) return false;
+  const normalizedQuote = normalizeText(quote);
+  return notePassages(note).some(entry => normalizeText(entry.text).includes(normalizedQuote));
+};
+
+export const memoryNoteContainsLiteralTarget = (note: NoteRow, terms: string[]) => {
+  const normalizedTerms = terms.map(normalizeCompact).filter(Boolean);
+  if (!normalizedTerms.length) return true;
+  const passages = notePassages(note).map(entry => normalizeCompact(entry.text));
+  return normalizedTerms.some(term => passages.some(passage => passage.includes(term)));
+};
 
 const identityPassagesForNote = (
   note: NoteRow,
@@ -748,12 +764,19 @@ export type SmallArchiveReview = {
   titleNoteIds: string[];
   candidateNoteIds: string[];
   candidateExcerpts: SmallArchiveCandidateExcerpt[];
+  totalCandidateCount: number;
+  totalCandidatePassageCount: number;
+  reviewableCandidatePassageCount: number;
+  reviewTruncated: boolean;
+  candidateOffset: number;
+  nextCandidateOffset: number | null;
   instruction: string;
 };
 
 export const buildBoundedArchiveReview = (
   memory: NormalizedMemoryRows,
   personalContext: PersonalContextResolution,
+  options: { candidateOffset?: number } = {},
 ): SmallArchiveReview => {
   const searchable = memory.notes.map(note => ({
     id: note.id,
@@ -775,6 +798,12 @@ export const buildBoundedArchiveReview = (
     titleNoteIds: [],
     candidateNoteIds: [],
     candidateExcerpts: [],
+    totalCandidateCount: 0,
+    totalCandidatePassageCount: 0,
+    reviewableCandidatePassageCount: 0,
+    reviewTruncated: false,
+    candidateOffset: 0,
+    nextCandidateOffset: null,
     instruction: 'No bounded candidate review is available. Do not infer from unrelated memories.',
   };
 
@@ -790,47 +819,81 @@ export const buildBoundedArchiveReview = (
     return (targetMatches.length * 6) + (actionMatches.length ? 3 : 0) + (relationMatches.length ? 2 : 0);
   };
   const ranked = searchable.flatMap(entry => {
-    const titleScore = entry.title ? scoreText(entry.title) : 0;
-    const scored = entry.passages.map(passage => {
-      return { text: boundedPassage(passage), score: scoreText(passage) };
-    }).filter(item => item.score > 0)
-      .sort((left, right) => right.score - left.score || left.text.localeCompare(right.text));
-    if (!scored.length && titleScore === 0) return [];
-    return [{
+    const bodyCandidates = entry.passages.map((passage, passageIndex) => ({
       noteId: entry.id,
-      excerpts: scored.slice(0, 2).map(item => item.text),
-      score: Math.max(titleScore, scored[0]?.score || 0),
-      titleScore,
+      source: 'body' as const,
+      text: boundedPassage(passage),
+      score: scoreText(passage),
+      passageIndex,
+      fallbackDepth: passageIndex === 0 ? 0 : passageIndex + 1,
       createdAt: entry.createdAt,
-    }];
-  }).sort((left, right) => right.score - left.score
+    }));
+    const titleCandidate = entry.title ? [{
+      noteId: entry.id,
+      source: 'title' as const,
+      text: boundedPassage(entry.title),
+      score: scoreText(entry.title),
+      passageIndex: -1,
+      fallbackDepth: bodyCandidates.length ? 1 : 0,
+      createdAt: entry.createdAt,
+    }] : [];
+    return [...bodyCandidates, ...titleCandidate]
+      .filter((candidate, index, candidates) => candidates.findIndex(item => (
+        normalizeCompact(item.text) === normalizeCompact(candidate.text)
+      )) === index)
+      .map(candidate => ({ ...candidate, lexicalMatch: candidate.score > 0 }));
+  }).sort((left, right) => Number(right.lexicalMatch) - Number(left.lexicalMatch)
+    || right.score - left.score
+    || left.fallbackDepth - right.fallbackDepth
     || right.createdAt - left.createdAt
-    || left.noteId.localeCompare(right.noteId));
+    || left.noteId.localeCompare(right.noteId)
+    || left.passageIndex - right.passageIndex);
 
-  let usedCharacters = 0;
-  const candidateExcerpts: SmallArchiveCandidateExcerpt[] = [];
-  for (const candidate of ranked.slice(0, MAX_CANDIDATE_NOTES)) {
-    const excerpts = candidate.excerpts.filter(excerpt => {
-      if (usedCharacters + excerpt.length > MAX_CANDIDATE_EXCERPT_CHARACTERS) return false;
-      usedCharacters += excerpt.length;
-      return true;
-    });
-    if (excerpts.length) candidateExcerpts.push({ noteId: candidate.noteId, excerpts, score: candidate.score });
-  }
+  const requestedOffset = Math.max(0, Math.floor(Number(options.candidateOffset) || 0));
+  const reviewable = ranked.slice(0, MAX_CANDIDATE_SCAN_PASSAGES);
+  const candidateOffset = Math.min(requestedOffset, reviewable.length);
+  const page = reviewable.slice(candidateOffset, candidateOffset + MAX_CANDIDATE_PASSAGES);
+  const groupedPage = new Map<string, SmallArchiveCandidateExcerpt>();
+  page.forEach(candidate => {
+    const current = groupedPage.get(candidate.noteId) || {
+      noteId: candidate.noteId,
+      excerpts: [],
+      score: candidate.score,
+    };
+    if (current.excerpts.join('').length + candidate.text.length <= MAX_CANDIDATE_EXCERPT_CHARACTERS) {
+      current.excerpts.push(candidate.text);
+    }
+    current.score = Math.max(current.score, candidate.score);
+    groupedPage.set(candidate.noteId, current);
+  });
+  const candidateExcerpts = [...groupedPage.values()].filter(candidate => candidate.excerpts.length > 0);
+  const nextCandidateOffset = candidateOffset + page.length < reviewable.length
+    ? candidateOffset + page.length
+    : null;
+  const totalCandidateCount = new Set(ranked.map(candidate => candidate.noteId)).size;
+  const reviewTruncated = ranked.length > reviewable.length;
   return {
     available: true,
     mode: 'bounded-archive-candidate-review',
     archiveNoteCount: searchable.length,
     archiveTextCharacters: characters,
-    titleNoteIds: ranked
-      .filter(entry => entry.titleScore > 0)
+    titleNoteIds: page
+      .filter(entry => entry.source === 'title' && entry.score > 0)
       .slice(0, MAX_CANDIDATE_TITLES)
       .map(entry => entry.noteId),
     candidateNoteIds: candidateExcerpts.map(candidate => candidate.noteId),
     candidateExcerpts,
+    totalCandidateCount,
+    totalCandidatePassageCount: ranked.length,
+    reviewableCandidatePassageCount: reviewable.length,
+    reviewTruncated,
+    candidateOffset,
+    nextCandidateOffset,
     instruction: candidateExcerpts.length
-      ? 'candidateNotes contains only bounded, ranked excerpts for user review. Candidates are unverified and are not evidence; never answer the requested location from a candidate.'
-      : 'No plausible candidate passage matched the requested relation, action, or target. Report that no supporting memory was found and do not describe unrelated records.',
+      ? 'This is one bounded candidate-passage batch. Candidates are unverified and are not evidence; never answer from this batch. Submit exact-quote semanticReview decisions or request the next candidateOffset.'
+      : reviewTruncated
+        ? 'The bounded semantic scan budget ended without verified evidence. Ask the user for a rough time, place, title word, object name, or activity instead of describing unrelated records.'
+        : 'No candidate passage remains. Ask for a clarifying detail or report that no supporting memory was found; do not describe unrelated records.',
   };
 };
 
