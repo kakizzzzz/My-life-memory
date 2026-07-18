@@ -8,7 +8,8 @@
 - Implementation commit: `314d50b` (`feat: compose evidence-grounded memory research`)
 - Test and documentation commit: `8118f9d` (`test: cover compositional MCP retrieval`)
 - Host-review hardening commit: `e6af2f3564ae34c668fcf84ca13ed67f36669573` (`fix: harden evidence-grounded MCP fallback`)
-- Deployed source HEAD: `e6af2f3564ae34c668fcf84ca13ed67f36669573`
+- Evidence-firewall commit: `3d6f220996723e9469472c2a76fedb5571937a21` (`fix: enforce evidence-safe MCP responses`)
+- Deployed source HEAD: `3d6f220996723e9469472c2a76fedb5571937a21`
 - Objective: upgrade the existing nine-tool, read-only MCP into a compositional, evidence-grounded personal-memory retrieval system without changing the database schema or unrelated UI.
 
 ## Follow-up: Evidence Firewall And User-confirmed References
@@ -22,7 +23,7 @@
 - [Complete] Add structured MCP output, weak-client data-minimization tests, and local/cloud transport parity.
 - [Complete] Verify the local SDK at runtime and add a top-level object compatibility schema so `tools/list` publishes `outputSchema` while exact four-state validation remains enforced.
 - [Complete] Run lint, Edge checks, unit tests, production build, mobile WebKit E2E, and final diff review.
-- [Pending] Commit and push `main`, deploy only `mcp` and `memory-api`, and verify production authentication plus GitHub workflows.
+- [Complete] Commit and push `main`, deploy only `mcp` and `memory-api`, and verify production authentication plus GitHub workflows.
 - Decision: preserve exactly nine public read-only tools, add no database migration, and add no backend model, embedding service, vector database, or paid model call.
 - Decision: non-supported responses must contain no candidate body, title, score, date, coordinates, routes, images, classification, totals, rejection reasons, or free-form internal reasoning.
 - Completed phase notes: non-supported DTOs now use a strict four-state allowlist; neutral option labels reveal no archive title, excerpt, date, score, coordinate, or place; the continuation token is encrypted, authenticated-user scoped, query-bound, revision-bound, and expiring; legacy host semantic verdicts remain accepted only for input compatibility and cannot promote evidence.
@@ -32,6 +33,8 @@
 - Edge validation: `npm run lint:edge` could not start because no global `deno` binary is installed. The equivalent `npx --yes deno check` passed all six production Edge Functions.
 - Fixed during validation: strict JSON Schema literal typing, canonical Base64URL token validation so equivalent non-canonical ciphertext encodings are rejected, and explicit MCP instruction wording required by the existing safety regressions.
 - Documentation result: README now describes the strict four-state evidence firewall and opaque user-confirmation flow instead of the retired candidate-body host-verdict workflow.
+- Production result: commit `3d6f220` was pushed to `origin/main`; only `mcp` and `memory-api` were deployed. Both production endpoints are reachable and reject unauthenticated requests with HTTP 401.
+- GitHub result: CI run `29642753330` and Pages run `29642824118` both completed successfully for `3d6f220`.
 
 ## Files Inspected
 
@@ -225,3 +228,15 @@
 - Supabase deployment: `mcp` and `memory-api` both returned `Deployed Functions.` with exit code 0 on 2026-07-18; no migration or `supabase db push` was run.
 - Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; unauthenticated `memory-api` returned HTTP 401 with `A valid user token is required.`
 - GitHub verification: CI run `29639644009` and Pages run `29639703319` both completed successfully for `389bc58a90501e13610b774f94d99cbae0e9a685`.
+
+## Follow-up: Final Evidence Firewall Deployment
+
+- Source HEAD: `3d6f220996723e9469472c2a76fedb5571937a21`.
+- [Complete] Push the strict four-state response projection, neutral user-confirmation flow, and SDK-compatible structured output schema to `origin/main`.
+- [Complete] Deploy only `mcp` and `memory-api` to Supabase project `mbclmtoxxxxahbzissgm`.
+- [Complete] Clear the temporary Supabase access token from every deployment shell after use; no token was written to the repository or application files.
+- [Complete] Verify both production endpoints reject unauthenticated requests with HTTP 401 and structured error bodies.
+- [Complete] Verify GitHub CI run `29642753330` and Pages run `29642824118` both passed for `3d6f220`.
+- Final validation: `npm run lint` passed; exact `npm test` passed 201/201; `npm run build` passed; `npm run test:e2e` passed 1/1 mobile WebKit; `git diff --check` and the secret-pattern review passed.
+- Edge validation: the exact `npm run lint:edge` command remains unavailable because no global `deno` binary is installed; equivalent `npx --yes deno check` passed all six production Edge Functions.
+- Production decision: no migration, `supabase db push`, unrelated Function deployment, UI change, backend model, embedding service, or paid inference call was introduced.
