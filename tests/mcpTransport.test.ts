@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../supabase/functions/mcp/index.ts', import.meta.url), 'utf8');
+const localSource = readFileSync(new URL('../mcp/memory-server.mjs', import.meta.url), 'utf8');
+const contractSource = readFileSync(new URL('../supabase/functions/_shared/mcp-memory-contract.mjs', import.meta.url), 'utf8');
 
 test('cloud MCP accepts native client origins while retaining bearer authentication', () => {
   assert.doesNotMatch(source, /isOriginAllowed\(request\)/);
@@ -24,12 +26,28 @@ test('cloud MCP does not call catch on the Supabase query builder', () => {
   assert.match(source, /MCP authentication failed unexpectedly/);
 });
 
-test('cloud MCP advertises the geographic and temporal research protocol', () => {
+test('cloud MCP advertises the shared compositional and temporal research protocol', () => {
   assert.match(source, /name: 'research_memory_context'/);
-  assert.match(source, /country, city, town, village/);
-  assert.match(source, /place argument/);
-  assert.match(source, /instructions: MCP_MEMORY_INSTRUCTIONS/);
-  assert.match(source, /version: '0\.3\.0'/);
+  assert.match(source, /RESEARCH_MEMORY_TOOL_DESCRIPTION/);
+  assert.match(source, /buildMcpMemoryInstructions\(temporalPayload\?\.temporalContext\)/);
+  assert.match(source, /version: MCP_SERVER_VERSION/);
+  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.4\.0'/);
+  assert.match(contractSource, /Compose explicit public geography, exact dates, user-relative anchors/);
+  assert.match(contractSource, /Candidate notes are unverified review aids and are not evidence/);
+});
+
+test('cloud and local MCP transports expose the same exact nine read-only tools', () => {
+  const cloudListStart = source.indexOf('const readTools = [');
+  const cloudListEnd = source.indexOf('\n];', cloudListStart);
+  const cloudToolsSource = source.slice(cloudListStart, cloudListEnd);
+  const cloudToolNames = [...cloudToolsSource.matchAll(/name: '([^']+)'/g)].map(match => match[1]);
+  const localToolNames = [...localSource.matchAll(/server\.registerTool\('([^']+)'/g)].map(match => match[1]);
+
+  assert.equal(cloudToolNames.length, 9);
+  assert.equal(localToolNames.length, 9);
+  assert.deepEqual(localToolNames, cloudToolNames);
+  assert.equal([...cloudToolsSource.matchAll(/readOnlyHint: true/g)].length, 9);
+  assert.equal([...localSource.matchAll(/readOnlyHint: true/g)].length, 9);
 });
 
 test('cloud MCP upgrades an empty literal search to contextual research', () => {

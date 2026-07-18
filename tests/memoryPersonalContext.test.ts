@@ -90,20 +90,20 @@ test('personal nearby research anchors home from note evidence and returns only 
   assert.equal(result.latestRecordedMemory, null);
 });
 
-test('titles are the first evidence layer and bodies are not rescanned after a title match', () => {
+test('a weak title never suppresses stronger direct body evidence elsewhere', () => {
   const titleHome = star('title-home', 31.2, 121.4, 1);
   const bodyHome = star('body-home', 31.3, 121.5, 2);
   const resolved = resolvePersonalMemoryContext(memory(
     [titleHome, bodyHome],
     [
-      note({ id: 'title-evidence', starId: titleHome.id, day: 1, title: '我的家', content: '普通的一天。' }),
+      note({ id: 'title-evidence', starId: titleHome.id, day: 1, title: '我的家乡旅行', content: '普通的一天。' }),
       note({ id: 'body-evidence', starId: bodyHome.id, day: 2, title: '搬家', content: '这里是我家，我住在这里。' }),
     ],
   ), '我家附近', 5);
 
-  assert.equal(resolved.matchSource, 'title');
-  assert.deepEqual(resolved.anchors.map(anchor => anchor.starId), ['title-home']);
-  assert.deepEqual(resolved.evidenceNoteIds, ['title-evidence']);
+  assert.equal(resolved.matchSource, 'content');
+  assert.deepEqual(resolved.anchors.map(anchor => anchor.starId), ['body-home']);
+  assert.deepEqual(resolved.evidenceNoteIds, ['body-evidence']);
 });
 
 test('work, study, observation, and activity questions resolve from the user archive', () => {
@@ -159,6 +159,7 @@ test('explicit place narrows first, inferred year narrows second, then titles su
     dateFrom: '2025-01-01',
     dateTo: '2025-12-31',
     precision: 'year',
+    sourceText: '2025年',
     matchedText: '2025年',
   });
   assert.equal(result.searchPlan.resolvedRegion?.mode, 'place');
@@ -185,7 +186,7 @@ test('multiple identity anchors remain ambiguous instead of silently choosing on
   assert.match(result.instruction, /disambiguate/i);
 });
 
-test('small archives expose every title before bounded title-and-body candidates', () => {
+test('small archives expose title metadata but do not invent unrelated candidates', () => {
   const lunch = star('lunch', 31.2, 121.4, 1);
   const walk = star('walk', 31.3, 121.5, 2);
   const archive = memory(
@@ -202,14 +203,32 @@ test('small archives expose every title before bounded title-and-body candidates
   assert.equal(personal.status, 'not-found');
   assert.equal(review.available, true);
   assert.deepEqual(new Set(review.titleNoteIds), new Set(['lunch-note', 'walk-note']));
-  assert.deepEqual(new Set(review.candidateNoteIds), new Set(['lunch-note', 'walk-note']));
+  assert.deepEqual(review.candidateNoteIds, []);
   assert.deepEqual(result.selectedNoteIds, []);
   assert.deepEqual(result.selectedStarIds, []);
   assert.deepEqual(result.selectedTrackIds, []);
   assert.deepEqual(new Set(result.titleNoteIds), new Set(['lunch-note', 'walk-note']));
-  assert.deepEqual(new Set(result.candidateNoteIds), new Set(['lunch-note', 'walk-note']));
-  assert.match(result.instruction, /candidates are not evidence/i);
+  assert.deepEqual(result.candidateNoteIds, []);
+  assert.match(result.instruction, /no plausible candidate/i);
   assert.match(result.instruction, /do not describe unrelated records/i);
+});
+
+test('small archive candidate excerpts remain bounded and separate from evidence records', () => {
+  const possibleHome = star('possible-home', 31.2, 121.4, 1);
+  const unrelated = star('unrelated', 31.3, 121.5, 2);
+  const archive = memory(
+    [possibleHome, unrelated],
+    [
+      note({ id: 'possible', starId: possibleHome.id, day: 1, title: '搬家记录', content: '我家附近有一家咖啡店，但这句话没有确认这个坐标就是我家。' }),
+      note({ id: 'unrelated-note', starId: unrelated.id, day: 2, title: '公园', content: '普通的散步。' }),
+    ],
+  );
+  const result = researchMemoryContext(archive, { query: '我家附近的笔记' });
+
+  assert.deepEqual(result.selectedNoteIds, []);
+  assert.deepEqual(result.candidateNoteIds, ['possible']);
+  assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.length <= 2, true);
+  assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.every(excerpt => excerpt.length <= 240), true);
 });
 
 test('large archives do not bulk-return note bodies for candidate review', () => {

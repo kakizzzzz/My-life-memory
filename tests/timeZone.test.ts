@@ -7,9 +7,11 @@ import {
   validTimeZoneOrNull as validBrowserTimeZoneOrNull,
 } from '../src/lib/timeZone';
 import {
+  buildMemoryTemporalContext,
   normalizeTimeZone as normalizeEdgeTimeZone,
   validTimeZoneOrNull as validEdgeTimeZoneOrNull,
 } from '../supabase/functions/_shared/time-zone';
+import { isInDateRange } from '../supabase/functions/_shared/memory-date';
 import {
   assembleNormalizedMemoryState,
   diffMemoryState,
@@ -98,4 +100,24 @@ test('runtime services resolve account time zones instead of defaulting to Shang
   assert.doesNotMatch(cloudMcp, /MLM_TIME_ZONE|Asia\/Shanghai/);
   assert.doesNotMatch(localMcp, /MLM_TIME_ZONE|Asia\/Shanghai/);
   assert.match(registration, /profileMetadata:\s*\{\s*timeZone: normalizeTimeZone\(initialState\.timeZone\)/);
+});
+
+test('temporal context reports one UTC instant in the authenticated account time zone', () => {
+  const now = new Date('2026-01-01T00:30:00.000Z');
+  const tokyo = buildMemoryTemporalContext('Asia/Tokyo', now);
+  const newYork = buildMemoryTemporalContext('America/New_York', now);
+
+  assert.equal(tokyo.currentUtcDateTime, '2026-01-01T00:30:00.000Z');
+  assert.equal(tokyo.currentLocalDate, '2026-01-01');
+  assert.equal(tokyo.currentLocalDateTime, '2026-01-01T09:30:00');
+  assert.equal(newYork.currentLocalDate, '2025-12-31');
+  assert.equal(newYork.currentLocalDateTime, '2025-12-31T19:30:00');
+});
+
+test('the same memory falls on different requested days in different IANA time zones', () => {
+  const instant = Date.parse('2026-01-01T00:30:00.000Z');
+
+  assert.equal(isInDateRange(instant, '2026-01-01', '2026-01-01', 'Asia/Tokyo'), true);
+  assert.equal(isInDateRange(instant, '2026-01-01', '2026-01-01', 'America/New_York'), false);
+  assert.equal(isInDateRange(instant, '2025-12-31', '2025-12-31', 'America/New_York'), true);
 });

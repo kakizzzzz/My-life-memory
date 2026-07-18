@@ -185,15 +185,67 @@ test('place resolver sends only the explicit place name and caches repeated look
   assert.deepEqual(second.resolvedPlace, first.resolvedPlace);
 });
 
+test('public place ambiguity is explicit and never falls back to unrelated archive records', async () => {
+  const fetchImpl: typeof fetch = async () => new Response(JSON.stringify([
+    {
+      name: 'Example Town',
+      display_name: 'Example Town, North Region',
+      lat: '35.0',
+      lon: '139.0',
+      boundingbox: ['34.9', '35.1', '138.9', '139.1'],
+      addresstype: 'town',
+      importance: 0.5,
+      address: { country_code: 'xx' },
+    },
+    {
+      name: 'Example Town',
+      display_name: 'Example Town, South Region',
+      lat: '25.0',
+      lon: '129.0',
+      boundingbox: ['24.9', '25.1', '128.9', '129.1'],
+      addresstype: 'town',
+      importance: 0.5,
+      address: { country_code: 'xx' },
+    },
+  ]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const resolution = await resolveMemoryPlace({
+    place: 'Example Town',
+    endpoint: 'https://resolver.example/ambiguous',
+    latestCoordinate: { lat: 25, lng: 129 },
+    fetchImpl,
+  });
+  const unrelated = star('unrelated', 31.2304, 121.4737, at('2026-07-10'));
+  const research = researchMemoryContext(memory(
+    [unrelated],
+    [note('unrelated-note', unrelated.id, at('2026-07-10'), 'An unrelated memory.')],
+  ), {
+    query: 'Example Town memories',
+    place: 'Example Town',
+    placeResolution: resolution.summary,
+  });
+
+  assert.equal(resolution.summary.status, 'ambiguous');
+  assert.equal(resolution.resolvedPlace, null);
+  assert.equal(resolution.candidates.length, 2);
+  assert.equal(research.searchPlan.mode, 'public-place-ambiguous');
+  assert.deepEqual(research.selectedNoteIds, []);
+  assert.deepEqual(research.selectedStarIds, []);
+  assert.deepEqual(research.selectedTrackIds, []);
+  assert.match(research.instruction, /ask the user to disambiguate/i);
+});
+
 test('country matching distinguishes exact country names from city plus country', () => {
   assert.equal(resolveExactMemoryCountryRegion('日本')?.region.code, 'JP');
   assert.equal(resolveExactMemoryCountryRegion('Example Town, Japan'), null);
   assert.equal(resolveMemoryCountryRegion('Example Town, Japan')?.region.code, 'JP');
 });
 
-test('MCP instructions require geographic research and prohibit invented memories', () => {
-  assert.match(MCP_MEMORY_INSTRUCTIONS, /country, city, town, village/i);
+test('MCP instructions require compositional research and prohibit invented memories', () => {
+  assert.match(MCP_MEMORY_INSTRUCTIONS, /public country, city, town, village/i);
   assert.match(MCP_MEMORY_INSTRUCTIONS, /place argument/i);
-  assert.match(MCP_MEMORY_INSTRUCTIONS, /not proof of the user's current location/i);
+  assert.match(MCP_MEMORY_INSTRUCTIONS, /home, workplace, school/i);
+  assert.match(MCP_MEMORY_INSTRUCTIONS, /latest saved memory is not proof of current location/i);
+  assert.match(MCP_MEMORY_INSTRUCTIONS, /candidate notes are unverified/i);
+  assert.match(MCP_MEMORY_INSTRUCTIONS, /not calibrated probabilities/i);
   assert.match(MCP_MEMORY_INSTRUCTIONS, /do not infer or invent/i);
 });
