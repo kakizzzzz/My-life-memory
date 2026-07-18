@@ -553,7 +553,7 @@ const resolutionFromUserConfirmation = ({
   const passage: MemoryEvidencePassage = {
     noteId: note.id,
     starId: star.id,
-    source: 'title',
+    source: 'reference',
     text: String(confirmed.label || 'User-confirmed memory reference').slice(0, 240),
     relation: confirmed.relation,
     evidenceStrength: 'corroborating',
@@ -581,7 +581,7 @@ const resolutionFromUserConfirmation = ({
       : base.eventRelations,
     confidence: 0.72,
     confidenceBand: 'medium',
-    matchSource: 'title',
+    matchSource: 'reference',
     anchors: [{
       starId: star.id,
       noteId: note.id,

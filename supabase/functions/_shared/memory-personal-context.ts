@@ -334,7 +334,7 @@ const attributionFor = (text: string): MemoryEvidencePassage['attribution'] => {
 export type MemoryEvidencePassage = {
   noteId: string;
   starId: string;
-  source: 'title' | 'body';
+  source: 'title' | 'body' | 'reference';
   text: string;
   relation: PersonalContextRelation;
   evidenceStrength: 'direct' | 'corroborating' | 'weak';
@@ -560,7 +560,7 @@ export type PersonalContextResolution = {
   confidence: number;
   confidenceBand: 'high' | 'medium' | 'low' | 'none';
   confidenceKind: 'heuristic';
-  matchSource: 'none' | 'title' | 'content' | 'mixed';
+  matchSource: 'none' | 'title' | 'content' | 'reference' | 'mixed';
   anchors: PersonalContextAnchor[];
   episodes: PersonalAnchorEpisode[];
   evidencePassages: MemoryEvidencePassage[];
@@ -574,6 +574,7 @@ const matchSourceFor = (passages: MemoryEvidencePassage[]): PersonalContextResol
   if (sources.size > 1) return 'mixed';
   if (sources.has('title')) return 'title';
   if (sources.has('body')) return 'content';
+  if (sources.has('reference')) return 'reference';
   return 'none';
 };
 

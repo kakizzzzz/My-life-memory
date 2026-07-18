@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../supabase/functions/mcp/index.ts', import.meta.url), 'utf8');
+const memoryApiSource = readFileSync(new URL('../supabase/functions/memory-api/index.ts', import.meta.url), 'utf8');
 const localSource = readFileSync(new URL('../mcp/memory-server.mjs', import.meta.url), 'utf8');
 const contractSource = readFileSync(new URL('../supabase/functions/_shared/mcp-memory-contract.mjs', import.meta.url), 'utf8');
 const publicSchemaSource = readFileSync(new URL('../supabase/functions/_shared/mcp-memory-public-schema.mjs', import.meta.url), 'utf8');
@@ -32,13 +33,20 @@ test('cloud MCP advertises the shared compositional and temporal research protoc
   assert.match(source, /RESEARCH_MEMORY_TOOL_DESCRIPTION/);
   assert.match(source, /buildMcpMemoryInstructions\(temporalPayload\?\.temporalContext\)/);
   assert.match(source, /version: MCP_SERVER_VERSION/);
-  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.7\.0'/);
+  assert.match(contractSource, /MCP_SERVER_VERSION = '0\.7\.1'/);
   assert.match(contractSource, /Compose explicit public geography, exact dates, user-relative anchors/);
   assert.match(contractSource, /repeat directive\.exactText exactly and add nothing/i);
-  assert.match(contractSource, /Neutral clarification options are not evidence/);
+  assert.match(contractSource, /bounded safe title, explicit name, generic soft cue, or ordinal/);
   assert.match(contractSource, /Never choose an option on the user’s behalf/);
+  assert.match(contractSource, /confirmation token restores the original question/i);
   assert.match(contractSource, /Host-model semantic judgments cannot promote candidates into evidence/);
   assert.match(contractSource, /contains no backend model, embeddings service, vector database, or paid inference API/);
+});
+
+test('Memory API restores the token-bound original query for short confirmation replies', () => {
+  assert.match(memoryApiSource, /query = verifiedConfirmation\.originalQuery/);
+  assert.match(memoryApiSource, /query: requestQuery/);
+  assert.doesNotMatch(memoryApiSource, /query:\s*query,\s*revision: memory\.revision/);
 });
 
 test('both transports expose structured evidence-firewall output and user confirmation input', () => {

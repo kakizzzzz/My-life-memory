@@ -44,7 +44,7 @@ const evidencePassageSchema = {
     noteId: { type: 'string' },
     starId: { type: 'string' },
     role: { enum: ['anchor', 'target', 'corroboration'] },
-    source: { enum: ['title', 'body'] },
+    source: { enum: ['title', 'body', 'reference'] },
     evidenceSource: { enum: ['stored-explicit', 'user-confirmed-reference'] },
     excerpt: { type: 'string', maxLength: 240 },
     relation: { enum: ['home', 'work', 'study', 'observation', 'activity'] },

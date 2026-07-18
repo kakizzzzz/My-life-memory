@@ -583,6 +583,8 @@ test('legacy host review cannot promote a subtle passage but explicit user confi
   assert.equal(confirmed.answerBoundary.status, 'supported');
   assert.deepEqual(confirmed.selectedNoteIds, ['subtle-home-note']);
   assert.equal(confirmed.evidencePassages[0].reviewSource, 'user-confirmed-reference');
+  assert.equal(confirmed.evidencePassages[0].source, 'reference');
+  assert.equal(confirmed.personalContext.matchSource, 'reference');
 });
 
 test('an explicit confirmation selects one candidate without merging other locations', () => {
@@ -690,6 +692,7 @@ test('a subtle event remains unsupported until the user confirms the reference',
   assert.equal(confirmed.evidencePassages.some(passage => (
     passage.noteId === 'mural-note'
       && passage.role === 'target'
+      && passage.source === 'reference'
       && passage.reviewSource === 'user-confirmed-reference'
   )), true);
 });

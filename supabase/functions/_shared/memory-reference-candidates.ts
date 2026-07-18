@@ -10,11 +10,14 @@ export type MemorySemanticHints = {
   }>;
 };
 
+export type ReferenceLabelSource = 'short-title' | 'named-entity' | 'soft-cue' | 'ordinal';
+
 export type InternalMemoryReferenceOption = {
   noteId: string;
   starId: string;
   relation: PersonalContextRelation;
   label: string;
+  labelSource: ReferenceLabelSource;
   score: number;
 };
 
@@ -56,6 +59,23 @@ const includesTerm = (source: string, term: string) => {
 
 const unique = <T,>(values: T[]) => [...new Set(values)];
 
+const normalizedClue = (value: unknown) => String(value ?? '')
+  .normalize('NFKC')
+  .replace(/[\u0000-\u001f\u007f]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const unsafeCluePattern = /(?:https?:\/\/|www\.|[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}|(?:\+?\d[\d\s().-]{6,}\d)|[-+]?\d{1,3}\.\d{3,}\s*[,，]\s*[-+]?\d{1,3}\.\d{3,}|\d{5,})/iu;
+const addressCluePattern = /(?:\d+\s*(?:号|號|栋|棟|室|楼|樓|单元|單元|丁目|番地|길|로)|\d+\s+(?:[\p{L}\p{N}.'-]+\s+){1,4}(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd\.?|lane|ln\.?|drive|dr\.?)\b|(?:省|市|区|區|县|縣|镇|鎮|乡|鄉|村|街道|街|路|巷|弄|丁目|番地|都|府|県|市|区|町|村|동|구|시)\s*\d+)/iu;
+
+const safeClue = (value: unknown) => {
+  const clue = normalizedClue(value);
+  const length = [...clue].length;
+  if (length < 1 || length > 12) return '';
+  if (unsafeCluePattern.test(clue) || addressCluePattern.test(clue)) return '';
+  return clue;
+};
+
 const queryLanguage = (query: string) => {
   if (/\p{Script=Hangul}/u.test(query)) return 'ko';
   if (/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(query)) return 'ja';
@@ -77,6 +97,14 @@ const neutralOptionLabel = (
   return `${anchor ? 'Possible location' : 'Possible record'} ${number}`;
 };
 
+const softCueOptionLabel = (query: string, cue: string) => {
+  const language = queryLanguage(query);
+  if (language === 'zh') return `${cue}相关记录`;
+  if (language === 'ja') return `「${cue}」に関する記録`;
+  if (language === 'ko') return `${cue} 관련 기록`;
+  return `Record related to ${cue}`;
+};
+
 const safeHintTerms = (hints: MemorySemanticHints | null | undefined) => unique(
   (Array.isArray(hints?.concepts) ? hints.concepts : []).flatMap(concept => [
     String(concept?.surface || ''),
@@ -86,8 +114,10 @@ const safeHintTerms = (hints: MemorySemanticHints | null | undefined) => unique(
 
 const namedEntityLabel = (note: NoteRow) => {
   const namedSource = `${note.title} ${note.content}`;
-  return namedSource.match(/(?:叫|名叫|昵称(?:是|为)?|暱稱(?:是|為)?|called|named|nickname(?:d)?|名前は|という|이름은|라고\s*불)[：:\s"“”'‘’「」『』]*([\p{L}\p{N}][\p{L}\p{N}\s·・_-]{1,22})/iu)?.[1] || '';
+  return safeClue(namedSource.match(/(?:叫|名叫|昵称(?:是|为)?|暱稱(?:是|為)?|called|named|nickname(?:d)?|名前は|という|이름은|라고\s*불)[：:\s"“”'‘’「」『』]*([\p{L}\p{N}][\p{L}\p{N}\s·・_-]{0,22})/iu)?.[1] || '');
 };
+
+const shortTitleLabel = (note: NoteRow) => safeClue(explicitMemoryNoteTitle(note));
 
 const candidateRelation = (plan: MemoryQueryPlan): PersonalContextRelation => (
   plan.anchorRelations[0]
@@ -129,28 +159,64 @@ export const buildMemoryReferenceOptions = ({
     const hintMatches = hintTerms.filter(term => includesTerm(source, term));
     const cueMatches = matchingSoftCues(queryPlan, source);
     const named = namedEntityLabel(note);
+    const shortTitle = shortTitleLabel(note);
+    const titleFallback = allowNamedFallback && shortTitle;
     if (resolvingAnchor && !cueMatches.length) return [];
-    if (!resolvingAnchor && !targetMatches.length && !hintMatches.length && !(allowNamedFallback && named)) return [];
+    if (!resolvingAnchor
+      && !targetMatches.length
+      && !hintMatches.length
+      && !(allowNamedFallback && named)
+      && !titleFallback) return [];
     const actionMatches = queryPlan.actionTerms.filter(term => includesTerm(source, term));
     const score = (targetMatches.length * 12)
       + (hintMatches.length * 7)
       + (cueMatches.length * 5)
       + (actionMatches.length * 3)
-      + Number(Boolean(allowNamedFallback && named))
+      + Number(Boolean(allowNamedFallback && named)) * 2
+      + Number(Boolean(titleFallback))
       + Number(title.length > 0 && [...targetMatches, ...hintMatches, ...cueMatches].some(term => includesTerm(title, term))) * 2;
-    return [{ noteId: note.id, starId: note.star_id, relation, label: '', score }];
+    const anchor = relation === 'home' || relation === 'work' || relation === 'study';
+    const label = anchor && cueMatches[0]
+      ? softCueOptionLabel(queryPlan.originalQuery, cueMatches[0])
+      : named || shortTitle;
+    const labelSource: ReferenceLabelSource = anchor && cueMatches[0]
+      ? 'soft-cue'
+      : named
+        ? 'named-entity'
+        : shortTitle
+          ? 'short-title'
+          : 'ordinal';
+    return [{
+      noteId: note.id,
+      starId: note.star_id,
+      relation,
+      label,
+      labelSource,
+      score,
+      createdAt: note.created_at_ms ?? 0,
+    }];
   }).sort((left, right) => right.score - left.score
+    || right.createdAt - left.createdAt
     || left.noteId.localeCompare(right.noteId));
 
   const seen = new Set<string>();
   return candidates.filter(candidate => {
-    const key = `${candidate.starId}:${candidate.relation}`;
+    const anchor = candidate.relation === 'home'
+      || candidate.relation === 'work'
+      || candidate.relation === 'study';
+    const key = anchor
+      ? `${candidate.starId}:${candidate.relation}`
+      : `${candidate.noteId}:${candidate.relation}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   }).slice(0, 4).map((candidate, index) => ({
-    ...candidate,
-    label: neutralOptionLabel(queryPlan.originalQuery, candidate.relation, index),
+    noteId: candidate.noteId,
+    starId: candidate.starId,
+    relation: candidate.relation,
+    score: candidate.score,
+    label: candidate.label || neutralOptionLabel(queryPlan.originalQuery, candidate.relation, index),
+    labelSource: candidate.label ? candidate.labelSource : 'ordinal',
   }));
 };
 

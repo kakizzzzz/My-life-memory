@@ -9,9 +9,10 @@ type TokenOption = Omit<InternalMemoryReferenceOption, 'score'> & {
 };
 
 type MemoryReferenceTokenPayload = {
-  version: 1;
+  version: 1 | 2;
   userId: string;
   queryHash: string;
+  originalQuery?: string;
   revision: number;
   expiresAt: number;
   options: TokenOption[];
@@ -53,6 +54,8 @@ const validOption = (value: unknown): value is TokenOption => {
     && typeof option.noteId === 'string'
     && typeof option.starId === 'string'
     && typeof option.label === 'string'
+    && (option.labelSource === undefined
+      || ['short-title', 'named-entity', 'soft-cue', 'ordinal'].includes(String(option.labelSource)))
     && ['home', 'work', 'study', 'observation', 'activity'].includes(String(option.relation));
 };
 
@@ -80,11 +83,14 @@ export const createMemoryReferenceToken = async ({
     starId: option.starId,
     relation: option.relation,
     label: option.label,
+    labelSource: option.labelSource,
   }));
+  const originalQuery = query.normalize('NFKC').trim();
   const payload: MemoryReferenceTokenPayload = {
-    version: 1,
+    version: 2,
     userId,
-    queryHash: await queryHash(query),
+    queryHash: await queryHash(originalQuery),
+    originalQuery,
     revision: Math.max(0, Number(revision) || 0),
     expiresAt: now + Math.max(60_000, Math.min(ttlMs, 60 * 60_000)),
     options: tokenOptions,
@@ -122,20 +128,23 @@ export const verifyMemoryReferenceToken = async ({
   valid: boolean;
   reason: 'valid' | 'invalid-format' | 'invalid-token' | 'wrong-user' | 'wrong-query' | 'stale-revision' | 'expired';
   options: TokenOption[];
+  originalQuery: string | null;
 }> => {
   if (!secret.trim() || token.length > MAX_TOKEN_CHARACTERS || !token.startsWith(`${TOKEN_PREFIX}.`)) {
-    return { valid: false, reason: 'invalid-format', options: [] };
+    return { valid: false, reason: 'invalid-format', options: [], originalQuery: null };
   }
   try {
     const encodedPayload = token.slice(TOKEN_PREFIX.length + 1);
     if (!/^[A-Za-z0-9_-]+$/.test(encodedPayload)) {
-      return { valid: false, reason: 'invalid-token', options: [] };
+      return { valid: false, reason: 'invalid-token', options: [], originalQuery: null };
     }
     const packed = base64UrlToBytes(encodedPayload);
     if (bytesToBase64Url(packed) !== encodedPayload) {
-      return { valid: false, reason: 'invalid-token', options: [] };
+      return { valid: false, reason: 'invalid-token', options: [], originalQuery: null };
     }
-    if (packed.length <= 28) return { valid: false, reason: 'invalid-format', options: [] };
+    if (packed.length <= 28) return {
+      valid: false, reason: 'invalid-format', options: [], originalQuery: null,
+    };
     const iv = packed.slice(0, 12);
     const ciphertext = packed.slice(12);
     const decrypted = await crypto.subtle.decrypt(
@@ -144,14 +153,40 @@ export const verifyMemoryReferenceToken = async ({
       ciphertext,
     );
     const payload = JSON.parse(new TextDecoder().decode(decrypted)) as MemoryReferenceTokenPayload;
-    const options = Array.isArray(payload.options) ? payload.options.filter(validOption).slice(0, 4) : [];
-    if (payload.version !== 1 || options.length === 0) return { valid: false, reason: 'invalid-token', options: [] };
-    if (payload.userId !== userId) return { valid: false, reason: 'wrong-user', options: [] };
-    if (payload.queryHash !== await queryHash(query)) return { valid: false, reason: 'wrong-query', options: [] };
-    if (payload.revision !== Math.max(0, Number(revision) || 0)) return { valid: false, reason: 'stale-revision', options: [] };
-    if (!Number.isFinite(payload.expiresAt) || payload.expiresAt <= now) return { valid: false, reason: 'expired', options: [] };
-    return { valid: true, reason: 'valid', options };
+    const options = Array.isArray(payload.options)
+      ? payload.options.filter(validOption).slice(0, 4).map(option => ({
+        ...option,
+        labelSource: ['short-title', 'named-entity', 'soft-cue', 'ordinal'].includes(String(option.labelSource))
+          ? option.labelSource
+          : 'ordinal' as const,
+      }))
+      : [];
+    if ((payload.version !== 1 && payload.version !== 2) || options.length === 0) return {
+      valid: false, reason: 'invalid-token', options: [], originalQuery: null,
+    };
+    if (payload.userId !== userId) return {
+      valid: false, reason: 'wrong-user', options: [], originalQuery: null,
+    };
+    const originalQuery = payload.version === 2
+      ? String(payload.originalQuery || '').normalize('NFKC').trim()
+      : query.normalize('NFKC').trim();
+    if (!originalQuery || originalQuery.length > 2_000) return {
+      valid: false, reason: 'invalid-token', options: [], originalQuery: null,
+    };
+    if (payload.queryHash !== await queryHash(originalQuery)) return {
+      valid: false,
+      reason: payload.version === 1 ? 'wrong-query' : 'invalid-token',
+      options: [],
+      originalQuery: null,
+    };
+    if (payload.revision !== Math.max(0, Number(revision) || 0)) return {
+      valid: false, reason: 'stale-revision', options: [], originalQuery: null,
+    };
+    if (!Number.isFinite(payload.expiresAt) || payload.expiresAt <= now) return {
+      valid: false, reason: 'expired', options: [], originalQuery: null,
+    };
+    return { valid: true, reason: 'valid', options, originalQuery };
   } catch {
-    return { valid: false, reason: 'invalid-token', options: [] };
+    return { valid: false, reason: 'invalid-token', options: [], originalQuery: null };
   }
 };

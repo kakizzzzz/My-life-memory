@@ -565,12 +565,13 @@ serve(async request => {
     }
 
     if (action === 'research_memory_context') {
-      const query = getString(body.query).trim();
+      const requestQuery = getString(body.query).trim();
+      let query = requestQuery;
       const place = getString(body.place).trim();
       const region = getString(body.region).trim();
       const dateFrom = getString(body.dateFrom);
       const dateTo = getString(body.dateTo);
-      if (!query && !place && !region) {
+      if (!requestQuery && !place && !region) {
         return fail('bad_request', 'query, place, or region is required.', 400);
       }
       if ((dateFrom && !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom))
@@ -600,6 +601,22 @@ serve(async request => {
       if (semanticHints.error) return fail('bad_request', semanticHints.error, 400);
       const referenceConfirmation = referenceConfirmationInput(body.referenceConfirmation);
       if (referenceConfirmation.error) return fail('bad_request', referenceConfirmation.error, 400);
+      const confirmationSecret = Deno.env.get('MEMORY_REFERENCE_CONFIRMATION_SECRET')
+        || internalToken
+        || serviceRoleKey;
+      const confirmation = referenceConfirmation.value;
+      const verifiedConfirmation = confirmation
+        ? await verifyMemoryReferenceToken({
+          secret: confirmationSecret,
+          token: confirmation.continuationToken,
+          userId,
+          query: requestQuery,
+          revision: memory.revision,
+        })
+        : null;
+      if (verifiedConfirmation?.valid && verifiedConfirmation.originalQuery) {
+        query = verifiedConfirmation.originalQuery;
+      }
       const inferredQueryPlace = !place && !region ? inferMemoryPlaceHint(query) : '';
       const requestedPlace = place || (
         region && !resolveExactMemoryCountryRegion(region) ? region : inferredQueryPlace
@@ -649,9 +666,6 @@ serve(async request => {
         };
       }
 
-      const confirmationSecret = Deno.env.get('MEMORY_REFERENCE_CONFIRMATION_SECRET')
-        || internalToken
-        || serviceRoleKey;
       let confirmedReference: {
         noteId: string;
         starId: string;
@@ -659,16 +673,9 @@ serve(async request => {
         label: string;
       } | null = null;
       let referenceClarification: MemoryReferenceClarification | null = null;
-      const confirmation = referenceConfirmation.value;
       if (confirmation) {
-        const verified = await verifyMemoryReferenceToken({
-          secret: confirmationSecret,
-          token: confirmation.continuationToken,
-          userId,
-          query,
-          revision: memory.revision,
-        });
-        if (!verified.valid || confirmation.answer !== 'confirm') {
+        const verified = verifiedConfirmation;
+        if (!verified?.valid || confirmation.answer !== 'confirm') {
           const exactText = buildMemoryReferenceRefinementQuestion(query);
           referenceClarification = {
             exactText,

@@ -51,7 +51,7 @@ const archive = (notes: NoteRow[]): NormalizedMemoryRows => ({
   tracks: [],
 });
 
-test('reference options are neutral and never expose note titles, text, dates, or places', () => {
+test('reference options expose only bounded safe cues rather than private bodies or ids', () => {
   const memory = archive([
     note('note-a', 'star-a', 'Private title A', 'The lease and utilities are recorded here.'),
     note('note-b', 'star-b', 'Private title B', 'A second rent record is here.'),
@@ -60,12 +60,13 @@ test('reference options are neutral and never expose note titles, text, dates, o
   const options = buildMemoryReferenceOptions({ memory, queryPlan: plan });
 
   assert.equal(options.length, 2);
-  assert.deepEqual(options.map(option => option.label), ['Possible location 1', 'Possible location 2']);
-  const visible = JSON.stringify(options.map(({ label }) => ({ label })));
-  assert.doesNotMatch(visible, /Private title|lease|utilities|rent|star-|note-/u);
+  assert.deepEqual(options.map(option => option.label), ['Record related to lease', 'Record related to rent']);
+  assert.deepEqual(options.map(option => option.labelSource), ['soft-cue', 'soft-cue']);
+  const visible = JSON.stringify(options.map(({ label, labelSource }) => ({ label, labelSource })));
+  assert.doesNotMatch(visible, /Private title|utilities|star-|note-|30|31|120/u);
 });
 
-test('semantic hints may rank candidates but never appear in neutral labels', () => {
+test('semantic hints may rank candidates while a safe short title supplies the label', () => {
   const memory = archive([
     note('note-a', 'star-a', 'Alpha', 'A small orange animal appeared here.'),
     note('note-b', 'star-b', 'Beta', 'A quiet afternoon.'),
@@ -78,8 +79,80 @@ test('semantic hints may rank candidates but never appear in neutral labels', ()
   });
 
   assert.equal(options[0]?.noteId, 'note-a');
-  assert.equal(options[0]?.label, 'Possible record 1');
-  assert.doesNotMatch(options[0]?.label || '', /orange|animal|Alpha/u);
+  assert.equal(options[0]?.label, 'Alpha');
+  assert.equal(options[0]?.labelSource, 'short-title');
+  assert.doesNotMatch(options[0]?.label || '', /orange|animal/u);
+});
+
+test('unsafe short titles fall back to ordinal labels', () => {
+  const memory = archive([
+    note('note-a', 'star-a', '30.12345, 120.67890', 'A small animal appeared here.'),
+    note('note-b', 'star-b', 'name@example.com', 'Another animal appeared here.'),
+  ]);
+  const plan = buildMemoryQueryPlan({ query: 'Where did I see that animal?' });
+  const options = buildMemoryReferenceOptions({ memory, queryPlan: plan });
+
+  assert.deepEqual(options.map(option => option.label), ['Possible record 1', 'Possible record 2']);
+  assert.deepEqual(options.map(option => option.labelSource), ['ordinal', 'ordinal']);
+  assert.doesNotMatch(JSON.stringify(options), /30\.12345|120\.67890|example\.com/u);
+});
+
+test('the safe-label gate rejects urls, phones, addresses, and long numbers', () => {
+  const unsafeTitles = [
+    'https://x.co',
+    '13800138000',
+    '123 Main St',
+    '幸福路88号',
+    'Order 12345',
+  ];
+  const plan = buildMemoryQueryPlan({ query: 'Where did I see that animal?' });
+  unsafeTitles.forEach((title, index) => {
+    const memory = archive([
+      note(`note-${index}`, 'star-a', title, 'A small animal appeared here.'),
+    ]);
+    const options = buildMemoryReferenceOptions({ memory, queryPlan: plan });
+    assert.equal(options[0]?.label, 'Possible record 1', title);
+    assert.equal(options[0]?.labelSource, 'ordinal', title);
+    assert.equal(JSON.stringify(options).includes(title), false, title);
+  });
+});
+
+test('fuzzy references can present safe short titles without treating them as evidence', () => {
+  const memory = archive([
+    note('note-a', 'star-a', 'Mimi', 'A sunny afternoon.'),
+    note('note-b', 'star-a', 'Tangerine', 'A quiet morning.'),
+  ]);
+  const plan = buildMemoryQueryPlan({ query: 'Where was that cat I saw?' });
+  const options = buildMemoryReferenceOptions({ memory, queryPlan: plan });
+
+  assert.equal(options.length, 2);
+  assert.deepEqual(options.map(option => option.label), ['Mimi', 'Tangerine']);
+  assert.deepEqual(options.map(option => option.labelSource), ['short-title', 'short-title']);
+  assert.deepEqual(options.map(option => option.starId), ['star-a', 'star-a']);
+});
+
+test('an explicit safe name may label an option without exposing the surrounding body', () => {
+  const memory = archive([
+    note('note-a', 'star-a', 'A quiet afternoon memory', 'The small cat is called Mimi. Nothing else is public.'),
+  ]);
+  const plan = buildMemoryQueryPlan({ query: 'Where was that cat I saw?' });
+  const options = buildMemoryReferenceOptions({ memory, queryPlan: plan });
+
+  assert.equal(options[0]?.label, 'Mimi');
+  assert.equal(options[0]?.labelSource, 'named-entity');
+  assert.doesNotMatch(JSON.stringify(options), /Nothing else|quiet afternoon|small cat/u);
+});
+
+test('anchor options still deduplicate multiple notes at the same star', () => {
+  const memory = archive([
+    note('note-a', 'star-a', 'Lease', 'The lease is stored here.'),
+    note('note-b', 'star-a', 'Utilities', 'Utilities are paid here.'),
+  ]);
+  const plan = buildMemoryQueryPlan({ query: 'Where is my home?' });
+  const options = buildMemoryReferenceOptions({ memory, queryPlan: plan });
+
+  assert.equal(options.length, 1);
+  assert.equal(options[0]?.starId, 'star-a');
 });
 
 test('confirmation token is bound to user, query, revision, expiry, and ciphertext integrity', async () => {
@@ -96,6 +169,7 @@ test('confirmation token is bound to user, query, revision, expiry, and cipherte
       starId: 'star-a',
       relation: 'work',
       label: 'Possible location 1',
+      labelSource: 'ordinal',
       score: 10,
     }],
   });
@@ -114,7 +188,9 @@ test('confirmation token is bound to user, query, revision, expiry, and cipherte
 
   assert.equal((await verify()).valid, true);
   assert.equal((await verify({ userId: 'user-b' })).reason, 'wrong-user');
-  assert.equal((await verify({ query: 'Where is my school?' })).reason, 'wrong-query');
+  const shortReply = await verify({ query: 'Yes.' });
+  assert.equal(shortReply.valid, true);
+  assert.equal(shortReply.originalQuery, 'Where is my workplace?');
   assert.equal((await verify({ revision: 8 })).reason, 'stale-revision');
   assert.equal((await verify({ now: now + 120_001 })).reason, 'expired');
   const replacement = issued.token.endsWith('a') ? 'b' : 'a';
@@ -122,7 +198,7 @@ test('confirmation token is bound to user, query, revision, expiry, and cipherte
   assert.equal((await verify({ token: tampered })).reason, 'invalid-token');
 });
 
-test('token exposes only neutral labels while authenticated payload remains recoverable server-side', async () => {
+test('token exposes only approved public labels while authenticated payload remains recoverable server-side', async () => {
   const issued = await createMemoryReferenceToken({
     secret: 'another-test-secret',
     userId: 'user-a',
@@ -133,6 +209,7 @@ test('token exposes only neutral labels while authenticated payload remains reco
       starId: 'star-private',
       relation: 'activity',
       label: 'Possible record 1',
+      labelSource: 'ordinal',
       score: 3,
     }],
   });

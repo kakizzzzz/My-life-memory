@@ -240,3 +240,26 @@
 - Final validation: `npm run lint` passed; exact `npm test` passed 201/201; `npm run build` passed; `npm run test:e2e` passed 1/1 mobile WebKit; `git diff --check` and the secret-pattern review passed.
 - Edge validation: the exact `npm run lint:edge` command remains unavailable because no global `deno` binary is installed; equivalent `npx --yes deno check` passed all six production Edge Functions.
 - Production decision: no migration, `supabase db push`, unrelated Function deployment, UI change, backend model, embedding service, or paid inference call was introduced.
+
+## Follow-up: Safe Recognizable Reference Labels
+
+- Baseline HEAD: `0260f09d16f068c088649cbd1302a89fe32d2ee0`.
+- Objective: improve ambiguous-reference usability without weakening the strict four-state evidence firewall or exposing candidate bodies, coordinates, dates, scores, routes, images, or internal reasoning.
+- Files inspected: `memory-reference-candidates.ts`, `memory-reference-token.ts`, `memory-research.ts`, `memory-personal-context.ts`, `memory-public-response.ts`, both MCP transports and schemas, Memory API assembly, and reference-confirmation tests.
+- [Complete] Confirm the reported issues in current source: ordinal-only labels, anchor-style candidate deduplication for every relation, query-hash rejection of short confirmation replies, and confirmed passages incorrectly marked as title evidence.
+- [Complete] Add conservative recognizable labels, relation-aware deduplication, encrypted original-query recovery, and explicit reference evidence source.
+- [Complete] Add privacy, ambiguity, short-reply, same-location candidate, schema, and transport regressions.
+- [Complete] Run the full validation suite, inspect the diff, and update README.
+- [Pending] Commit, deploy only changed Functions, and verify production authentication plus GitHub workflows.
+- Decision: keep exactly nine public read-only tools, add no migration, and do not add a backend model, embedding service, vector database, paid inference, or unrelated UI change.
+- Targeted reference, compositional-research, public-response, output-schema, and transport suite: 52 passed, 0 failed.
+- `npm run lint`: passed with exit code 0 after the implementation phase.
+- Exact `npm run lint:edge`: could not start because this machine has no global `deno` binary (`sh: deno: command not found`, exit 127).
+- Equivalent `npx --yes deno check`: passed all six production Edge Functions with exit code 0.
+- Final `npm test`: 208 passed, 0 failed.
+- Final `npm run build`: passed; Vite transformed 2,247 modules. The existing large-chunk advisory remains non-blocking.
+- Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
+- `git diff --check`: passed with no whitespace errors.
+- Final review confirmed exactly nine public read-only tools, no migration or UI change, no candidate-body/date/coordinate/score/route/image/internal-ID disclosure in clarification options, and no committed secret.
+- Decision: anchor labels may use only a generic soft cue; fuzzy event references may use a privacy-screened short title or explicit name. Unsafe labels fall back to an ordinal, and all options remain unverified until the user explicitly confirms one.
+- Decision: token v2 stores the original query only inside authenticated AES-GCM ciphertext, remains bound to user, archive revision, expiry, and ciphertext integrity, and accepts a short confirmation reply without trusting that reply as the original research question.

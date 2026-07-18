@@ -93,6 +93,41 @@ test('supported research exposes only bounded evidence allowlist fields', () => 
   assert.deepEqual(result.evidence.selectedImageNoteIds, ['note-1']);
 });
 
+test('user-confirmed evidence is projected with an explicit reference source', () => {
+  const result = projectPublicMemoryResearchResponse({
+    research: {
+      query: 'Is this the place I meant?',
+      answerBoundary: { status: 'supported', verifiedPlaceNames: [] },
+      queryPlan: {
+        originalQuery: 'Is this the place I meant?',
+        answerIntent: 'locate',
+        anchorRelations: [],
+        eventRelations: ['observation'],
+        routeIntent: false,
+      },
+      evidencePassages: [{
+        noteId: 'note-1',
+        starId: 'star-1',
+        role: 'target',
+        source: 'reference',
+        reviewSource: 'user-confirmed-reference',
+        text: 'Mimi',
+        relation: 'observation',
+        createdAt: 1,
+        coordinates: { lat: 35, lng: 139 },
+      }],
+      selectedImageNoteIds: [],
+      confidenceBand: 'medium',
+    },
+  });
+  const schema = z.fromJSONSchema(MEMORY_RESEARCH_OUTPUT_SCHEMA);
+
+  assert.equal(result.status, 'supported');
+  assert.equal(result.evidence.passages[0]?.source, 'reference');
+  assert.equal(result.evidence.passages[0]?.evidenceSource, 'user-confirmed-reference');
+  assert.equal(schema.safeParse(wrapped('Is this the place I meant?', result)).success, true);
+});
+
 test('not-found response physically omits every candidate and coordinate-bearing path', () => {
   const result = projectPublicMemoryResearchResponse({
     research: {
