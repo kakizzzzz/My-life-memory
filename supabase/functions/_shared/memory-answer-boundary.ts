@@ -3,7 +3,7 @@ import type { PersonalContextResolution } from './memory-personal-context.ts';
 
 export type MemoryAnswerBoundary = {
   mandatory: true;
-  status: 'supported' | 'ambiguous' | 'not-found' | 'needs-time-range' | 'needs-place-resolution';
+  status: 'supported' | 'ambiguous' | 'not-found' | 'needs-time-range' | 'needs-place-resolution' | 'needs-candidate-review';
   answerMode: 'evidence-only' | 'ask-for-disambiguation' | 'state-no-answer' | 'retry-with-bounds';
   evidenceOnly: true;
   exactPersonalAnchorQuestion: boolean;
@@ -82,6 +82,7 @@ export const buildMemoryAnswerBoundary = ({
   personalContext,
   temporalResolutionRequired,
   unresolvedPublicPlace,
+  semanticReviewRequired = false,
   hasMatchingRecords,
   verifiedPlaceNames = [],
   evidenceNoteIds = [],
@@ -90,6 +91,7 @@ export const buildMemoryAnswerBoundary = ({
   personalContext: PersonalContextResolution;
   temporalResolutionRequired: boolean;
   unresolvedPublicPlace: boolean;
+  semanticReviewRequired?: boolean;
   hasMatchingRecords: boolean;
   verifiedPlaceNames?: string[];
   evidenceNoteIds?: string[];
@@ -117,6 +119,25 @@ export const buildMemoryAnswerBoundary = ({
     allowedEvidenceNoteIds: [],
     requiredAction: 'retry-with-bounds',
     suggestedReply: 'Resolve the requested time or explicit public place first. Do not answer from the unbounded archive.',
+    forbiddenInferences,
+  };
+
+  if (semanticReviewRequired) return {
+    mandatory: true,
+    status: 'needs-candidate-review',
+    answerMode: 'retry-with-bounds',
+    evidenceOnly: true,
+    exactPersonalAnchorQuestion,
+    candidateNotesAreEvidence: false,
+    mayUseCandidateNotesAsAnswer: false,
+    mustUseSuggestedReply: true,
+    mayStateCoordinates: false,
+    coordinatePolicy: 'forbidden',
+    placeNamePolicy: 'explicit-evidence-only',
+    verifiedPlaceNames: [],
+    allowedEvidenceNoteIds: [],
+    requiredAction: 'retry-with-bounds',
+    suggestedReply: 'Do not answer yet. Review only the bounded candidateNotes, then call research_memory_context again with the same query and exact-quote semanticReview decisions. If the client cannot perform this review, state that the archive does not contain enough verified evidence.',
     forbiddenInferences,
   };
 

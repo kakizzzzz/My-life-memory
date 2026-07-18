@@ -42,6 +42,9 @@ import {
   type MemoryPlaceResolutionSummary,
   type ResolvedMemoryPlace,
 } from '../_shared/memory-research.ts';
+import type {
+  MemorySemanticReviewInput,
+} from '../_shared/memory-semantic-review.ts';
 import {
   explicitMemoryNoteTitle,
   isPersonalMemoryReference,
@@ -117,6 +120,41 @@ const hasValidNoteIds = (body: Record<string, unknown>, noteIds: string[]) => (
   && noteIds.length === body.noteIds.length
   && noteIds.every(noteId => noteId.length <= 200)
 );
+
+const semanticReviewInput = (value: unknown): {
+  value?: MemorySemanticReviewInput;
+  error?: string;
+} => {
+  if (value === undefined || value === null) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { error: 'semanticReview must be an object.' };
+  }
+  const decisions = (value as Record<string, unknown>).decisions;
+  if (!Array.isArray(decisions) || decisions.length > 6) {
+    return { error: 'semanticReview.decisions must contain at most 6 items.' };
+  }
+  const parsed = decisions.map(decision => {
+    if (!decision || typeof decision !== 'object' || Array.isArray(decision)) return null;
+    const record = decision as Record<string, unknown>;
+    const noteId = getString(record.noteId).trim();
+    const evidenceQuote = getString(record.evidenceQuote).trim();
+    const verdict = getString(record.verdict);
+    const relation = getString(record.relation);
+    if (!noteId || noteId.length > 200 || !evidenceQuote || evidenceQuote.length > 240) return null;
+    if (!['supports', 'rejects', 'uncertain'].includes(verdict)) return null;
+    if (!['home', 'work', 'study', 'observation', 'activity'].includes(relation)) return null;
+    return {
+      noteId,
+      evidenceQuote,
+      verdict: verdict as 'supports' | 'rejects' | 'uncertain',
+      relation: relation as 'home' | 'work' | 'study' | 'observation' | 'activity',
+    };
+  });
+  if (parsed.some(decision => !decision)) {
+    return { error: 'Each semantic review decision must contain a valid noteId, verdict, relation, and exact evidenceQuote.' };
+  }
+  return { value: { decisions: parsed as NonNullable<typeof parsed[number]>[] } };
+};
 
 const memoryLoadOptions = (action: string, body: Record<string, unknown>): NormalizedMemoryLoadOptions => {
   const date = getString(body.date);
@@ -456,6 +494,8 @@ serve(async request => {
         return fail('bad_request', 'radiusKm must be between 0.1 and 1000.', 400);
       }
       const limit = Math.min(Math.max(getNumber(body.limit, 30), 1), 100);
+      const semanticReview = semanticReviewInput(body.semanticReview);
+      if (semanticReview.error) return fail('bad_request', semanticReview.error, 400);
       const inferredQueryPlace = !place && !region ? inferMemoryPlaceHint(query) : '';
       const requestedPlace = place || (
         region && !resolveExactMemoryCountryRegion(region) ? region : inferredQueryPlace
@@ -520,6 +560,7 @@ serve(async request => {
         placeSource,
         resolvedPlace,
         placeResolution,
+        semanticReview: semanticReview.value,
       }, timeZone);
       const publicResearch = applyMemoryResearchDisclosureBoundary(research);
       const mayStateCoordinates = research.answerBoundary.mayStateCoordinates;

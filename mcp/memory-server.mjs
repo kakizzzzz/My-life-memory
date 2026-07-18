@@ -156,6 +156,14 @@ const getMemoryImageResult = async input => {
 };
 
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
+const semanticReview = z.object({
+  decisions: z.array(z.object({
+    noteId: z.string().min(1).max(200),
+    verdict: z.enum(['supports', 'rejects', 'uncertain']),
+    relation: z.enum(['home', 'work', 'study', 'observation', 'activity']),
+    evidenceQuote: z.string().min(1).max(240),
+  })).max(6),
+}).optional();
 
 export const createMemoryMcpServer = async () => {
   const temporalPayload = await callMemoryApi('get_temporal_context').catch(() => null);
@@ -179,6 +187,7 @@ export const createMemoryMcpServer = async () => {
       centerLng: z.number().min(-180).max(180).optional(),
       radiusKm: z.number().min(0.1).max(1000).default(5),
       limit: z.number().int().min(1).max(100).default(30),
+      semanticReview,
     },
     annotations: {
       readOnlyHint: true,

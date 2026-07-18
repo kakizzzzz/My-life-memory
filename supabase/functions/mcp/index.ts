@@ -36,6 +36,29 @@ const optionalDateSchema = {
   pattern: '^\\d{4}-\\d{2}-\\d{2}$',
 };
 
+const semanticReviewSchema = {
+  type: 'object',
+  properties: {
+    decisions: {
+      type: 'array',
+      maxItems: 6,
+      items: {
+        type: 'object',
+        properties: {
+          noteId: { type: 'string', minLength: 1, maxLength: 200 },
+          verdict: { type: 'string', enum: ['supports', 'rejects', 'uncertain'] },
+          relation: { type: 'string', enum: ['home', 'work', 'study', 'observation', 'activity'] },
+          evidenceQuote: { type: 'string', minLength: 1, maxLength: 240 },
+        },
+        required: ['noteId', 'verdict', 'relation', 'evidenceQuote'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['decisions'],
+  additionalProperties: false,
+};
+
 const readTools = [
   {
     name: 'research_memory_context',
@@ -61,6 +84,7 @@ const readTools = [
         centerLng: { type: 'number', minimum: -180, maximum: 180 },
         radiusKm: { type: 'number', minimum: 0.1, maximum: 1000, default: 5 },
         limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+        semanticReview: semanticReviewSchema,
       },
       required: ['query'],
       additionalProperties: false,

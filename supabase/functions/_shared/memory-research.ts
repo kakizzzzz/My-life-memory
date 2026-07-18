@@ -23,6 +23,10 @@ import {
   type MemoryQueryDateRange,
 } from './memory-query-plan.ts';
 import { buildMemoryAnswerBoundary } from './memory-answer-boundary.ts';
+import {
+  applyMemorySemanticReview,
+  type MemorySemanticReviewInput,
+} from './memory-semantic-review.ts';
 import { buildMemoryTemporalContext } from './time-zone.ts';
 import { MCP_MEMORY_INSTRUCTIONS } from './mcp-memory-contract.mjs';
 
@@ -51,6 +55,7 @@ export type MemoryResearchInput = {
   placeSource?: 'explicit-argument' | 'query-span';
   resolvedPlace?: ResolvedMemoryPlace | null;
   placeResolution?: MemoryPlaceResolutionSummary | null;
+  semanticReview?: MemorySemanticReviewInput | null;
 };
 
 export type ResolvedMemoryPlace = {
@@ -542,12 +547,20 @@ export const researchMemoryContext = (
     }),
   } : memory;
   const personalRadius = clampRadiusKm(input.radiusKm ?? parseRadiusKm(query) ?? DEFAULT_RADIUS_KM);
-  const personalContext = resolvePersonalMemoryContext(
+  const deterministicPersonalContext = resolvePersonalMemoryContext(
     personalArchive,
     [query, input.place, input.region].filter(Boolean).join(' '),
     personalRadius,
   );
-  const candidateReview = buildBoundedArchiveReview(personalArchive, personalContext);
+  const candidateReview = buildBoundedArchiveReview(personalArchive, deterministicPersonalContext);
+  const semanticReviewResult = applyMemorySemanticReview({
+    memory: personalArchive,
+    queryPlan,
+    baseResolution: deterministicPersonalContext,
+    candidateReview,
+    input: input.semanticReview,
+  });
+  const personalContext = semanticReviewResult.resolution;
   const personalScope: PersonalScope | null = (
     personalContext.status === 'resolved' || personalContext.status === 'ambiguous'
   ) ? {
@@ -582,9 +595,22 @@ export const researchMemoryContext = (
     if (ambiguousPersonalContext && !evidenceNoteIds.has(note.id)) return [];
     const timestamp = noteTimestamp(note, star);
     if ((dateFrom || dateTo) && !isInDateRange(timestamp, dateFrom, dateTo, timeZone)) return [];
-    const targetEvidence = requiresTargetEvidence
+    const deterministicTargetEvidence = requiresTargetEvidence
       ? findTargetEvidencePassages(note, star, personalContext)
       : [];
+    const reviewedTargetEvidence = requiresTargetEvidence
+      ? personalContext.evidencePassages.filter(passage => (
+        passage.noteId === note.id
+        && passage.reviewSource === 'host-ai-review'
+        && personalContext.eventRelations.includes(passage.relation as 'observation' | 'activity')
+      ))
+      : [];
+    const targetEvidence = [...deterministicTargetEvidence, ...reviewedTargetEvidence]
+      .filter((passage, index, passages) => passages.findIndex(candidate => (
+        candidate.noteId === passage.noteId
+        && candidate.relation === passage.relation
+        && normalizeCompact(candidate.text) === normalizeCompact(passage.text)
+      )) === index);
     if (requiresTargetEvidence && !targetEvidence.length) return [];
     if (personalContext.requested && !queryPlan.anchorRelations.length && !evidenceNoteIds.has(note.id)) return [];
     if (routeOnlyPersonalQuery && !evidenceNoteIds.has(note.id)) return [];
@@ -684,6 +710,8 @@ export const researchMemoryContext = (
       ? input.placeResolution?.status === 'ambiguous'
         ? 'The explicit public place has multiple plausible resolutions. Present the bounded place candidates and ask the user to disambiguate; do not search or merge unrelated locations.'
         : 'The explicit public place could not be resolved. Report that place resolution failed and do not substitute unrelated memories.'
+    : semanticReviewResult.state.required
+      ? semanticReviewResult.state.instruction
     : personalContext.status === 'ambiguous'
     ? personalContext.instruction
     : unresolvedPersonalContext && candidateReview.available
@@ -738,6 +766,7 @@ export const researchMemoryContext = (
     personalContext,
     temporalResolutionRequired,
     unresolvedPublicPlace,
+    semanticReviewRequired: semanticReviewResult.state.required,
     hasMatchingRecords,
     verifiedPlaceNames: input.resolvedPlace
       ? [input.resolvedPlace.displayName || input.resolvedPlace.name].filter(Boolean)
@@ -750,6 +779,13 @@ export const researchMemoryContext = (
     answerBoundary,
     queryPlan,
     temporalContext,
+    timestampSemantics: {
+      currentLocalDateRole: 'query-evaluation-clock' as const,
+      createdAtRole: 'memory-creation-time' as const,
+      updatedAtRole: 'storage-mutation-time-not-proof-of-user-edit' as const,
+      instruction: 'Use currentLocalDate only to resolve relative query dates. A note happened on createdAt. updatedAt is a storage mutation timestamp and must not be described as a deliberate user edit.',
+    },
+    semanticReview: semanticReviewResult.state,
     searchPlan: {
       mode: personalContext.status === 'resolved'
         ? (personalContext.proximityRequested ? 'personal-nearby' : 'personal-context')

@@ -110,8 +110,10 @@ test('temporal context reports one UTC instant in the authenticated account time
   assert.equal(tokyo.currentUtcDateTime, '2026-01-01T00:30:00.000Z');
   assert.equal(tokyo.currentLocalDate, '2026-01-01');
   assert.equal(tokyo.currentLocalDateTime, '2026-01-01T09:30:00');
+  assert.equal(tokyo.currentDateRole, 'query-evaluation-only');
   assert.equal(newYork.currentLocalDate, '2025-12-31');
   assert.equal(newYork.currentLocalDateTime, '2025-12-31T19:30:00');
+  assert.equal(newYork.currentDateRole, 'query-evaluation-only');
 });
 
 test('the same memory falls on different requested days in different IANA time zones', () => {

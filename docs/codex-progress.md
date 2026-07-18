@@ -120,6 +120,30 @@
 - Decision: no schema change is objectively required for this retrieval-only upgrade.
 - Decision: deploy only `mcp` and `memory-api`; do not run migrations, `supabase db push`, or redeploy unrelated Functions.
 
+## Follow-up: Host-assisted Semantic Fallback And Date Semantics
+
+- Baseline HEAD: `7069735a8333e5c5005589fe284a48ecdb4328fd`
+- Objective: prevent temporary institutional stays from resolving as home, distinguish query-evaluation time from saved-memory timestamps, and add an optional evidence-quote review fallback without adding any model service, model API, embedding service, migration, or paid backend dependency.
+- Files inspected: `memory-personal-context.ts`, `memory-research.ts`, `memory-answer-boundary.ts`, `memory-query-plan.ts`, `memory-presenters.ts`, `time-zone.ts`, Memory API and both MCP transports, compositional/transport/timezone tests, and the current progress record.
+- [Complete] Reproduce the likely rehabilitation-hospital false-positive path and identify ambiguous timestamp semantics.
+- [Complete] Add deterministic hard exclusions for temporary or institutional residence and incidental work/study visits.
+- [Complete] Add an optional same-tool host-AI review protocol that accepts only exact bounded candidate quotes and is revalidated server-side.
+- [Complete] Add explicit query-clock versus memory-timestamp semantics.
+- [Complete] Add targeted regressions for institutional stays, exact-quote host review, ambiguous anchors, event evidence, transport parity, and timestamp semantics.
+- [Complete] Run the complete validation suite and inspect the final diff.
+- [Pending] Commit, push, and deploy the two changed Edge Functions.
+- Targeted validation: `npm run lint` passed; `node --import tsx --test tests/memoryCompositionalResearch.test.ts tests/timeZone.test.ts tests/mcpTransport.test.ts` passed 40/40.
+- Final targeted retrieval/transport/timezone validation passed 49/49 after the unverified-candidate wording was restored.
+- `npm run lint`: passed with exit code 0.
+- `npm run lint:edge`: could not start because this machine has no global `deno` binary (`sh: deno: command not found`, exit 127).
+- Equivalent `npx --yes deno check` passed for all six production Edge Functions.
+- `npm test`: passed 190/190 with exit code 0. The first restricted run was blocked by the known `tsx` IPC sandbox limitation and was rerun with local IPC permission.
+- `npm run build`: passed; Vite transformed 2,247 modules. The existing large-chunk advisory remains non-blocking.
+- `npm run test:e2e`: passed 1/1 mobile WebKit test after rerunning outside the restricted port-binding sandbox.
+- `git diff --check`: passed with no whitespace errors.
+- Final review confirmed exactly nine public read-only MCP tools, no model SDK or model endpoint, no public-geocoder use of private aliases, and no database migration.
+- Decision: the user's existing AI conversation host may optionally use its own reasoning to review bounded excerpts and call the same tool again. My Life Memory contains no model runtime, calls no model API, requires no model key, and incurs no model-service cost.
+
 ## Follow-up: Weak-client Hallucination Hardening
 
 - Baseline HEAD: `e3049e2d3b7d7f43f8b30d0d73bb3cd7f281b38c`

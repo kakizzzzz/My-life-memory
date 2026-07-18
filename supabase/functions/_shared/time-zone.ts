@@ -20,6 +20,7 @@ export type MemoryTemporalContext = {
   currentUtcDateTime: string;
   currentLocalDate: string;
   currentLocalDateTime: string;
+  currentDateRole: 'query-evaluation-only';
 };
 
 const partValue = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPart['type']) => (
@@ -48,5 +49,6 @@ export const buildMemoryTemporalContext = (
     currentUtcDateTime: now.toISOString(),
     currentLocalDate: date,
     currentLocalDateTime: `${date}T${time}`,
+    currentDateRole: 'query-evaluation-only',
   };
 };
