@@ -9,7 +9,7 @@
 - Test and documentation commit: `8118f9d` (`test: cover compositional MCP retrieval`)
 - Host-review hardening commit: `e6af2f3564ae34c668fcf84ca13ed67f36669573` (`fix: harden evidence-grounded MCP fallback`)
 - Evidence-firewall commit: `3d6f220996723e9469472c2a76fedb5571937a21` (`fix: enforce evidence-safe MCP responses`)
-- Deployed source HEAD: `3d6f220996723e9469472c2a76fedb5571937a21`
+- Deployed source HEAD: `d3f35a371ef319b53737efe9c05d3f006917b7cc`
 - Objective: upgrade the existing nine-tool, read-only MCP into a compositional, evidence-grounded personal-memory retrieval system without changing the database schema or unrelated UI.
 
 ## Follow-up: Evidence Firewall And User-confirmed References
@@ -250,7 +250,7 @@
 - [Complete] Add conservative recognizable labels, relation-aware deduplication, encrypted original-query recovery, and explicit reference evidence source.
 - [Complete] Add privacy, ambiguity, short-reply, same-location candidate, schema, and transport regressions.
 - [Complete] Run the full validation suite, inspect the diff, and update README.
-- [Pending] Commit, deploy only changed Functions, and verify production authentication plus GitHub workflows.
+- [Complete] Commit, deploy only changed Functions, and verify production authentication plus GitHub workflows.
 - Decision: keep exactly nine public read-only tools, add no migration, and do not add a backend model, embedding service, vector database, paid inference, or unrelated UI change.
 - Targeted reference, compositional-research, public-response, output-schema, and transport suite: 52 passed, 0 failed.
 - `npm run lint`: passed with exit code 0 after the implementation phase.
@@ -263,3 +263,8 @@
 - Final review confirmed exactly nine public read-only tools, no migration or UI change, no candidate-body/date/coordinate/score/route/image/internal-ID disclosure in clarification options, and no committed secret.
 - Decision: anchor labels may use only a generic soft cue; fuzzy event references may use a privacy-screened short title or explicit name. Unsafe labels fall back to an ordinal, and all options remain unverified until the user explicitly confirms one.
 - Decision: token v2 stores the original query only inside authenticated AES-GCM ciphertext, remains bound to user, archive revision, expiry, and ciphertext integrity, and accepts a short confirmation reply without trusting that reply as the original research question.
+- Source result: commit `d3f35a371ef319b53737efe9c05d3f006917b7cc` (`fix: make MCP reference confirmations recognizable`) was pushed to `origin/main`.
+- Supabase result: only `mcp` and `memory-api` were deployed to project `mbclmtoxxxxahbzissgm`; both CLI deployments returned `Deployed Functions.` No migration or `supabase db push` was run.
+- Token handling: the Supabase access token was read silently into a temporary shell environment, unset after both deployments, and never written to a repository or configuration file.
+- Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; unauthenticated `memory-api` returned HTTP 401 with `A valid user token is required.`
+- GitHub verification: CI run `29644768844` and Pages run `29644828541` both completed successfully for `d3f35a371ef319b53737efe9c05d3f006917b7cc`.
