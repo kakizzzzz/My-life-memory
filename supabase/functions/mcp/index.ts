@@ -7,7 +7,12 @@ import {
   rateLimitResponse,
   tokenPrefix,
 } from '../_shared/security.ts';
-import { MCP_MEMORY_INSTRUCTIONS } from '../_shared/memory-research.ts';
+import {
+  buildMcpMemoryInstructions,
+  MCP_SERVER_VERSION,
+  RESEARCH_MEMORY_TOOL_DESCRIPTION,
+  SEARCH_MEMORY_TOOL_DESCRIPTION,
+} from '../_shared/mcp-memory-contract.mjs';
 import {
   buildMcpImageContent,
   encodeStorageObjectPath,
@@ -35,7 +40,7 @@ const readTools = [
   {
     name: 'research_memory_context',
     title: 'Research Memory Context',
-    description: 'Primary tool for natural-language questions about any country, city, town, village, neighbourhood, date, trip, routine, personal place such as home/work/study, or where the user saw or did something. Keep personal relations in query and put only an explicit public geographic name in the place argument. It resolves evidence from the authenticated archive, searches titles before bodies, and may return bounded candidateNotes only for verification. Candidate notes are not evidence: if no passage directly supports the question, report no supporting memory and do not discuss unrelated records.',
+    description: RESEARCH_MEMORY_TOOL_DESCRIPTION,
     inputSchema: {
       type: 'object',
       properties: {
@@ -92,7 +97,7 @@ const readTools = [
   {
     name: 'search_memories',
     title: 'Search My Life Memory',
-    description: 'Search authenticated-user memories. Exact text matches are returned first; an empty literal result automatically retries contextual research for geographic and personal-place questions. If the final count is 0, titleIndex and candidateNotes remain review aids rather than evidence; do not infer, invent, or answer from unrelated memories.',
+    description: SEARCH_MEMORY_TOOL_DESCRIPTION,
     inputSchema: {
       type: 'object',
       properties: {
@@ -103,6 +108,10 @@ const readTools = [
       },
       additionalProperties: false,
     },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: 'list_locations',
@@ -112,6 +121,10 @@ const readTools = [
       type: 'object',
       properties: {},
       additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
     },
   },
   {
@@ -126,6 +139,10 @@ const readTools = [
       required: ['starId'],
       additionalProperties: false,
     },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: 'get_day_memory',
@@ -138,6 +155,10 @@ const readTools = [
       },
       required: ['date'],
       additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
     },
   },
   {
@@ -153,6 +174,10 @@ const readTools = [
       },
       additionalProperties: false,
     },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: 'summarize_memory_range',
@@ -166,6 +191,10 @@ const readTools = [
       },
       additionalProperties: false,
     },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: 'export_memory_report',
@@ -175,6 +204,10 @@ const readTools = [
       type: 'object',
       properties: {},
       additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: false,
     },
   },
 ];
@@ -382,6 +415,7 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
   }
 
   if (method === 'initialize') {
+    const temporalPayload = await callMemoryApi(config, userId, 'get_temporal_context', {}).catch(() => null);
     return rpcResult(id, {
       protocolVersion: getString(params.protocolVersion) || '2025-03-26',
       capabilities: {
@@ -389,9 +423,9 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
       },
       serverInfo: {
         name: 'my-life-memory',
-        version: '0.3.0',
+        version: MCP_SERVER_VERSION,
       },
-      instructions: MCP_MEMORY_INSTRUCTIONS,
+      instructions: buildMcpMemoryInstructions(temporalPayload?.temporalContext),
     });
   }
 

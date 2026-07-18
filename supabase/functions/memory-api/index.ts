@@ -46,8 +46,13 @@ import {
   explicitMemoryNoteTitle,
   isPersonalMemoryReference,
 } from '../_shared/memory-personal-context.ts';
+import {
+  inferMemoryPlaceHint,
+  isSafePublicPlaceCandidate,
+} from '../_shared/mcp-query-routing.mjs';
 import { collectMemoryImageReferences } from '../_shared/memory-image-references.ts';
 import {
+  buildMemoryTemporalContext,
   normalizeTimeZone,
   validTimeZoneOrNull,
 } from '../_shared/time-zone.ts';
@@ -342,6 +347,10 @@ serve(async request => {
         : {};
       timeZone = normalizeTimeZone(profileMetadata.timeZone);
     }
+    const temporalContext = buildMemoryTemporalContext(timeZone);
+    if (action === 'get_temporal_context') {
+      return memoryResponse(action, { temporalContext }, corsHeaders, 1);
+    }
     if (action === 'summarize_memory_range') {
       const dateFrom = getString(body.dateFrom);
       const dateTo = getString(body.dateTo);
@@ -362,7 +371,7 @@ serve(async request => {
         : {};
       return memoryResponse(
         action,
-        summary,
+        { temporalContext, ...summary },
         corsHeaders,
         Math.max(0, getNumber(totals.notes)),
       );
@@ -376,7 +385,7 @@ serve(async request => {
     const memory = await loadNormalizedMemoryRows(admin, userId, '', memoryLoadOptions(action, body));
     const groupedNotes = notesByStarId(memory.notes);
     const output = (payload: Record<string, unknown>, count: number, query = '') => (
-      memoryResponse(action, payload, corsHeaders, count, query)
+      memoryResponse(action, { temporalContext, ...payload }, corsHeaders, count, query)
     );
 
     if (action === 'list_locations') {
@@ -443,34 +452,35 @@ serve(async request => {
         return fail('bad_request', 'radiusKm must be between 0.1 and 1000.', 400);
       }
       const limit = Math.min(Math.max(getNumber(body.limit, 30), 1), 100);
+      const inferredQueryPlace = !place && !region ? inferMemoryPlaceHint(query) : '';
       const requestedPlace = place || (
-        region && !resolveExactMemoryCountryRegion(region) ? region : ''
+        region && !resolveExactMemoryCountryRegion(region) ? region : inferredQueryPlace
       );
       if (requestedPlace.length > 160) return fail('bad_request', 'place must be 160 characters or fewer.', 400);
+      const placeSource = body.placeSource === 'query-span' || inferredQueryPlace
+        ? 'query-span'
+        : 'explicit-argument';
       const privatePlaceReference = isPersonalMemoryReference(requestedPlace);
-      const geocodablePlace = privatePlaceReference ? '' : requestedPlace;
+      const publicPlaceCandidate = isSafePublicPlaceCandidate(requestedPlace);
+      const geocodablePlace = !privatePlaceReference && publicPlaceCandidate ? requestedPlace : '';
 
       let resolvedPlace: ResolvedMemoryPlace | null = null;
-      let placeResolution: MemoryPlaceResolutionSummary = privatePlaceReference ? {
+      let placeResolution: MemoryPlaceResolutionSummary = requestedPlace && !geocodablePlace ? {
         status: 'not-requested',
         query: requestedPlace,
-        message: 'Private personal-place references are resolved only from the authenticated user memory archive.',
+        message: privatePlaceReference
+          ? 'Private personal-place references are resolved only from the authenticated user memory archive.'
+          : 'The value was not an explicit public geographic place and was not sent to the public geocoder.',
       } : { status: 'not-requested' };
       let placeCandidates: unknown[] = [];
       const placeAsCountry = resolveExactMemoryCountryRegion(geocodablePlace);
       if (geocodablePlace && !placeAsCountry && !hasCenterLat) {
-        const starById = new Map(memory.stars.map(star => [star.id, star]));
-        const latestNote = [...memory.notes]
-          .filter(note => Number.isFinite(Number(note.created_at_ms)))
-          .sort((left, right) => Number(right.created_at_ms || 0) - Number(left.created_at_ms || 0))[0];
-        const latestStar = latestNote ? starById.get(latestNote.star_id) : null;
         const country = resolveMemoryCountryRegion(region)
           || resolveMemoryCountryRegion(geocodablePlace);
         const resolution = await resolveMemoryPlace({
           place: geocodablePlace,
           countryCode: country?.region.code,
           memoryCoordinates: memory.stars.map(star => ({ lat: star.lat, lng: star.lng })),
-          latestCoordinate: latestStar ? { lat: latestStar.lat, lng: latestStar.lng } : null,
           endpoint: Deno.env.get('MEMORY_GEOCODER_URL') || undefined,
           userAgent: Deno.env.get('MEMORY_GEOCODER_USER_AGENT') || undefined,
         });
@@ -503,6 +513,7 @@ serve(async request => {
         centerLng,
         radiusKm,
         limit,
+        placeSource,
         resolvedPlace,
         placeResolution,
       }, timeZone);
@@ -539,23 +550,19 @@ serve(async request => {
           retrievalRole: 'title-index',
         }];
       });
-      const candidateNotes = research.candidateNoteIds.flatMap(noteId => {
-        const note = noteById.get(noteId);
+      const candidateNotes = research.candidateReview.candidateExcerpts.flatMap(candidate => {
+        const note = noteById.get(candidate.noteId);
         const star = note ? starById.get(note.star_id) : null;
         if (!note || !star) return [];
-        const summary = noteSummary(
-          note,
-          star,
-          starIndex.get(star.id) || 0,
-          (groupedNotes.get(star.id) || []).findIndex(item => item.id === note.id),
-        );
         return [{
-          id: summary.id,
-          starId: summary.starId,
-          title: summary.title,
-          text: summary.text,
-          createdAt: summary.createdAt,
-          coordinates: summary.coordinates,
+          id: note.id,
+          starId: star.id,
+          title: explicitMemoryNoteTitle(note) || 'Untitled note',
+          text: candidate.excerpts.join('\n'),
+          excerpts: candidate.excerpts,
+          candidateScore: candidate.score,
+          createdAt: note.created_at_ms ?? star.created_at_ms,
+          coordinates: { lat: star.lat, lng: star.lng },
           retrievalRole: 'candidate-only',
           evidenceStatus: 'unverified',
         }];

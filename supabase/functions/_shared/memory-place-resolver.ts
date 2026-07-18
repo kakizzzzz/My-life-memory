@@ -1,5 +1,4 @@
 import {
-  memoryDistanceKm,
   type MemoryPlaceResolutionSummary,
   type ResolvedMemoryPlace,
 } from './memory-research.ts';
@@ -21,7 +20,6 @@ type NominatimRow = {
 type PlaceCandidate = ResolvedMemoryPlace & {
   importance: number;
   memoryHitCount: number;
-  latestDistanceKm: number | null;
 };
 
 export type ResolveMemoryPlaceInput = {
@@ -115,7 +113,6 @@ const countryCodeFor = (row: NominatimRow) => {
 const candidateFor = (
   row: NominatimRow,
   memoryCoordinates: Coordinate[],
-  latestCoordinate: Coordinate | null,
 ): PlaceCandidate | null => {
   const center = coordinate(row.lat, row.lon);
   const displayName = typeof row.display_name === 'string' ? row.display_name.trim() : '';
@@ -134,7 +131,6 @@ const candidateFor = (
     attribution: NOMINATIM_ATTRIBUTION,
     importance: Math.max(0, finite(row.importance) || 0),
     memoryHitCount,
-    latestDistanceKm: latestCoordinate ? memoryDistanceKm(latestCoordinate, center) : null,
   };
 };
 
@@ -212,14 +208,11 @@ export const resolveMemoryPlace = async (input: ResolveMemoryPlaceInput): Promis
       fetchImpl: input.fetchImpl || fetch,
     });
     const memoryCoordinates = (input.memoryCoordinates || []).filter(point => Boolean(coordinate(point.lat, point.lng)));
-    const latestCoordinate = input.latestCoordinate
-      ? coordinate(input.latestCoordinate.lat, input.latestCoordinate.lng)
-      : null;
-    const candidates = rows.map(row => candidateFor(row, memoryCoordinates, latestCoordinate))
+    const candidates = rows.map(row => candidateFor(row, memoryCoordinates))
       .filter((candidate): candidate is PlaceCandidate => Boolean(candidate))
       .sort((left, right) => right.memoryHitCount - left.memoryHitCount
         || right.importance - left.importance
-        || (left.latestDistanceKm ?? Number.POSITIVE_INFINITY) - (right.latestDistanceKm ?? Number.POSITIVE_INFINITY));
+        || left.displayName.localeCompare(right.displayName));
     const selected = candidates[0] || null;
     if (!selected) return {
       resolvedPlace: null,
@@ -231,6 +224,28 @@ export const resolveMemoryPlace = async (input: ResolveMemoryPlaceInput): Promis
       },
       candidates: [],
     };
+    const publicCandidates = candidates.slice(0, 3).map(candidate => ({
+      name: candidate.name,
+      displayName: candidate.displayName,
+      type: candidate.type,
+      countryCode: candidate.countryCode,
+      center: candidate.center,
+      memoryHitCount: candidate.memoryHitCount,
+    }));
+    const runnerUp = candidates[1] || null;
+    const uniquelySupported = !runnerUp
+      || selected.memoryHitCount > runnerUp.memoryHitCount
+      || selected.importance >= runnerUp.importance + 0.1;
+    if (!uniquelySupported) return {
+      resolvedPlace: null,
+      summary: {
+        status: 'ambiguous',
+        query: place,
+        candidateCount: candidates.length,
+        message: 'Multiple public places remain plausible. Ask the user to choose one before searching memories.',
+      },
+      candidates: publicCandidates,
+    };
     const resolvedPlace: ResolvedMemoryPlace = {
       name: selected.name,
       displayName: selected.displayName,
@@ -241,14 +256,6 @@ export const resolveMemoryPlace = async (input: ResolveMemoryPlaceInput): Promis
       provider: selected.provider,
       attribution: selected.attribution,
     };
-    const publicCandidates = candidates.slice(0, 3).map(candidate => ({
-      name: candidate.name,
-      displayName: candidate.displayName,
-      type: candidate.type,
-      countryCode: candidate.countryCode,
-      center: candidate.center,
-      memoryHitCount: candidate.memoryHitCount,
-    }));
     return {
       resolvedPlace,
       summary: {
@@ -257,7 +264,7 @@ export const resolveMemoryPlace = async (input: ResolveMemoryPlaceInput): Promis
         candidateCount: candidates.length,
         selectionReason: selected.memoryHitCount > 0
           ? 'candidate-with-most-saved-memory-locations'
-          : 'provider-importance-with-latest-recorded-memory-as-tie-breaker',
+          : 'provider-importance-clearly-ahead',
       },
       candidates: publicCandidates,
     };

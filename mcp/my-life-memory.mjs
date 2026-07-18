@@ -2,6 +2,6 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createMemoryMcpServer } from './memory-server.mjs';
 
-const server = createMemoryMcpServer();
+const server = await createMemoryMcpServer();
 const transport = new StdioServerTransport();
 await server.connect(transport);

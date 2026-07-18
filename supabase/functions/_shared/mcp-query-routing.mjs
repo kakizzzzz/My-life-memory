@@ -20,11 +20,14 @@ const englishNoise = /\b(?:please|show|find|search|look|review|evaluate|analyse|
 
 const locationIntent = /旅行|旅游|旅遊|出游|出遊|度假|行程|游记|遊記|観光|여행|관광|\b(?:trip|travel|vacation|holiday|journey|visit|visited|to|in|at|from|near|around)\b/i;
 
-const personalIdentityIntent = /我家|我的家|家附近|住处|住處|住所|居住地|我住的地方|我住在|我工作|工作的地方|工作地点|工作地點|上班的地方|上班地点|上班地點|公司附近|办公室附近|辦公室附近|我学习|我學習|学习的地方|學習的地方|上学的地方|上學的地方|学校附近|學校附近|校园附近|校園附近|\b(?:my home|near home|where i live|my residence|where i work|my workplace|near my office|where i study|my school|near my school)\b|自宅|家の近く|住んでいる場所|仕事場|職場|勉強する場所|学校の近く|우리 집|집 근처|사는 곳|직장|회사 근처|학교 근처|공부하는 곳/i;
-const personalEventIntent = /(?:我|本人).{0,32}(?:看到|看见|看見|见到|見到|遇见|遇見|遇到|发现|發現|拍到|做|制作|製作|参加|參加|体验|體驗|吃|喝|运动|運動|锻炼|鍛鍊|跑步|散步|买|買|购物|購物|玩|游玩|遊玩|参观|參觀|拍摄|拍攝).{0,32}(?:地方|地点|地點|位置|哪里|哪裡|哪儿|哪兒|附近)|\bwhere i (?:saw|met|found|spotted|photographed|did|made|created|ate|dined|drank|exercised|ran|walked|shopped|played|visited)\b|(?:見た|見つけた|出会った|体験した|食べた|飲んだ|訪れた)場所|(?:본|만난|발견한|한|먹은|마신|방문한) 곳/i;
-const privatePlaceCandidate = /^(?:家|我家|住处|住處|住所|公司|单位|單位|办公室|辦公室|学校|學校|校园|校園|home|my home|office|my office|workplace|school|my school|自宅|職場|学校|우리 집|직장|학교)$/i;
+const personalIdentityIntent = /我家|我的家|家附近|住处|住處|住所|居住地|我住的地方|我住在|我工作|我的工作地点|我的工作地點|工作的地方|工作地点|工作地點|上班的地方|上班地点|上班地點|我公司|我的公司|我的办公室|我的辦公室|公司附近|办公室附近|辦公室附近|我学习|我學習|我的学校|我的學校|学习的地方|學習的地方|上学的地方|上學的地方|学校附近|學校附近|校园附近|校園附近|\b(?:my (?:home|house|hometown|residence|office|workplace|company|job|school|campus|university|college|dormitory)|near (?:home|my office|my school)|where i (?:live|work|study)|place where i (?:live|work|study))\b|私の(?:家|自宅|住まい|地元|職場|会社|学校|大学|寮)|自宅|家の近く|住んでいる場所|仕事場|職場|勉強する場所|学校の近く|우리 (?:집|동네|고향)|내 (?:집|직장|회사|사무실|학교|대학교|기숙사)|집 근처|사는 곳|직장|회사 근처|학교 근처|공부하는 곳/i;
+const personalEventIntent = /(?:我|本人).{0,32}(?:看到|看见|看見|见到|見到|遇见|遇見|遇到|发现|發現|拍到|做|制作|製作|参加|參加|体验|體驗|吃|喝|运动|運動|锻炼|鍛鍊|跑步|散步|买|買|购物|購物|玩|游玩|遊玩|参观|參觀|拍摄|拍攝)|\b(?:where\s+)?(?:i|we)\s+(?:saw|met|found|spotted|photographed|did|made|created|ate|dined|drank|exercised|ran|walked|shopped|played|visited)\b|(?:私|僕|私たち).{0,24}(?:見た|見つけた|出会った|体験した|食べた|飲んだ|訪れた)|(?:내가|나는|저는|우리가).{0,24}(?:봤|보았|만났|발견|했|먹|마셨|방문)|(?:見た|見つけた|出会った|体験した|食べた|飲んだ|訪れた)場所|(?:본|만난|발견한|한|먹은|마신|방문한) 곳/i;
+const privatePossessiveMarker = /(?:我的|我家|本人|我们|我們|我住|我公司|我单位|我單位|我工作|我上班|我学习|我學習|\b(?:my|our)\s+(?:home|house|residence|address|hometown|neighbou?rhood|town|city|village|office|workplace|company|employer|job|school|campus|university|college|dorm|dormitory)\b|\b(?:where|place\s+where)\s+i\s+(?:live|work|study)\b|私の(?:家|自宅|住まい|住所|地元|職場|会社|学校|大学|寮)|僕の(?:家|自宅|住まい|地元|職場|会社|学校|大学|寮)|내\s*(?:집|주소|동네|고향|직장|회사|사무실|학교|대학교|기숙사)|나의\s*(?:집|주소|동네|고향|직장|회사|사무실|학교|대학교|기숙사)|우리\s*(?:집|주소|동네|고향|직장|회사|사무실|학교|대학교|기숙사))/iu;
+const privateRelationOnly = /^(?:家|住处|住處|住所|居住地|公司|单位|單位|办公室|辦公室|工作地点|工作地點|学校|學校|校园|校園|home|office|workplace|company|school|campus|residence|自宅|職場|会社|学校|집|직장|회사|학교)$/iu;
+const nonPlaceQuestionOnly = /^(?:哪里|哪裡|哪儿|哪兒|地方|地点|地點|位置|附近|周围|周圍|where|place|location|nearby|around|どこ|場所|近く|어디|곳|근처)$/iu;
 const cjkEventAction = '看到|看见|看見|见到|見到|遇见|遇見|遇到|发现|發現|拍到|目睹|做|制作|製作|参加|參加|体验|體驗|吃|喝|运动|運動|锻炼|鍛鍊|跑步|散步|买|買|购物|購物|玩|游玩|遊玩|参观|參觀|拍摄|拍攝';
 const personalEventLocationShape = new RegExp(`(?:在|于|於)\\s*[\\p{L}\\p{N}·.' -]{1,80}?\\s*(?:${cjkEventAction})`, 'u');
+const publicEventSentenceShape = /(?:で(?:見た|見つけた|出会った|体験した|食べた|飲んだ|訪れた)|에서\s*(?:봤|보았|만났|발견|했|먹|마셨|방문))/u;
 
 const cleanExplicitPlace = value => String(value || '')
   .replace(/^(?:the\s+)?/i, '')
@@ -33,15 +36,31 @@ const cleanExplicitPlace = value => String(value || '')
   .replace(/\s+/g, ' ')
   .trim();
 
+export const isSafePublicPlaceCandidate = value => {
+  const candidate = cleanExplicitPlace(value);
+  if (!candidate || candidate.length > 80) return false;
+  if (privatePossessiveMarker.test(candidate)
+    || privateRelationOnly.test(candidate)
+    || nonPlaceQuestionOnly.test(candidate)
+    || personalIdentityIntent.test(candidate)
+    || personalEventIntent.test(candidate)
+    || personalEventLocationShape.test(candidate)
+    || publicEventSentenceShape.test(candidate)) return false;
+  if (/https?:\/\//i.test(candidate) || /^-?\d+(?:\.\d+)?\s*[,，]/.test(candidate)) return false;
+  const compact = candidate.replace(/[^\p{L}\p{N}]+/gu, '');
+  return compact.length >= 2 && !/^\d+$/u.test(compact);
+};
+
 export const inferExplicitPlaceFromPersonalEvent = value => {
   const source = normalizeQuery(value);
   if (!source) return '';
   const cjk = source.match(new RegExp(`(?:在|于|於)\\s*([\\p{L}\\p{N}·.' -]{1,80}?)\\s*(?:${cjkEventAction})`, 'u'));
   const english = source.match(/\b(?:in|at)\s+([\p{L}\p{N}·.' -]{2,80}?)\s+(?:i\s+)?(?:saw|met|found|spotted|photographed|did|made|created|ate|dined|drank|exercised|ran|walked|shopped|played|visited)\b/iu);
+  const englishTrailing = source.match(/\b(?:i\s+)?(?:saw|met|found|spotted|photographed|did|made|created|ate|dined|drank|exercised|ran|walked|shopped|played|visited)\b.*?\b(?:in|at)\s+([\p{L}\p{N}·.' -]{2,80}?)(?:[.!?,]|$)/iu);
   const japanese = source.match(/([\p{L}\p{N}·.' -]{1,60}?)で(?:見た|見つけた|出会った|体験した|食べた|飲んだ|訪れた)/u);
   const korean = source.match(/([\p{L}\p{N}·.' -]{1,60}?)에서(?:\s*)(?:봤|보았|만났|발견|했|먹|마셨|방문)/u);
-  const candidate = cleanExplicitPlace(cjk?.[1] || english?.[1] || japanese?.[1] || korean?.[1] || '');
-  if (!candidate || candidate.length > 80 || privatePlaceCandidate.test(candidate)) return '';
+  const candidate = cleanExplicitPlace(cjk?.[1] || english?.[1] || englishTrailing?.[1] || japanese?.[1] || korean?.[1] || '');
+  if (!isSafePublicPlaceCandidate(candidate)) return '';
   return candidate;
 };
 
@@ -81,7 +100,8 @@ export const inferMemoryPlaceHint = value => {
 
   const compact = candidate.replace(/[^\p{L}\p{N}]+/gu, '');
   if (compact.length < 2 || candidate.length > 80 || /^\d+$/u.test(compact)) return '';
-  if (!hadLocationIntent && candidate.split(/\s+/).length > 4) return '';
+  if (!hadLocationIntent) return '';
+  if (!isSafePublicPlaceCandidate(candidate)) return '';
   return candidate;
 };
 
@@ -98,7 +118,7 @@ export const contextualSearchInput = input => {
   const place = inferMemoryPlaceHint(query);
   return {
     query,
-    ...(place ? { place } : {}),
+    ...(place ? { place, placeSource: 'query-span' } : {}),
     ...(typeof input.dateFrom === 'string' && input.dateFrom ? { dateFrom: input.dateFrom } : {}),
     ...(typeof input.dateTo === 'string' && input.dateTo ? { dateTo: input.dateTo } : {}),
     limit: Math.min(100, Math.max(1, Number(input.limit) || 20)),
