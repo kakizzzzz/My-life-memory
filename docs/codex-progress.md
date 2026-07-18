@@ -6,7 +6,8 @@
 - Branch: `main`
 - Implementation commit: `314d50b` (`feat: compose evidence-grounded memory research`)
 - Test and documentation commit: `8118f9d` (`test: cover compositional MCP retrieval`)
-- Deployed source HEAD: `e9e01dbd07c1194b135d05e9180306d5eeedcfac`
+- Host-review hardening commit: `e6af2f3564ae34c668fcf84ca13ed67f36669573` (`fix: harden evidence-grounded MCP fallback`)
+- Deployed source HEAD: `e6af2f3564ae34c668fcf84ca13ed67f36669573`
 - Objective: upgrade the existing nine-tool, read-only MCP into a compositional, evidence-grounded personal-memory retrieval system without changing the database schema or unrelated UI.
 
 ## Files Inspected
@@ -131,7 +132,8 @@
 - [Complete] Add explicit query-clock versus memory-timestamp semantics.
 - [Complete] Add targeted regressions for institutional stays, exact-quote host review, ambiguous anchors, event evidence, transport parity, and timestamp semantics.
 - [Complete] Run the complete validation suite and inspect the final diff.
-- [Pending] Commit, push, and deploy the two changed Edge Functions.
+- [Complete] Commit and push the hardened retrieval contract to `origin/main`.
+- [Complete] Deploy the changed `mcp` and `memory-api` Edge Functions from `e6af2f3`.
 - Targeted validation: `npm run lint` passed; `node --import tsx --test tests/memoryCompositionalResearch.test.ts tests/timeZone.test.ts tests/mcpTransport.test.ts` passed 40/40.
 - Final targeted retrieval/transport/timezone validation passed 49/49 after the unverified-candidate wording was restored.
 - `npm run lint`: passed with exit code 0.
@@ -143,6 +145,9 @@
 - `git diff --check`: passed with no whitespace errors.
 - Final review confirmed exactly nine public read-only MCP tools, no model SDK or model endpoint, no public-geocoder use of private aliases, and no database migration.
 - Decision: the user's existing AI conversation host may optionally use its own reasoning to review bounded excerpts and call the same tool again. My Life Memory contains no model runtime, calls no model API, requires no model key, and incurs no model-service cost.
+- Supabase deployment: `mcp` and `memory-api` both returned `Deployed Functions.` with exit code 0 on 2026-07-18.
+- Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; unauthenticated `memory-api` returned HTTP 401 with `A valid user token is required.`
+- GitHub verification: CI run `29637411384` and Pages run `29637471917` both completed successfully for `e6af2f3`.
 
 ## Follow-up: Weak-client Hallucination Hardening
 
