@@ -323,7 +323,7 @@
 - [Complete] Accept only string or integer request IDs and return `-32600` with a null response ID for null, fractional, boolean, or object IDs.
 - [Complete] Add targeted tests for defaults, malformed types, unknown fields, bounds, required arguments, duplicate note IDs, tool-error mapping, local duplicate rejection, and request-ID validation.
 - [Complete] Run the full validation suite and inspect the final diff.
-- [In progress] Commit, push, deploy only the changed `mcp` Function, and verify production/GitHub results.
+- [Complete] Commit, push, deploy only the changed `mcp` Function, and verify production/GitHub results.
 - Targeted MCP transport and runtime suite: 17 passed, 0 failed.
 - Final `npm run lint`: passed; `typecheck` completed with exit code 0.
 - Final `npm run lint:edge`: passed all six production Edge Functions with Deno 2.4.3 and exit code 0.
@@ -333,3 +333,8 @@
 - Final review confirmed exactly nine public tools, all read-only; no migration, UI, database, app-state, or write-capability change; and no committed secret.
 - Specification check: MCP 2025-03-26 requires string or integer non-null request IDs, server-side input validation, and tool-result errors for API/input/business failures.
 - Decision: no migration, database change, UI change, new tool, write capability, model runtime, embedding service, or vector database is required.
+- Source result: commit `556e5e48b0ab9dbcf87c38b80bc812b207b1d618` (`fix: enforce MCP tool contracts`) was pushed to `origin/main`.
+- Supabase result: only the `mcp` Function was deployed to project `mbclmtoxxxxahbzissgm`; the CLI returned `Deployed Functions.` No migration, `supabase db push`, or unrelated Function deployment was run.
+- Token handling: the temporary Supabase access token existed only in the deployment process environment and disappeared with that process; it was not written to the repository, `.env`, shell configuration, or logs.
+- Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; a concrete disallowed Origin returned HTTP 403 `Origin not allowed`.
+- GitHub verification: CI run `29689562578` and Pages run `29689645138` both completed successfully for `556e5e48b0ab9dbcf87c38b80bc812b207b1d618`.
