@@ -70,3 +70,21 @@ export const isJsonRpcInitialize = (value: unknown) => (
   && !Array.isArray(value)
   && (value as Record<string, unknown>).method === 'initialize'
 );
+
+export const isValidJsonRpcRequestId = (value: unknown): value is string | number => (
+  typeof value === 'string'
+  || (typeof value === 'number' && Number.isInteger(value))
+);
+
+export const hasInvalidJsonRpcRequestId = (value: unknown) => (
+  Boolean(value)
+  && typeof value === 'object'
+  && !Array.isArray(value)
+  && typeof (value as Record<string, unknown>).method === 'string'
+  && 'id' in (value as Record<string, unknown>)
+  && !isValidJsonRpcRequestId((value as Record<string, unknown>).id)
+);
+
+export const validJsonRpcRequestIdOrNull = (value: unknown) => (
+  isValidJsonRpcRequestId(value) ? value : null
+);

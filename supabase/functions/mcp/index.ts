@@ -12,14 +12,22 @@ import {
   MCP_SERVER_VERSION,
 } from '../_shared/mcp-memory-contract.mjs';
 import { MCP_TOOL_MANIFEST } from '../_shared/mcp-tool-manifest.mjs';
+import { validateMcpToolArguments } from '../_shared/mcp-tool-validation.mjs';
+import {
+  createMemoryApiRequestError,
+  expectedMemoryApiToolResult,
+  mcpToolErrorResult,
+} from '../_shared/mcp-tool-runtime.ts';
 import {
   createMcpCorsHeaders,
+  hasInvalidJsonRpcRequestId,
   isJsonRpcInitialize,
   isJsonRpcNotification,
   isJsonRpcResponse,
   isMcpOriginAllowed,
   isSupportedMcpProtocolHeader,
   negotiateMcpProtocolVersion,
+  validJsonRpcRequestIdOrNull,
 } from '../_shared/mcp-transport.ts';
 import {
   buildMcpImageContent,
@@ -192,8 +200,7 @@ const callMemoryApi = async (config: ReturnType<typeof getConfig>, userId: strin
   });
   const payload = await readJsonResponse(response);
   if (!response.ok || payload?.error) {
-    const error = payload?.error || payload || {};
-    throw new Error(error.message || error.msg || `Memory API failed with HTTP ${response.status}`);
+    throw createMemoryApiRequestError(response.status, payload);
   }
   return payload;
 };
@@ -262,52 +269,64 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
 
   if (method === 'tools/call') {
     const toolName = getString(params.name);
-    const args = params.arguments && typeof params.arguments === 'object'
-      ? params.arguments as Record<string, unknown>
-      : {};
     const tools = availableTools();
     if (!tools.some(tool => tool.name === toolName)) {
       return rpcError(id, -32602, `Unknown or disabled tool: ${toolName}`);
     }
-    if (toolName === 'get_memory_images') {
-      const payload = await callMemoryApi(config, userId, 'get_note_media', {
-        noteIds: args.noteIds,
-      });
-      const media = Array.isArray(payload?.media)
-        ? payload.media as MemoryImageReference[]
-        : [];
-      const result = await buildMcpImageContent({
-        userId,
-        media,
-        maxImages: Number(args.maxImages) || 3,
-        download: (reference, signal, maxBytes) => (
-          downloadPrivateMemoryImage(config, reference, signal, maxBytes)
-        ),
-      });
-      return rpcResult(id, { content: result.content });
+    const rawArgs = Object.prototype.hasOwnProperty.call(params, 'arguments')
+      ? params.arguments
+      : {};
+    const validation = validateMcpToolArguments(toolName, rawArgs);
+    if (!validation.ok) {
+      return rpcResult(id, mcpToolErrorResult(`Invalid tool arguments: ${validation.message}`));
     }
-    let payload = await callMemoryApi(config, userId, toolName, args);
-    if (toolName === 'search_memories' && shouldUseContextualSearchFallback(payload, args)) {
-      const contextual = await callMemoryApi(
-        config,
-        userId,
-        'research_memory_context',
-        contextualSearchInput(args),
-      );
-      payload = mergeContextualSearchFallback(payload, contextual);
+    const args = validation.value as Record<string, unknown>;
+
+    try {
+      if (toolName === 'get_memory_images') {
+        const payload = await callMemoryApi(config, userId, 'get_note_media', {
+          noteIds: args.noteIds,
+        });
+        const media = Array.isArray(payload?.media)
+          ? payload.media as MemoryImageReference[]
+          : [];
+        const result = await buildMcpImageContent({
+          userId,
+          media,
+          maxImages: args.maxImages as number,
+          download: (reference, signal, maxBytes) => (
+            downloadPrivateMemoryImage(config, reference, signal, maxBytes)
+          ),
+        });
+        return rpcResult(id, { content: result.content });
+      }
+      let payload = await callMemoryApi(config, userId, toolName, args);
+      if (toolName === 'search_memories' && shouldUseContextualSearchFallback(payload, args)) {
+        const contextual = await callMemoryApi(
+          config,
+          userId,
+          'research_memory_context',
+          contextualSearchInput(args),
+        );
+        payload = mergeContextualSearchFallback(payload, contextual);
+      }
+      const isResearch = toolName === 'research_memory_context';
+      const isContextualFallback = toolName === 'search_memories'
+        && payload?.resolvedAction === 'research_memory_context';
+      return rpcResult(id, {
+        content: [{
+          type: 'text',
+          text: isResearch || isContextualFallback
+            ? memoryResearchTextContent(payload)
+            : JSON.stringify(payload, null, 2),
+        }],
+        ...(isResearch ? { structuredContent: payload } : {}),
+      });
+    } catch (error) {
+      const toolError = expectedMemoryApiToolResult(error);
+      if (toolError) return rpcResult(id, toolError);
+      throw error;
     }
-    const isResearch = toolName === 'research_memory_context';
-    const isContextualFallback = toolName === 'search_memories'
-      && payload?.resolvedAction === 'research_memory_context';
-    return rpcResult(id, {
-      content: [{
-        type: 'text',
-        text: isResearch || isContextualFallback
-          ? memoryResearchTextContent(payload)
-          : JSON.stringify(payload, null, 2),
-      }],
-      ...(isResearch ? { structuredContent: payload } : {}),
-    });
   }
 
   return rpcError(id, -32601, `Method not found: ${method}`);
@@ -398,6 +417,9 @@ serve(async request => {
           || (message as Record<string, unknown>).jsonrpc !== '2.0') {
           return rpcError(null, -32600, 'Invalid Request');
         }
+        if (hasInvalidJsonRpcRequestId(message)) {
+          return rpcError(null, -32600, 'Invalid Request');
+        }
         return handleRpcMessage(message as Record<string, unknown>, config, auth.userId);
       }))).filter(result => result !== null);
       if (results.length === 0) {
@@ -412,17 +434,33 @@ serve(async request => {
       return new Response(null, { status: 202, headers: localCorsHeaders });
     }
     if ((body as Record<string, unknown>).jsonrpc !== '2.0') {
-      return json(rpcError((body as Record<string, unknown>).id, -32600, 'Invalid Request'), 400);
+      return json(rpcError(
+        validJsonRpcRequestIdOrNull((body as Record<string, unknown>).id),
+        -32600,
+        'Invalid Request',
+      ), 400);
+    }
+    if (hasInvalidJsonRpcRequestId(body)) {
+      return json(rpcError(null, -32600, 'Invalid Request'), 400);
     }
     if (!isJsonRpcInitialize(body)
       && !isSupportedMcpProtocolHeader(request.headers.get('mcp-protocol-version'))) {
-      return json(rpcError((body as Record<string, unknown>).id, -32600, 'Unsupported MCP-Protocol-Version header.'), 400);
+      return json(rpcError(
+        validJsonRpcRequestIdOrNull((body as Record<string, unknown>).id),
+        -32600,
+        'Unsupported MCP-Protocol-Version header.',
+      ), 400);
     }
     const result = await handleRpcMessage(body as Record<string, unknown>, config, auth.userId);
     if (!result) return new Response(null, { status: 202, headers: localCorsHeaders });
     return json(result);
   } catch (error) {
-    const id = body && typeof body === 'object' && 'id' in body ? (body as Record<string, unknown>).id : null;
-    return json(rpcError(id, -32603, error instanceof Error ? error.message : 'Internal server error'), 500);
+    console.error('MCP request failed unexpectedly', {
+      message: error instanceof Error ? error.message : 'Unknown request error',
+    });
+    const rawId = body && typeof body === 'object' && 'id' in body
+      ? (body as Record<string, unknown>).id
+      : null;
+    return json(rpcError(validJsonRpcRequestIdOrNull(rawId), -32603, 'Internal server error'), 500);
   }
 });

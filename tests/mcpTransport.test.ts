@@ -10,13 +10,16 @@ import {
 } from '../supabase/functions/_shared/mcp-tool-manifest.mjs';
 import {
   createMcpCorsHeaders,
+  hasInvalidJsonRpcRequestId,
   isJsonRpcInitialize,
   isJsonRpcNotification,
   isJsonRpcResponse,
   isMcpOriginAllowed,
   isSupportedMcpProtocolHeader,
+  isValidJsonRpcRequestId,
   MCP_PROTOCOL_VERSION,
   negotiateMcpProtocolVersion,
+  validJsonRpcRequestIdOrNull,
 } from '../supabase/functions/_shared/mcp-transport.ts';
 
 const source = readFileSync(new URL('../supabase/functions/mcp/index.ts', import.meta.url), 'utf8');
@@ -73,6 +76,23 @@ test('JSON-RPC classifiers distinguish requests, notifications, responses, and i
   assert.match(source, /The initialize request must not be sent in a JSON-RPC batch/);
   assert.match(source, /status: 202/);
   assert.match(source, /results\.length === 0/);
+});
+
+test('JSON-RPC request ids accept only strings and integers', () => {
+  assert.equal(isValidJsonRpcRequestId('request-1'), true);
+  assert.equal(isValidJsonRpcRequestId(0), true);
+  assert.equal(isValidJsonRpcRequestId(-4), true);
+  assert.equal(isValidJsonRpcRequestId(1.5), false);
+  assert.equal(isValidJsonRpcRequestId(null), false);
+  assert.equal(isValidJsonRpcRequestId(true), false);
+  assert.equal(isValidJsonRpcRequestId({}), false);
+  assert.equal(hasInvalidJsonRpcRequestId({ jsonrpc: '2.0', id: null, method: 'ping' }), true);
+  assert.equal(hasInvalidJsonRpcRequestId({ jsonrpc: '2.0', id: 1.5, method: 'ping' }), true);
+  assert.equal(hasInvalidJsonRpcRequestId({ jsonrpc: '2.0', method: 'notifications/initialized' }), false);
+  assert.equal(validJsonRpcRequestIdOrNull('request-1'), 'request-1');
+  assert.equal(validJsonRpcRequestIdOrNull(1.5), null);
+  assert.match(source, /hasInvalidJsonRpcRequestId\(message\)/);
+  assert.match(source, /hasInvalidJsonRpcRequestId\(body\)/);
 });
 
 test('cloud MCP exposes JSON Streamable HTTP instead of a legacy SSE endpoint', () => {
@@ -159,7 +179,16 @@ test('cloud MCP exposes bounded private image blocks for relevant notes', () => 
   const imageTool = MCP_TOOL_MANIFEST.find(tool => tool.name === 'get_memory_images');
   assert.ok(imageTool);
   assert.equal(imageTool.inputSchema.properties.noteIds.maxItems, 10);
+  assert.equal(imageTool.inputSchema.properties.noteIds.uniqueItems, true);
   assert.equal(imageTool.inputSchema.properties.maxImages.maximum, 6);
   assert.match(source, /buildMcpImageContent/);
   assert.match(source, /get_note_media/);
+});
+
+test('cloud MCP validates tool arguments and maps expected API failures to tool results', () => {
+  assert.match(source, /validateMcpToolArguments\(toolName, rawArgs\)/);
+  assert.match(source, /mcpToolErrorResult\(`Invalid tool arguments:/);
+  assert.match(source, /expectedMemoryApiToolResult\(error\)/);
+  assert.match(source, /createMemoryApiRequestError\(response\.status, payload\)/);
+  assert.match(source, /rpcError\(validJsonRpcRequestIdOrNull\(rawId\), -32603, 'Internal server error'\)/);
 });

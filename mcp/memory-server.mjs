@@ -11,6 +11,7 @@ import {
   MCP_SERVER_VERSION,
 } from '../supabase/functions/_shared/mcp-memory-contract.mjs';
 import { getMcpToolDefinition } from '../supabase/functions/_shared/mcp-tool-manifest.mjs';
+import { assertValidMcpToolArguments } from '../supabase/functions/_shared/mcp-tool-validation.mjs';
 import { memoryResearchOutputSchema } from './memory-output-schema.mjs';
 
 const env = process.env;
@@ -168,14 +169,23 @@ const getMemoryImageResult = async input => {
 
 const localToolConfig = (name, outputSchema) => {
   const definition = getMcpToolDefinition(name);
+  let inputSchema = z.fromJSONSchema(definition.inputSchema);
+  const noteIdsSchema = definition.inputSchema.properties?.noteIds;
+  if (noteIdsSchema?.uniqueItems === true && inputSchema.shape?.noteIds) {
+    inputSchema = inputSchema.extend({
+      noteIds: inputSchema.shape.noteIds.meta({ uniqueItems: true }),
+    });
+  }
   return {
     title: definition.title,
     description: definition.description,
-    inputSchema: z.fromJSONSchema(definition.inputSchema),
+    inputSchema,
     ...(outputSchema ? { outputSchema } : {}),
     annotations: definition.annotations,
   };
 };
+
+const validatedLocalInput = (name, input = {}) => assertValidMcpToolArguments(name, input);
 
 export const createMemoryMcpServer = async () => {
   const temporalPayload = await callMemoryApi('get_temporal_context').catch(() => null);
@@ -189,17 +199,20 @@ export const createMemoryMcpServer = async () => {
   server.registerTool(
     'research_memory_context',
     localToolConfig('research_memory_context', memoryResearchOutputSchema),
-    async input => memoryResearchResult(await callMemoryApi('research_memory_context', input)),
+    async input => memoryResearchResult(await callMemoryApi(
+      'research_memory_context',
+      validatedLocalInput('research_memory_context', input),
+    )),
   );
 
   server.registerTool(
     'get_memory_images',
     localToolConfig('get_memory_images'),
-    getMemoryImageResult,
+    input => getMemoryImageResult(validatedLocalInput('get_memory_images', input)),
   );
 
   server.registerTool('search_memories', localToolConfig('search_memories'), async input => {
-    const result = await searchMemoriesWithContextFallback(input);
+    const result = await searchMemoriesWithContextFallback(validatedLocalInput('search_memories', input));
     return result?.resolvedAction === 'research_memory_context'
       ? { content: [{ type: 'text', text: memoryResearchText(result) }] }
       : textResult(result);
@@ -208,37 +221,55 @@ export const createMemoryMcpServer = async () => {
   server.registerTool(
     'list_locations',
     localToolConfig('list_locations'),
-    async () => textResult(await callMemoryApi('list_locations')),
+    async input => {
+      validatedLocalInput('list_locations', input);
+      return textResult(await callMemoryApi('list_locations'));
+    },
   );
 
   server.registerTool(
     'get_location_memory',
     localToolConfig('get_location_memory'),
-    async input => textResult(await callMemoryApi('get_location_memory', input)),
+    async input => textResult(await callMemoryApi(
+      'get_location_memory',
+      validatedLocalInput('get_location_memory', input),
+    )),
   );
 
   server.registerTool(
     'get_day_memory',
     localToolConfig('get_day_memory'),
-    async input => textResult(await callMemoryApi('get_day_memory', input)),
+    async input => textResult(await callMemoryApi(
+      'get_day_memory',
+      validatedLocalInput('get_day_memory', input),
+    )),
   );
 
   server.registerTool(
     'get_routes',
     localToolConfig('get_routes'),
-    async input => textResult(await callMemoryApi('get_routes', input)),
+    async input => textResult(await callMemoryApi(
+      'get_routes',
+      validatedLocalInput('get_routes', input),
+    )),
   );
 
   server.registerTool(
     'summarize_memory_range',
     localToolConfig('summarize_memory_range'),
-    async input => textResult(await callMemoryApi('summarize_memory_range', input)),
+    async input => textResult(await callMemoryApi(
+      'summarize_memory_range',
+      validatedLocalInput('summarize_memory_range', input),
+    )),
   );
 
   server.registerTool(
     'export_memory_report',
     localToolConfig('export_memory_report'),
-    async () => textResult(await callMemoryApi('export_memory_report')),
+    async input => {
+      validatedLocalInput('export_memory_report', input);
+      return textResult(await callMemoryApi('export_memory_report'));
+    },
   );
 
   return server;

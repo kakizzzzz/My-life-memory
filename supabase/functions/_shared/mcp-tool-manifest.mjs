@@ -98,6 +98,7 @@ export const MCP_TOOL_MANIFEST = [
           items: { type: 'string', minLength: 1, maxLength: 200 },
           minItems: 1,
           maxItems: 10,
+          uniqueItems: true,
         },
         maxImages: { type: 'integer', minimum: 1, maximum: 6, default: 3 },
       },

@@ -309,3 +309,27 @@
 - GitHub verification: CI run `29683987957` and Pages run `29684064381` both completed successfully for `cb6f14fea7e1f94e81a06f546a41e823b6a128aa`.
 - Repository cleanup: obsolete draft PR `#2` was closed without merging because its implementation is already superseded by `main`.
 - Remaining presentation-only action: the GitHub About description, homepage field, and formal GitHub Release require an authenticated repository-settings browser or GitHub CLI session; the code and production deployment do not depend on these fields.
+
+## Follow-up: Executable MCP Input And Error Contract
+
+- Baseline HEAD: `012f324c28fc88f63e84262ad3999a1bc7106e5b`.
+- Objective: make the cloud MCP execute the shared nine-tool input schemas, preserve local/cloud runtime parity, return expected Memory API failures as actionable tool errors, and reject invalid JSON-RPC request IDs without changing the database or product UI.
+- Files inspected: shared MCP manifest and transport helpers, cloud `mcp` and `memory-api` Functions, local MCP server, MCP transport/runtime tests, package scripts, and the MCP 2025-03-26 tools and base-protocol specifications.
+- [Complete] Restore the `uniqueItems` contract for private image note IDs.
+- [Complete] Compile the shared manifest into dependency-free validators that enforce types, required fields, unknown-field rejection, bounds, patterns, uniqueness, and defaults in both Node and Deno runtimes.
+- [Complete] Execute shared validation before every cloud tool call and add a local runtime guard for constraints not preserved by Zod JSON Schema conversion.
+- [Complete] Preserve the exact local/cloud published schema by restoring `uniqueItems` through Zod metadata while enforcing it through the shared validator.
+- [Complete] Map Memory API 4xx, 429, and structured business failures to MCP tool results with `isError: true`; keep genuine 5xx/program failures as generic `-32603` protocol errors without leaking internals.
+- [Complete] Accept only string or integer request IDs and return `-32600` with a null response ID for null, fractional, boolean, or object IDs.
+- [Complete] Add targeted tests for defaults, malformed types, unknown fields, bounds, required arguments, duplicate note IDs, tool-error mapping, local duplicate rejection, and request-ID validation.
+- [Complete] Run the full validation suite and inspect the final diff.
+- [In progress] Commit, push, deploy only the changed `mcp` Function, and verify production/GitHub results.
+- Targeted MCP transport and runtime suite: 17 passed, 0 failed.
+- Final `npm run lint`: passed; `typecheck` completed with exit code 0.
+- Final `npm run lint:edge`: passed all six production Edge Functions with Deno 2.4.3 and exit code 0.
+- Final `npm test`: 221 passed, 0 failed.
+- Final `npm run build`: passed; Vite transformed 2,247 modules. The existing large-chunk advisory remains non-blocking.
+- Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
+- Final review confirmed exactly nine public tools, all read-only; no migration, UI, database, app-state, or write-capability change; and no committed secret.
+- Specification check: MCP 2025-03-26 requires string or integer non-null request IDs, server-side input validation, and tool-result errors for API/input/business failures.
+- Decision: no migration, database change, UI change, new tool, write capability, model runtime, embedding service, or vector database is required.
