@@ -284,7 +284,7 @@
 - [Complete] Align the package and MCP versions at `1.0.0`, remove duplicate Vite ownership, add an explicit `typecheck` script, and pin the MapLibre/Leaflet bridge.
 - [Complete] Move the production migration, Vault, Cron, backup, rollback, and recovery runbook out of the product README and into `docs/backend-setup.md`.
 - [Complete] Run all validation commands, inspect the final diff, and record exact results.
-- [In progress] Commit and push the reviewed release, deploy the two changed Edge Functions, verify CI/Pages, and finish the GitHub repository metadata.
+- [Complete] Commit and push the reviewed release, deploy the two changed Edge Functions, verify CI/Pages, and close the obsolete draft PR.
 - Decision: do not refactor `useCloudAuthSync`, `App.tsx`, or `HomeScreen` during the final competition window.
 - Decision: no database migration is required for this protocol and documentation hardening.
 - Decision: support MCP `2025-03-26` until the newer transport contract is implemented completely; do not falsely advertise `2025-06-18` while retaining batch behavior removed by that version.
@@ -303,4 +303,9 @@
 - Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
 - Final `git diff --check`: passed with no whitespace errors.
 - Secret-pattern review found environment-variable names and security assertions only; no real Supabase personal token, service-role value, invite code, MCP token, or password was added.
-- Public GitHub Pages URL returned HTTP 200 before this release; post-push CI and Pages verification remains part of the deployment phase.
+- Source result: commit `cb6f14fea7e1f94e81a06f546a41e823b6a128aa` (`fix: harden MCP protocol and release docs`) was pushed to `origin/main`.
+- Supabase result: only `mcp` and `memory-api` were deployed to project `mbclmtoxxxxahbzissgm`; both deployments returned `Deployed Functions.` No migration or `supabase db push` was run.
+- Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; a concrete disallowed Origin returned HTTP 403 `Origin not allowed`; unauthenticated `memory-api` POST returned HTTP 401 `A valid user token is required.`
+- GitHub verification: CI run `29683987957` and Pages run `29684064381` both completed successfully for `cb6f14fea7e1f94e81a06f546a41e823b6a128aa`.
+- Repository cleanup: obsolete draft PR `#2` was closed without merging because its implementation is already superseded by `main`.
+- Remaining presentation-only action: the GitHub About description, homepage field, and formal GitHub Release require an authenticated repository-settings browser or GitHub CLI session; the code and production deployment do not depend on these fields.
