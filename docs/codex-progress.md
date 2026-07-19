@@ -348,7 +348,7 @@
 - [Complete] Reuse one Node/Deno-compatible Memory API error classifier in both MCP transports and prevent local 5xx details from reaching clients.
 - [Complete] Cap JSON-RPC batches at 20 messages and process them with at most 4 concurrent workers while preserving response order.
 - [Complete] Run targeted and complete validation, inspect the final diff, and verify exactly nine read-only tools remain.
-- [Pending] Commit, push, deploy only the changed cloud `mcp` Function, and verify production plus GitHub workflows.
+- [Complete] Commit, push, deploy only the changed cloud `mcp` Function, and verify production plus GitHub workflows.
 - Decision: do not add a validator-specific `radiusKm` exception. An omitted public field must remain omitted so it cannot be mistaken for explicit user input.
 - Decision: use a 20-message batch ceiling and four workers; this bounds cost and concurrency without changing individual JSON-RPC behavior.
 - Discovery: the first targeted test exposed an older coordinate fallback bug where an omitted radius became `null`, then `0`, then the 0.1 km clamp minimum. The scope resolver now distinguishes omission from an explicit numeric radius before applying the internal 5 km fallback.
@@ -361,3 +361,8 @@
 - Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
 - `git diff --check`: passed with no whitespace errors.
 - Final contract review confirmed exactly nine public tools and every tool remains read-only. The public manifest no longer declares a radius default, no unbounded `Promise.all(body.map(...))` remains in the cloud handler, and no real Supabase token, service-role value, invite code, MCP token, or password was added.
+- Source result: commit `cecf8d83bb8f9e60b609b4d5bb26cb1d7a1b1b21` (`fix: finalize MCP transport safeguards`) was pushed to `origin/main`.
+- Supabase result: only the `mcp` Function was deployed to project `mbclmtoxxxxahbzissgm`; the CLI returned `Deployed Functions.` No migration, `supabase db push`, database change, or unrelated Function deployment was run.
+- Token handling: the temporary Supabase access token was read silently into one deployment process, unset before that process exited, and never written to the repository, `.env`, shell configuration, or command output.
+- Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; a concrete disallowed Origin returned HTTP 403 `Origin not allowed`.
+- GitHub verification: CI run `29694342190` and Pages run `29694408928` both completed successfully for `cecf8d83bb8f9e60b609b4d5bb26cb1d7a1b1b21`.
