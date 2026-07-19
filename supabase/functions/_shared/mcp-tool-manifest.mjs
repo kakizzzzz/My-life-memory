@@ -75,7 +75,7 @@ export const MCP_TOOL_MANIFEST = [
         dateTo: optionalDateSchema,
         centerLat: { type: 'number', minimum: -90, maximum: 90 },
         centerLng: { type: 'number', minimum: -180, maximum: 180 },
-        radiusKm: { type: 'number', minimum: 0.1, maximum: 1000, default: 5 },
+        radiusKm: { type: 'number', minimum: 0.1, maximum: 1000 },
         limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
         semanticHints: semanticHintsSchema,
         referenceConfirmation: referenceConfirmationSchema,

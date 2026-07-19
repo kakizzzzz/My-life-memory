@@ -1,5 +1,28 @@
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 export const SUPPORTED_MCP_PROTOCOL_VERSIONS = [MCP_PROTOCOL_VERSION] as const;
+export const MCP_MAX_BATCH_MESSAGES = 20;
+export const MCP_BATCH_CONCURRENCY = 4;
+
+export const mapMcpBatchWithConcurrency = async <Input, Output>(
+  items: readonly Input[],
+  mapper: (item: Input, index: number) => Promise<Output>,
+  concurrency = MCP_BATCH_CONCURRENCY,
+) => {
+  const results = new Array<Output>(items.length);
+  const workerCount = Math.min(items.length, Math.max(1, Math.floor(concurrency)));
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+};
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://kakizzzzz.github.io',

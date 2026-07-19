@@ -11,6 +11,10 @@ import {
   MCP_SERVER_VERSION,
 } from '../supabase/functions/_shared/mcp-memory-contract.mjs';
 import { getMcpToolDefinition } from '../supabase/functions/_shared/mcp-tool-manifest.mjs';
+import {
+  createMemoryApiRequestError,
+  MEMORY_API_INTERNAL_ERROR_MESSAGE,
+} from '../supabase/functions/_shared/mcp-tool-runtime.mjs';
 import { assertValidMcpToolArguments } from '../supabase/functions/_shared/mcp-tool-validation.mjs';
 import { memoryResearchOutputSchema } from './memory-output-schema.mjs';
 
@@ -83,27 +87,39 @@ const getAccessToken = async () => {
   return cachedSession.accessToken;
 };
 
-const callMemoryApi = async (action, input = {}) => {
-  const token = await getAccessToken();
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      ...input,
-      action,
-    }),
-  });
-  const payload = await readResponseJson(response);
+export const createLocalMemoryApiCaller = ({
+  fetchImpl = fetch,
+  accessTokenProvider = getAccessToken,
+  endpoint = apiUrl,
+  apiKey = supabaseAnonKey,
+} = {}) => async (action, input = {}) => {
+  const token = await accessTokenProvider();
+  let response;
+  let payload;
+  try {
+    response = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: apiKey,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...input,
+        action,
+      }),
+    });
+    payload = await readResponseJson(response);
+  } catch {
+    throw new Error(MEMORY_API_INTERNAL_ERROR_MESSAGE);
+  }
   if (!response.ok || payload?.error) {
-    const error = payload?.error || payload || {};
-    throw new Error(error.message || error.msg || `Memory API failed with HTTP ${response.status}`);
+    throw createMemoryApiRequestError(response.status, payload);
   }
   return payload;
 };
+
+const callMemoryApi = createLocalMemoryApiCaller();
 
 const textResult = value => ({
   content: [
@@ -125,10 +141,10 @@ const memoryResearchResult = value => ({
   structuredContent: value,
 });
 
-const searchMemoriesWithContextFallback = async input => {
-  const exact = await callMemoryApi('search_memories', input);
+const searchMemoriesWithContextFallback = async (input, memoryApiCaller) => {
+  const exact = await memoryApiCaller('search_memories', input);
   if (!shouldUseContextualSearchFallback(exact, input)) return exact;
-  const contextual = await callMemoryApi('research_memory_context', contextualSearchInput(input));
+  const contextual = await memoryApiCaller('research_memory_context', contextualSearchInput(input));
   return mergeContextualSearchFallback(exact, contextual);
 };
 
@@ -141,11 +157,11 @@ const getTokenUserId = token => {
   }
 };
 
-const getMemoryImageResult = async input => {
+const getMemoryImageResult = async (input, memoryApiCaller) => {
   const token = await getAccessToken();
   const userId = getTokenUserId(token);
   if (!userId) throw new Error('Could not resolve the authenticated user for image access.');
-  const payload = await callMemoryApi('get_note_media', { noteIds: input.noteIds });
+  const payload = await memoryApiCaller('get_note_media', { noteIds: input.noteIds });
   return buildImageToolResult({
     userId,
     media: Array.isArray(payload?.media) ? payload.media : [],
@@ -187,8 +203,8 @@ const localToolConfig = (name, outputSchema) => {
 
 const validatedLocalInput = (name, input = {}) => assertValidMcpToolArguments(name, input);
 
-export const createMemoryMcpServer = async () => {
-  const temporalPayload = await callMemoryApi('get_temporal_context').catch(() => null);
+export const createMemoryMcpServer = async ({ memoryApiCaller = callMemoryApi } = {}) => {
+  const temporalPayload = await memoryApiCaller('get_temporal_context').catch(() => null);
   const server = new McpServer({
     name: 'my-life-memory',
     version: MCP_SERVER_VERSION,
@@ -199,7 +215,7 @@ export const createMemoryMcpServer = async () => {
   server.registerTool(
     'research_memory_context',
     localToolConfig('research_memory_context', memoryResearchOutputSchema),
-    async input => memoryResearchResult(await callMemoryApi(
+    async input => memoryResearchResult(await memoryApiCaller(
       'research_memory_context',
       validatedLocalInput('research_memory_context', input),
     )),
@@ -208,11 +224,14 @@ export const createMemoryMcpServer = async () => {
   server.registerTool(
     'get_memory_images',
     localToolConfig('get_memory_images'),
-    input => getMemoryImageResult(validatedLocalInput('get_memory_images', input)),
+    input => getMemoryImageResult(validatedLocalInput('get_memory_images', input), memoryApiCaller),
   );
 
   server.registerTool('search_memories', localToolConfig('search_memories'), async input => {
-    const result = await searchMemoriesWithContextFallback(validatedLocalInput('search_memories', input));
+    const result = await searchMemoriesWithContextFallback(
+      validatedLocalInput('search_memories', input),
+      memoryApiCaller,
+    );
     return result?.resolvedAction === 'research_memory_context'
       ? { content: [{ type: 'text', text: memoryResearchText(result) }] }
       : textResult(result);
@@ -223,14 +242,14 @@ export const createMemoryMcpServer = async () => {
     localToolConfig('list_locations'),
     async input => {
       validatedLocalInput('list_locations', input);
-      return textResult(await callMemoryApi('list_locations'));
+      return textResult(await memoryApiCaller('list_locations'));
     },
   );
 
   server.registerTool(
     'get_location_memory',
     localToolConfig('get_location_memory'),
-    async input => textResult(await callMemoryApi(
+    async input => textResult(await memoryApiCaller(
       'get_location_memory',
       validatedLocalInput('get_location_memory', input),
     )),
@@ -239,7 +258,7 @@ export const createMemoryMcpServer = async () => {
   server.registerTool(
     'get_day_memory',
     localToolConfig('get_day_memory'),
-    async input => textResult(await callMemoryApi(
+    async input => textResult(await memoryApiCaller(
       'get_day_memory',
       validatedLocalInput('get_day_memory', input),
     )),
@@ -248,7 +267,7 @@ export const createMemoryMcpServer = async () => {
   server.registerTool(
     'get_routes',
     localToolConfig('get_routes'),
-    async input => textResult(await callMemoryApi(
+    async input => textResult(await memoryApiCaller(
       'get_routes',
       validatedLocalInput('get_routes', input),
     )),
@@ -257,7 +276,7 @@ export const createMemoryMcpServer = async () => {
   server.registerTool(
     'summarize_memory_range',
     localToolConfig('summarize_memory_range'),
-    async input => textResult(await callMemoryApi(
+    async input => textResult(await memoryApiCaller(
       'summarize_memory_range',
       validatedLocalInput('summarize_memory_range', input),
     )),
@@ -268,7 +287,7 @@ export const createMemoryMcpServer = async () => {
     localToolConfig('export_memory_report'),
     async input => {
       validatedLocalInput('export_memory_report', input);
-      return textResult(await callMemoryApi('export_memory_report'));
+      return textResult(await memoryApiCaller('export_memory_report'));
     },
   );
 

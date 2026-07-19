@@ -235,9 +235,10 @@ const resolveSpatialScope = (input: MemoryResearchInput): SpatialScope | null =>
   const queryCenter = parseCoordinatePair(String(input.query || ''));
   const center = explicitCenter || queryCenter;
   if (center) {
-    const radius = Number.isFinite(Number(input.radiusKm))
+    const parsedRadius = parseRadiusKm(String(input.query || ''));
+    const radius = Number.isFinite(input.radiusKm)
       ? Number(input.radiusKm)
-      : parseRadiusKm(String(input.query || ''));
+      : parsedRadius ?? DEFAULT_RADIUS_KM;
     return {
       mode: 'radius',
       center,

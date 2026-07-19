@@ -17,6 +17,9 @@ import {
   isMcpOriginAllowed,
   isSupportedMcpProtocolHeader,
   isValidJsonRpcRequestId,
+  mapMcpBatchWithConcurrency,
+  MCP_BATCH_CONCURRENCY,
+  MCP_MAX_BATCH_MESSAGES,
   MCP_PROTOCOL_VERSION,
   negotiateMcpProtocolVersion,
   validJsonRpcRequestIdOrNull,
@@ -76,6 +79,28 @@ test('JSON-RPC classifiers distinguish requests, notifications, responses, and i
   assert.match(source, /The initialize request must not be sent in a JSON-RPC batch/);
   assert.match(source, /status: 202/);
   assert.match(source, /results\.length === 0/);
+});
+
+test('cloud MCP bounds batch size and preserves order with four workers', async () => {
+  assert.equal(MCP_MAX_BATCH_MESSAGES, 20);
+  assert.equal(MCP_BATCH_CONCURRENCY, 4);
+  let active = 0;
+  let maxActive = 0;
+  const values = Array.from({ length: 12 }, (_, index) => index);
+  const results = await mapMcpBatchWithConcurrency(values, async value => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await new Promise(resolve => setTimeout(resolve, (value % 3) + 1));
+    active -= 1;
+    return value * 2;
+  });
+
+  assert.deepEqual(results, values.map(value => value * 2));
+  assert.ok(maxActive <= MCP_BATCH_CONCURRENCY);
+  assert.ok(maxActive > 1);
+  assert.match(source, /body\.length > MCP_MAX_BATCH_MESSAGES/);
+  assert.match(source, /mapMcpBatchWithConcurrency\(body/);
+  assert.doesNotMatch(source, /Promise\.all\(body\.map/);
 });
 
 test('JSON-RPC request ids accept only strings and integers', () => {

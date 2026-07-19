@@ -338,3 +338,26 @@
 - Token handling: the temporary Supabase access token existed only in the deployment process environment and disappeared with that process; it was not written to the repository, `.env`, shell configuration, or logs.
 - Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; a concrete disallowed Origin returned HTTP 403 `Origin not allowed`.
 - GitHub verification: CI run `29689562578` and Pages run `29689645138` both completed successfully for `556e5e48b0ab9dbcf87c38b80bc812b207b1d618`.
+
+## Follow-up: Radius Semantics, Local Error Safety, And Batch Bounds
+
+- Baseline HEAD: `826157e36083dea9e09b23aa2aeaf93029c5c372`.
+- Objective: preserve explicit-radius semantics through shared tool validation, align local stdio error disclosure with cloud MCP, and bound cloud JSON-RPC batch fan-out without changing the database, UI, public tool count, or read-only boundary.
+- Files inspected: shared MCP tool manifest, validation/runtime/transport helpers, compositional memory research and answer-boundary logic, cloud MCP handler, local stdio MCP server, MCP runtime/transport/compositional tests, and this progress record.
+- [Complete] Remove the public `radiusKm` default while retaining the research layer's internal 5 km effective fallback.
+- [Complete] Reuse one Node/Deno-compatible Memory API error classifier in both MCP transports and prevent local 5xx details from reaching clients.
+- [Complete] Cap JSON-RPC batches at 20 messages and process them with at most 4 concurrent workers while preserving response order.
+- [Complete] Run targeted and complete validation, inspect the final diff, and verify exactly nine read-only tools remain.
+- [Pending] Commit, push, deploy only the changed cloud `mcp` Function, and verify production plus GitHub workflows.
+- Decision: do not add a validator-specific `radiusKm` exception. An omitted public field must remain omitted so it cannot be mistaken for explicit user input.
+- Decision: use a 20-message batch ceiling and four workers; this bounds cost and concurrency without changing individual JSON-RPC behavior.
+- Discovery: the first targeted test exposed an older coordinate fallback bug where an omitted radius became `null`, then `0`, then the 0.1 km clamp minimum. The scope resolver now distinguishes omission from an explicit numeric radius before applying the internal 5 km fallback.
+- Targeted MCP runtime and transport suite: 20 passed, 0 failed after the fallback correction.
+- Targeted invariants confirmed: an exact personal-anchor query remains `exact`; coordinate research without an explicit radius uses 5 km; local 4xx text remains actionable; local 500 detail is replaced by the generic internal-error text; batch result order is stable and observed concurrency never exceeds four.
+- `npm run lint`: passed; TypeScript completed with exit code 0.
+- `npm run lint:edge`: passed all six production Edge Functions with Deno and exit code 0.
+- Final `npm test`: 224 passed, 0 failed.
+- Final `npm run build`: passed; Vite transformed 2,247 modules. The two existing large-chunk advisories remain non-blocking and no UI bundle ownership changed in this follow-up.
+- Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
+- `git diff --check`: passed with no whitespace errors.
+- Final contract review confirmed exactly nine public tools and every tool remains read-only. The public manifest no longer declares a radius default, no unbounded `Promise.all(body.map(...))` remains in the cloud handler, and no real Supabase token, service-role value, invite code, MCP token, or password was added.

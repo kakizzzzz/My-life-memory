@@ -17,7 +17,7 @@ import {
   createMemoryApiRequestError,
   expectedMemoryApiToolResult,
   mcpToolErrorResult,
-} from '../_shared/mcp-tool-runtime.ts';
+} from '../_shared/mcp-tool-runtime.mjs';
 import {
   createMcpCorsHeaders,
   hasInvalidJsonRpcRequestId,
@@ -26,6 +26,8 @@ import {
   isJsonRpcResponse,
   isMcpOriginAllowed,
   isSupportedMcpProtocolHeader,
+  mapMcpBatchWithConcurrency,
+  MCP_MAX_BATCH_MESSAGES,
   negotiateMcpProtocolVersion,
   validJsonRpcRequestIdOrNull,
 } from '../_shared/mcp-transport.ts';
@@ -405,13 +407,20 @@ serve(async request => {
       if (body.length === 0) {
         return json(rpcError(null, -32600, 'Invalid Request: empty batch'), 400);
       }
+      if (body.length > MCP_MAX_BATCH_MESSAGES) {
+        return json(rpcError(
+          null,
+          -32600,
+          `Invalid Request: a batch may contain at most ${MCP_MAX_BATCH_MESSAGES} messages.`,
+        ), 400);
+      }
       if (body.some(isJsonRpcInitialize)) {
         return json(rpcError(null, -32600, 'The initialize request must not be sent in a JSON-RPC batch.'), 400);
       }
       if (!isSupportedMcpProtocolHeader(request.headers.get('mcp-protocol-version'))) {
         return json(rpcError(null, -32600, 'Unsupported MCP-Protocol-Version header.'), 400);
       }
-      const results = (await Promise.all(body.map(message => {
+      const results = (await mapMcpBatchWithConcurrency(body, async message => {
         if (isJsonRpcResponse(message)) return null;
         if (!message || typeof message !== 'object' || Array.isArray(message)
           || (message as Record<string, unknown>).jsonrpc !== '2.0') {
@@ -421,7 +430,7 @@ serve(async request => {
           return rpcError(null, -32600, 'Invalid Request');
         }
         return handleRpcMessage(message as Record<string, unknown>, config, auth.userId);
-      }))).filter(result => result !== null);
+      })).filter(result => result !== null);
       if (results.length === 0) {
         return new Response(null, { status: 202, headers: localCorsHeaders });
       }

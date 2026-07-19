@@ -1,12 +1,8 @@
-type ErrorRecord = Record<string, unknown>;
+const isRecord = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const isRecord = (value: unknown): value is ErrorRecord => (
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-);
+const stringValue = value => (typeof value === 'string' ? value.trim() : '');
 
-const stringValue = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
-
-const errorDetails = (payload: unknown) => {
+const errorDetails = payload => {
   const root = isRecord(payload) ? payload : {};
   const nested = isRecord(root.error) ? root.error : root;
   return {
@@ -19,32 +15,22 @@ const errorDetails = (payload: unknown) => {
   };
 };
 
-const publicMessageFor = (status: number, message: string) => {
+const publicMessageFor = (status, message) => {
   if (status === 401) return 'Memory access was not authorized.';
   if (status === 429) return message || 'Memory access is temporarily rate limited. Please retry shortly.';
   return message || 'The memory request could not be completed.';
 };
 
-export class MemoryApiRequestError extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly expectedToolError: boolean;
-  readonly publicMessage: string;
+export const MEMORY_API_INTERNAL_ERROR_MESSAGE = 'The memory service encountered an internal error.';
 
+export class MemoryApiRequestError extends Error {
   constructor({
     status,
     code,
-    message,
     expectedToolError,
     publicMessage,
-  }: {
-    status: number;
-    code: string;
-    message: string;
-    expectedToolError: boolean;
-    publicMessage: string;
   }) {
-    super(message);
+    super(publicMessage);
     this.name = 'MemoryApiRequestError';
     this.status = status;
     this.code = code;
@@ -53,27 +39,26 @@ export class MemoryApiRequestError extends Error {
   }
 }
 
-export const createMemoryApiRequestError = (status: number, payload: unknown) => {
+export const createMemoryApiRequestError = (status, payload) => {
   const details = errorDetails(payload);
   const expectedToolError = (status >= 400 && status < 500)
     || (status >= 200 && status < 300 && details.hasStructuredError);
   return new MemoryApiRequestError({
     status,
     code: details.code,
-    message: `Memory API ${status || 'response'} failed (${details.code}).`,
     expectedToolError,
     publicMessage: expectedToolError
       ? publicMessageFor(status, details.message)
-      : 'The memory service encountered an internal error.',
+      : MEMORY_API_INTERNAL_ERROR_MESSAGE,
   });
 };
 
-export const mcpToolErrorResult = (message: string) => ({
+export const mcpToolErrorResult = message => ({
   content: [{ type: 'text', text: message }],
   isError: true,
 });
 
-export const expectedMemoryApiToolResult = (error: unknown) => (
+export const expectedMemoryApiToolResult = error => (
   error instanceof MemoryApiRequestError && error.expectedToolError
     ? mcpToolErrorResult(error.publicMessage)
     : null

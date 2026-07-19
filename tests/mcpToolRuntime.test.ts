@@ -2,12 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createMemoryMcpServer } from '../mcp/memory-server.mjs';
+import {
+  createLocalMemoryApiCaller,
+  createMemoryMcpServer,
+} from '../mcp/memory-server.mjs';
 import {
   createMemoryApiRequestError,
   expectedMemoryApiToolResult,
-} from '../supabase/functions/_shared/mcp-tool-runtime.ts';
+  MEMORY_API_INTERNAL_ERROR_MESSAGE,
+} from '../supabase/functions/_shared/mcp-tool-runtime.mjs';
 import { validateMcpToolArguments } from '../supabase/functions/_shared/mcp-tool-validation.mjs';
+import { researchMemoryContext } from '../supabase/functions/_shared/memory-research.ts';
 
 test('shared MCP validation applies manifest defaults', () => {
   assert.deepEqual(validateMcpToolArguments('search_memories', {}), {
@@ -20,12 +25,73 @@ test('shared MCP validation applies manifest defaults', () => {
   });
   assert.deepEqual(validateMcpToolArguments('research_memory_context', { query: 'memory' }), {
     ok: true,
-    value: { query: 'memory', radiusKm: 5, limit: 30 },
+    value: { query: 'memory', limit: 30 },
   });
   assert.deepEqual(validateMcpToolArguments('get_memory_images', { noteIds: ['note-1'] }), {
     ok: true,
     value: { noteIds: ['note-1'], maxImages: 3 },
   });
+});
+
+test('validated research input preserves explicit-radius semantics and internal fallback', () => {
+  const homeInput = validateMcpToolArguments('research_memory_context', { query: '我家在哪？' });
+  assert.equal(homeInput.ok, true);
+  assert.equal(Object.hasOwn(homeInput.value, 'radiusKm'), false);
+
+  const homeResult = researchMemoryContext({
+    userId: 'user-1',
+    account: 'owner',
+    profile: null,
+    revision: 1,
+    stars: [{
+      id: 'home-star',
+      sort_order: 0,
+      lat: 31,
+      lng: 121,
+      created_at_ms: Date.parse('2026-01-01T12:00:00Z'),
+      tag_order: null,
+      tag_group_id: null,
+      color: '#cccccc',
+    }],
+    notes: [{
+      star_id: 'home-star',
+      id: 'home-note',
+      sort_order: 0,
+      title: '',
+      title_html: '',
+      content: '这里是我家。',
+      content_html: '<p>这里是我家。</p>',
+      image_url: null,
+      image_urls: [],
+      images: [],
+      font_size: null,
+      title_font_size: null,
+      color: null,
+      created_at_ms: Date.parse('2026-01-01T12:00:00Z'),
+      updated_at_ms: Date.parse('2026-01-01T12:00:00Z'),
+    }],
+    tracks: [],
+  }, homeInput.value);
+  assert.equal(homeResult.queryPlan.spatialRelation, 'exact');
+
+  const coordinateInput = validateMcpToolArguments('research_memory_context', {
+    query: '查看这里的记忆',
+    centerLat: 31,
+    centerLng: 121,
+  });
+  assert.equal(coordinateInput.ok, true);
+  assert.equal(Object.hasOwn(coordinateInput.value, 'radiusKm'), false);
+  const coordinateResult = researchMemoryContext({
+    userId: 'user-1',
+    account: 'owner',
+    profile: null,
+    revision: 1,
+    stars: [],
+    notes: [],
+    tracks: [],
+  }, coordinateInput.value);
+  assert.equal(coordinateResult.searchPlan.resolvedRegion?.mode, 'radius');
+  assert.equal(coordinateResult.searchPlan.resolvedRegion?.radiusKm, 5);
 });
 
 test('shared MCP validation rejects malformed or overly broad calls', () => {
@@ -95,4 +161,41 @@ test('local MCP also enforces shared constraints before any memory request', asy
     await client.close();
     await server.close();
   }
+});
+
+test('local MCP keeps actionable 4xx errors and hides Memory API 5xx details', async () => {
+  const invoke = async (status: number, message: string) => {
+    const memoryApiCaller = createLocalMemoryApiCaller({
+      endpoint: 'https://memory.example.test',
+      apiKey: 'public-test-key',
+      accessTokenProvider: async () => 'test-access-token',
+      fetchImpl: async () => new Response(JSON.stringify({
+        error: { code: status === 500 ? 'database_failure' : 'bad_request', message },
+      }), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    });
+    const server = await createMemoryMcpServer({ memoryApiCaller });
+    const client = new Client({ name: `local-error-${status}`, version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      return await client.callTool({ name: 'list_locations', arguments: {} });
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  };
+
+  const expected = await invoke(400, 'Choose a valid date range.');
+  assert.equal(expected.isError, true);
+  assert.match(String(expected.content[0]?.text || ''), /Choose a valid date range/);
+
+  const internal = await invoke(500, 'private database detail');
+  assert.equal(internal.isError, true);
+  const internalText = String(internal.content[0]?.text || '');
+  assert.equal(internalText, MEMORY_API_INTERNAL_ERROR_MESSAGE);
+  assert.doesNotMatch(internalText, /private database detail/);
 });
