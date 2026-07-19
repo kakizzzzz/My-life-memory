@@ -65,11 +65,11 @@ Instead of stopping when an exact keyword is absent, the service can combine spa
 
 ## OpenAI Build Week
 
-My Life Memory existed before OpenAI Build Week, with its core map, place stars, memory notes, route recording, and foundational interface already in place.
+My Life Memory existed before OpenAI Build Week, with its core map, place stars, memory notes, route recording, foundational interface, normalized user-scoped storage, synchronization foundation, account lifecycle, and core privacy controls already in place.
 
-All visual design, UI/UX, interaction design, and product direction were created independently by me. I also made the feature decisions and led testing and acceptance. Codex was used under my direction for implementation, refactoring, debugging, testing, and documentation; the week's focus included normalized user-scoped storage, synchronization and conflict handling, the private media lifecycle, account lifecycle and privacy safeguards, the Memory API, and a read-only MCP service for MCP-compatible AI clients, including clients powered by GPT-5.6.
+During the official Submission Period, I continued to lead the product direction, feature decisions, testing, and acceptance. All visual design, UI/UX, and interaction design were created independently by me. Under my direction, the project was extended with server-owned media retention, date-range export, local-time-zone handling, rich-text and media reliability improvements, and an evidence-grounded read-only MCP research layer with strict ambiguity and privacy boundaries.
 
-GPT-5.6 helped translate my completed visual and interaction designs into frontend code, assisting with React and TypeScript structure and implementation. I defined the interaction logic and component behavior, and I also participated directly in debugging, testing, and iteration. On the backend, GPT-5.6 helped design and configure Supabase, including the data model, Row Level Security policies, Edge Functions, privacy safeguards, testing strategy, and deployment workflow. Through computer-use assistance, it also helped configure and verify parts of the Supabase setup. It additionally supported product review and preparation of the competition demo materials. GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's read-only MCP.
+Codex handled implementation, refactoring, debugging, testing, documentation, and deployment verification. GPT-5.6 supported product and architecture review, privacy and interaction analysis, test planning, and competition-demo preparation. Dated implementation decisions and validation results are recorded in [`docs/codex-progress.md`](docs/codex-progress.md). GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's user-controlled, read-only MCP.
 
 ## Tech Stack
 
