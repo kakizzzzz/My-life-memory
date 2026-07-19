@@ -10,7 +10,7 @@ import {
 const forbiddenKeys = new Set([
   'candidateNotes', 'candidateReview', 'titleIndex', 'clusters', 'latestRecordedMemory',
   'totals', 'personalContext', 'selectedNoteIds', 'selectedStarIds', 'selectedTrackIds',
-  'decisionReasons', 'semanticReview', 'scores',
+  'decisionReasons', 'scores',
 ]);
 
 const collectKeys = (value: unknown, keys = new Set<string>()) => {

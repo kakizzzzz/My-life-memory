@@ -43,9 +43,6 @@ import {
   type MemoryPlaceResolutionSummary,
   type ResolvedMemoryPlace,
 } from '../_shared/memory-research.ts';
-import type {
-  MemorySemanticReviewInput,
-} from '../_shared/memory-semantic-review.ts';
 import {
   isPersonalMemoryReference,
 } from '../_shared/memory-personal-context.ts';
@@ -130,60 +127,6 @@ const hasValidNoteIds = (body: Record<string, unknown>, noteIds: string[]) => (
   && noteIds.length === body.noteIds.length
   && noteIds.every(noteId => noteId.length <= 200)
 );
-
-const semanticReviewInput = (value: unknown): {
-  value?: MemorySemanticReviewInput;
-  error?: string;
-} => {
-  if (value === undefined || value === null) return {};
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { error: 'semanticReview must be an object.' };
-  }
-  const record = value as Record<string, unknown>;
-  const requestCandidates = record.requestCandidates;
-  if (requestCandidates !== undefined && typeof requestCandidates !== 'boolean') {
-    return { error: 'semanticReview.requestCandidates must be a boolean.' };
-  }
-  const rawCandidateOffset = record.candidateOffset;
-  const candidateOffset = rawCandidateOffset === undefined ? 0 : Number(rawCandidateOffset);
-  if (!Number.isInteger(candidateOffset) || candidateOffset < 0 || candidateOffset > 1_000_000) {
-    return { error: 'semanticReview.candidateOffset must be an integer between 0 and 1000000.' };
-  }
-  const decisions = record.decisions === undefined ? [] : record.decisions;
-  if (!Array.isArray(decisions) || decisions.length > 6) {
-    return { error: 'semanticReview.decisions must contain at most 6 items.' };
-  }
-  const parsed = decisions.map(decision => {
-    if (!decision || typeof decision !== 'object' || Array.isArray(decision)) return null;
-    const record = decision as Record<string, unknown>;
-    const noteId = getString(record.noteId).trim();
-    const evidenceQuote = getString(record.evidenceQuote).trim();
-    const verdict = getString(record.verdict);
-    const relation = getString(record.relation);
-    if (!noteId || noteId.length > 200 || !evidenceQuote || evidenceQuote.length > 240) return null;
-    if (!['supports', 'rejects', 'uncertain'].includes(verdict)) return null;
-    if (!['home', 'work', 'study', 'observation', 'activity'].includes(relation)) return null;
-    return {
-      noteId,
-      evidenceQuote,
-      verdict: verdict as 'supports' | 'rejects' | 'uncertain',
-      relation: relation as 'home' | 'work' | 'study' | 'observation' | 'activity',
-    };
-  });
-  if (parsed.some(decision => !decision)) {
-    return { error: 'Each semantic review decision must contain a valid noteId, verdict, relation, and exact evidenceQuote.' };
-  }
-  if (requestCandidates !== true && parsed.length === 0) {
-    return { error: 'semanticReview must request candidates or contain at least one decision.' };
-  }
-  return {
-    value: {
-      requestCandidates: requestCandidates === true,
-      candidateOffset,
-      decisions: parsed as NonNullable<typeof parsed[number]>[],
-    },
-  };
-};
 
 type ReferenceConfirmationInput = {
   continuationToken: string;
@@ -595,8 +538,6 @@ serve(async request => {
         return fail('bad_request', 'radiusKm must be between 0.1 and 1000.', 400);
       }
       const limit = Math.min(Math.max(getNumber(body.limit, 30), 1), 100);
-      const semanticReview = semanticReviewInput(body.semanticReview);
-      if (semanticReview.error) return fail('bad_request', semanticReview.error, 400);
       const semanticHints = semanticHintsInput(body.semanticHints);
       if (semanticHints.error) return fail('bad_request', semanticHints.error, 400);
       const referenceConfirmation = referenceConfirmationInput(body.referenceConfirmation);
@@ -723,9 +664,6 @@ serve(async request => {
         resolvedPlace,
         placeResolution,
         confirmedReference,
-        // Retained only so old clients do not fail validation. Host-model
-        // semantic verdicts are deliberately ignored by the research layer.
-        semanticReview: semanticReview.value,
       }, timeZone);
 
       if (!referenceClarification

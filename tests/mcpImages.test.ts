@@ -6,6 +6,7 @@ import {
   isUserScopedMemoryImage,
   type MemoryImageReference,
 } from '../supabase/functions/_shared/mcp-image-content.ts';
+import { MCP_TOOL_NAMES } from '../supabase/functions/_shared/mcp-tool-manifest.mjs';
 import { collectMemoryImageReferences } from '../supabase/functions/_shared/memory-image-references.ts';
 import type { NoteRow } from '../supabase/functions/_shared/memory-record-types.ts';
 
@@ -125,7 +126,8 @@ test('Memory API and cloud MCP use active user-scoped note references without si
   assert.match(memoryApi, /action === 'get_note_media'/);
   assert.match(normalizedMemory, /query = query\.in\('id', options\.noteIds\)/);
   assert.match(memoryApi, /collectMemoryImageReferences\(memory\.notes, userId\)/);
-  assert.match(cloudMcp, /name: 'get_memory_images'/);
+  assert.ok(MCP_TOOL_NAMES.includes('get_memory_images'));
+  assert.match(cloudMcp, /MCP_TOOL_MANIFEST/);
   assert.match(cloudMcp, /storage\/v1\/object\/authenticated/);
   assert.match(cloudMcp, /apikey: config\.serviceRoleKey/);
   assert.doesNotMatch(cloudMcp, /createSignedUrl/);

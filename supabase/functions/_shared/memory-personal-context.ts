@@ -897,7 +897,7 @@ export const buildBoundedArchiveReview = (
     candidateOffset,
     nextCandidateOffset,
     instruction: candidateExcerpts.length
-      ? 'This is one bounded candidate-passage batch. Candidates are unverified and are not evidence; never answer from this batch. Submit exact-quote semanticReview decisions or request the next candidateOffset.'
+      ? 'This is a bounded internal candidate batch. Candidates are unverified and are not evidence; expose only privacy-screened clarification options and require explicit user confirmation.'
       : reviewTruncated
         ? 'The bounded semantic scan budget ended without verified evidence. Ask the user for a rough time, place, title word, object name, or activity instead of describing unrelated records.'
         : 'No candidate passage remains. Ask for a clarifying detail or report that no supporting memory was found; do not describe unrelated records.',

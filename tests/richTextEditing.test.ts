@@ -108,3 +108,12 @@ test('Safari legacy font color is converted to a safe persistent span', () => {
   assert.equal(span.style.color, 'rgb(0, 0, 0)');
   assert.equal(root.querySelector('font'), null);
 });
+
+test('browser sanitizer forces no-referrer on legacy remote note images', () => {
+  const sanitized = sanitizeRichHtml(
+    '<figure><img src="https://images.example/private.jpg" referrerpolicy="origin"></figure>',
+  );
+  const root = makeRoot(sanitized);
+  assert.equal(root.querySelector('img')?.getAttribute('referrerpolicy'), 'no-referrer');
+  assert.equal(root.querySelector('img')?.getAttribute('src'), 'https://images.example/private.jpg');
+});

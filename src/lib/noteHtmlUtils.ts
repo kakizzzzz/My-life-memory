@@ -93,7 +93,7 @@ export const imageToReaderHtml = (
   const imageSrc = metadata ? (src || storagePlaceholderSrc(metadata)) : src;
   return (
   `<figure class="note-inline-image" contenteditable="false" data-note-image="true">` +
-    `<img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(altText)}"${mediaAttrs} />` +
+    `<img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(altText)}" referrerpolicy="no-referrer"${mediaAttrs} />` +
     readerRemoveImageButtonHtml(removeImageText) +
   `</figure>`
   );

@@ -268,3 +268,39 @@
 - Token handling: the Supabase access token was read silently into a temporary shell environment, unset after both deployments, and never written to a repository or configuration file.
 - Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; unauthenticated `memory-api` returned HTTP 401 with `A valid user token is required.`
 - GitHub verification: CI run `29644768844` and Pages run `29644828541` both completed successfully for `d3f35a371ef319b53737efe9c05d3f006917b7cc`.
+
+## Follow-up: Build Week Protocol And Privacy Hardening
+
+- Baseline HEAD: `0529f36abd0092387fd313dbc17b8cf626062c3b`.
+- Objective: close the remaining cloud MCP transport correctness gaps, remove the dead public `semanticReview` input, prevent local/cloud tool-contract drift, add evidence-boundary corpus tests, and apply low-risk rich-image privacy hardening without changing product UI or normalized data.
+- Files inspected: `README.md`, `package.json`, `mcp/memory-server.mjs`, cloud `mcp` and `memory-api` Functions, shared MCP contract/public schema/query/research modules, browser and Edge HTML sanitizers, transport/output/research tests, `index.html`, and backend/progress documentation.
+- [Complete] Implement real MCP protocol-version negotiation for the supported `2025-03-26` contract.
+- [Complete] Return HTTP 202 with no body for accepted notification/response-only messages and reject batched `initialize` requests.
+- [Complete] Replace wildcard MCP CORS with native-client-safe Origin validation and an explicit configured allowlist for concrete browser origins.
+- [Complete] Add one shared nine-tool manifest and full input-schema parity tests for cloud and local transports.
+- [Complete] Remove the deprecated public `semanticReview` input while preserving encrypted user reference confirmation.
+- [Complete] Add a 36-query multilingual golden corpus focused on geocoder privacy, query planning, evidence boundaries, and no-answer invariants.
+- [Complete] Add document-level and sanitizer-level no-referrer image controls without silently deleting legacy external-image data.
+- [Complete] Align the package and MCP versions at `1.0.0`, remove duplicate Vite ownership, add an explicit `typecheck` script, and pin the MapLibre/Leaflet bridge.
+- [Complete] Move the production migration, Vault, Cron, backup, rollback, and recovery runbook out of the product README and into `docs/backend-setup.md`.
+- [Complete] Run all validation commands, inspect the final diff, and record exact results.
+- [In progress] Commit and push the reviewed release, deploy the two changed Edge Functions, verify CI/Pages, and finish the GitHub repository metadata.
+- Decision: do not refactor `useCloudAuthSync`, `App.tsx`, or `HomeScreen` during the final competition window.
+- Decision: no database migration is required for this protocol and documentation hardening.
+- Decision: support MCP `2025-03-26` until the newer transport contract is implemented completely; do not falsely advertise `2025-06-18` while retaining batch behavior removed by that version.
+- Decision: allow missing Origin and native-client `Origin: null`, but require every concrete Origin to match `ALLOWED_ORIGINS` and every request to pass bearer-token authentication.
+- Decision: do not silently remove legacy remote images. The low-risk release fix is a global and per-image no-referrer policy; strict remote-image blocking requires a visible migration flow after the competition window.
+- Targeted MCP, research, public-response, and privacy suite: 53 passed, 0 failed.
+- Golden corpus, query-routing, and query-plan suite: 18 passed, 0 failed.
+- Rich HTML, rich-text editing, and color-session suite: 13 passed, 0 failed.
+- `npm install --package-lock-only --ignore-scripts`: completed with 0 reported vulnerabilities.
+- Interim `npm run lint`: passed with exit code 0.
+- Final `npm run lint`: passed; the explicit `typecheck` alias completed with exit code 0.
+- Exact `npm run lint:edge`: could not start because this machine has no global `deno` binary (`sh: deno: command not found`, exit 127).
+- Equivalent `npx --yes deno check`: passed all six production Edge Functions with no diagnostics.
+- Final `npm test`: 215 passed, 0 failed.
+- Final `npm run build`: passed; Vite transformed 2,247 modules. Two existing map/application chunks remain above the 500 kB advisory threshold, with no build failure.
+- Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
+- Final `git diff --check`: passed with no whitespace errors.
+- Secret-pattern review found environment-variable names and security assertions only; no real Supabase personal token, service-role value, invite code, MCP token, or password was added.
+- Public GitHub Pages URL returned HTTP 200 before this release; post-push CI and Pages verification remains part of the deployment phase.

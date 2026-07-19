@@ -9,9 +9,8 @@ import {
 import {
   buildMcpMemoryInstructions,
   MCP_SERVER_VERSION,
-  RESEARCH_MEMORY_TOOL_DESCRIPTION,
-  SEARCH_MEMORY_TOOL_DESCRIPTION,
 } from '../supabase/functions/_shared/mcp-memory-contract.mjs';
+import { getMcpToolDefinition } from '../supabase/functions/_shared/mcp-tool-manifest.mjs';
 import { memoryResearchOutputSchema } from './memory-output-schema.mjs';
 
 const env = process.env;
@@ -167,32 +166,16 @@ const getMemoryImageResult = async input => {
   });
 };
 
-const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
-const semanticReview = z.object({
-  requestCandidates: z.boolean().optional(),
-  candidateOffset: z.number().int().min(0).max(1_000_000).optional(),
-  decisions: z.array(z.object({
-    noteId: z.string().min(1).max(200),
-    verdict: z.enum(['supports', 'rejects', 'uncertain']),
-    relation: z.enum(['home', 'work', 'study', 'observation', 'activity']),
-    evidenceQuote: z.string().min(1).max(240),
-  })).max(6).optional(),
-}).refine(value => value.requestCandidates === true || Boolean(value.decisions?.length), {
-  message: 'Request a candidate batch or submit at least one exact-quote decision.',
-}).describe('Deprecated compatibility input. Host-model verdicts are ignored and cannot promote candidate text into evidence.').optional();
-
-const semanticHints = z.object({
-  concepts: z.array(z.object({
-    surface: z.string().min(1).max(48),
-    broadTerms: z.array(z.string().min(1).max(48)).max(8),
-  }).strict()).max(6),
-}).strict().optional();
-
-const referenceConfirmation = z.object({
-  continuationToken: z.string().min(1).max(16_384),
-  selectedOptionId: z.string().min(1).max(80).optional(),
-  answer: z.enum(['confirm', 'reject', 'none']),
-}).strict().optional();
+const localToolConfig = (name, outputSchema) => {
+  const definition = getMcpToolDefinition(name);
+  return {
+    title: definition.title,
+    description: definition.description,
+    inputSchema: z.fromJSONSchema(definition.inputSchema),
+    ...(outputSchema ? { outputSchema } : {}),
+    annotations: definition.annotations,
+  };
+};
 
 export const createMemoryMcpServer = async () => {
   const temporalPayload = await callMemoryApi('get_temporal_context').catch(() => null);
@@ -203,133 +186,60 @@ export const createMemoryMcpServer = async () => {
     instructions: buildMcpMemoryInstructions(temporalPayload?.temporalContext),
   });
 
-  server.registerTool('research_memory_context', {
-    title: 'Research Memory Context',
-    description: RESEARCH_MEMORY_TOOL_DESCRIPTION,
-    inputSchema: {
-      query: z.string().min(1),
-      place: z.string().max(160).optional(),
-      region: z.string().max(160).optional(),
-      dateFrom: optionalDate,
-      dateTo: optionalDate,
-      centerLat: z.number().min(-90).max(90).optional(),
-      centerLng: z.number().min(-180).max(180).optional(),
-      radiusKm: z.number().min(0.1).max(1000).default(5),
-      limit: z.number().int().min(1).max(100).default(30),
-      semanticHints,
-      referenceConfirmation,
-      semanticReview,
-    },
-    outputSchema: memoryResearchOutputSchema,
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: true,
-    },
-  }, async input => memoryResearchResult(await callMemoryApi('research_memory_context', input)));
+  server.registerTool(
+    'research_memory_context',
+    localToolConfig('research_memory_context', memoryResearchOutputSchema),
+    async input => memoryResearchResult(await callMemoryApi('research_memory_context', input)),
+  );
 
-  server.registerTool('get_memory_images', {
-    title: 'Read Relevant Memory Photos',
-    description: 'Return private image blocks for up to 10 authenticated-user note ids already returned by another memory tool. Call only for notes relevant to the user question and only when visual analysis is useful. Vision-capable clients may analyze returned image blocks; otherwise use image metadata and never claim to have seen the photos.',
-    inputSchema: {
-      noteIds: z.array(z.string().min(1).max(200)).min(1).max(10),
-      maxImages: z.number().int().min(1).max(6).default(3),
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  }, getMemoryImageResult);
+  server.registerTool(
+    'get_memory_images',
+    localToolConfig('get_memory_images'),
+    getMemoryImageResult,
+  );
 
-  server.registerTool('search_memories', {
-    title: 'Search My Life Memory',
-    description: SEARCH_MEMORY_TOOL_DESCRIPTION,
-    inputSchema: {
-      query: z.string().default(''),
-      dateFrom: optionalDate,
-      dateTo: optionalDate,
-      limit: z.number().int().min(1).max(100).default(20),
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  }, async input => {
+  server.registerTool('search_memories', localToolConfig('search_memories'), async input => {
     const result = await searchMemoriesWithContextFallback(input);
     return result?.resolvedAction === 'research_memory_context'
       ? { content: [{ type: 'text', text: memoryResearchText(result) }] }
       : textResult(result);
   });
 
-  server.registerTool('list_locations', {
-    title: 'List Memory Locations',
-    description: 'List saved stars for the authenticated user. Answer only from returned data. If count is 0, do not infer or invent.',
-    inputSchema: {},
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  }, async () => textResult(await callMemoryApi('list_locations')));
+  server.registerTool(
+    'list_locations',
+    localToolConfig('list_locations'),
+    async () => textResult(await callMemoryApi('list_locations')),
+  );
 
-  server.registerTool('get_location_memory', {
-    title: 'Get Location Memory',
-    description: 'Read notes and image metadata for one authenticated-user star/location. Answer only from returned data. If count is 0, do not infer or invent.',
-    inputSchema: {
-      starId: z.string().min(1),
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  }, async input => textResult(await callMemoryApi('get_location_memory', input)));
+  server.registerTool(
+    'get_location_memory',
+    localToolConfig('get_location_memory'),
+    async input => textResult(await callMemoryApi('get_location_memory', input)),
+  );
 
-  server.registerTool('get_day_memory', {
-    title: 'Get Day Memory',
-    description: 'Read memories for one local date. Answer only from returned data. If count is 0, do not infer or invent.',
-    inputSchema: {
-      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  }, async input => textResult(await callMemoryApi('get_day_memory', input)));
+  server.registerTool(
+    'get_day_memory',
+    localToolConfig('get_day_memory'),
+    async input => textResult(await callMemoryApi('get_day_memory', input)),
+  );
 
-  server.registerTool('get_routes', {
-    title: 'Get Routes',
-    description: 'Read saved GPS routes. Paths are omitted unless includePaths is true. Answer only from returned data. If count is 0, do not infer or invent.',
-    inputSchema: {
-      dateFrom: optionalDate,
-      dateTo: optionalDate,
-      includePaths: z.boolean().default(false),
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  }, async input => textResult(await callMemoryApi('get_routes', input)));
+  server.registerTool(
+    'get_routes',
+    localToolConfig('get_routes'),
+    async input => textResult(await callMemoryApi('get_routes', input)),
+  );
 
-  server.registerTool('summarize_memory_range', {
-    title: 'Summarize Memory Range',
-    description: 'Return counts and top locations for a date range. The AI client may summarize only this returned data and must not invent missing records.',
-    inputSchema: {
-      dateFrom: optionalDate,
-      dateTo: optionalDate,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  }, async input => textResult(await callMemoryApi('summarize_memory_range', input)));
+  server.registerTool(
+    'summarize_memory_range',
+    localToolConfig('summarize_memory_range'),
+    async input => textResult(await callMemoryApi('summarize_memory_range', input)),
+  );
 
-  server.registerTool('export_memory_report', {
-    title: 'Export Memory Report',
-    description: 'Generate a readable HTML report string for the authenticated user using only stored My Life Memory data.',
-    inputSchema: {},
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  }, async () => textResult(await callMemoryApi('export_memory_report')));
+  server.registerTool(
+    'export_memory_report',
+    localToolConfig('export_memory_report'),
+    async () => textResult(await callMemoryApi('export_memory_report')),
+  );
 
   return server;
 };

@@ -209,7 +209,7 @@ const imageToHtml = (imageUrl: string, copy: NoteEditorCopy = NOTE_EDITOR_COPY.e
   const src = metadata ? (imageUrl || storagePlaceholderSrc(metadata)) : imageUrl;
   return (
   `<figure class="note-inline-image" contenteditable="false" data-note-image="true">` +
-    `<img src="${escapeHtml(src)}" alt="${escapeHtml(copy.noteAttachmentAlt)}"${mediaAttrs} />` +
+    `<img src="${escapeHtml(src)}" alt="${escapeHtml(copy.noteAttachmentAlt)}" referrerpolicy="no-referrer"${mediaAttrs} />` +
     `<button type="button" data-remove-image="true" aria-label="${escapeHtml(copy.removeImage)}">` +
       `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>` +
     `</button>` +

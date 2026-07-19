@@ -514,31 +514,12 @@ test('temporary rehabilitation stays cannot resolve home or authorize coordinate
   const first = researchMemoryContext(archive, { query: '我家在哪里？' });
 
   assert.equal(first.personalContext.status, 'not-found');
-  assert.equal(first.semanticReview.required, false);
   assert.equal(first.answerBoundary.status, 'not-found');
   assert.deepEqual(first.selectedNoteIds, []);
   assert.deepEqual(first.selectedStarIds, []);
-
-  const reviewed = researchMemoryContext(archive, {
-    query: '我家在哪里？',
-    semanticReview: {
-      decisions: [{
-        noteId: 'rehab-note-a',
-        verdict: 'supports',
-        relation: 'home',
-        evidenceQuote: '这里是车祸后住的康复医院，我们住在这里十几天。',
-      }],
-    },
-  });
-
-  assert.equal(reviewed.personalContext.status, 'not-found');
-  assert.equal(reviewed.semanticReview.phase, 'not-needed');
-  assert.equal(reviewed.answerBoundary.status, 'not-found');
-  assert.deepEqual(reviewed.selectedNoteIds, []);
-  assert.deepEqual(reviewed.selectedStarIds, []);
 });
 
-test('legacy host review cannot promote a subtle passage but explicit user confirmation can', () => {
+test('a subtle passage stays unsupported until explicit user confirmation', () => {
   const home = star('subtle-home', 31.2, 121.4);
   const archive = memory(
     [home],
@@ -552,23 +533,7 @@ test('legacy host review cannot promote a subtle passage but explicit user confi
   const first = researchMemoryContext(archive, { query: '我家在哪里？' });
 
   assert.equal(first.personalContext.status, 'not-found');
-  assert.equal(first.semanticReview.phase, 'not-needed');
-  assert.equal(first.semanticReview.usesExternalModelService, false);
-  assert.equal(first.semanticReview.candidatesExposed, false);
-
-  const ignored = researchMemoryContext(archive, {
-    query: '我家在哪里？',
-    semanticReview: {
-      decisions: [{
-        noteId: 'subtle-home-note',
-        verdict: 'supports',
-        relation: 'home',
-        evidenceQuote: '搬家以后，这套房子成了我们长期安顿生活的地方。',
-      }],
-    },
-  });
-  assert.equal(ignored.personalContext.status, 'not-found');
-  assert.equal(ignored.answerBoundary.status, 'not-found');
+  assert.equal(first.answerBoundary.status, 'not-found');
 
   const confirmed = researchMemoryContext(archive, {
     query: '我家在哪里？',
@@ -613,7 +578,7 @@ test('an explicit confirmation selects one candidate without merging other locat
   assert.equal(confirmed.selectedStarIds.includes(secondHome.id), false);
 });
 
-test('host review cannot turn workplace or school visits into user anchors', () => {
+test('workplace or school visits cannot become user anchors', () => {
   const officeVisit = star('visited-office', 31.2, 121.4);
   const schoolVisit = star('visited-school', 31.3, 121.5);
   const officeQuote = '面试那天我参观了这家公司。';
@@ -625,33 +590,13 @@ test('host review cannot turn workplace or school visits into user anchors', () 
       note({ id: 'school-visit-note', starId: schoolVisit.id, content: schoolQuote }),
     ],
   );
-  const work = researchMemoryContext(archive, {
-    query: '我的工作地点在哪里？',
-    semanticReview: {
-      decisions: [{
-        noteId: 'office-visit-note',
-        verdict: 'supports',
-        relation: 'work',
-        evidenceQuote: officeQuote,
-      }],
-    },
-  });
-  const study = researchMemoryContext(archive, {
-    query: '我的学校在哪里？',
-    semanticReview: {
-      decisions: [{
-        noteId: 'school-visit-note',
-        verdict: 'supports',
-        relation: 'study',
-        evidenceQuote: schoolQuote,
-      }],
-    },
-  });
+  const work = researchMemoryContext(archive, { query: '我的工作地点在哪里？' });
+  const study = researchMemoryContext(archive, { query: '我的学校在哪里？' });
 
   assert.equal(work.personalContext.status, 'not-found');
-  assert.equal(work.semanticReview.phase, 'not-needed');
   assert.equal(study.personalContext.status, 'not-found');
-  assert.equal(study.semanticReview.phase, 'not-needed');
+  assert.deepEqual(work.selectedNoteIds, []);
+  assert.deepEqual(study.selectedNoteIds, []);
 });
 
 test('a subtle event remains unsupported until the user confirms the reference', () => {
@@ -663,20 +608,7 @@ test('a subtle event remains unsupported until the user confirms the reference',
   );
   const first = researchMemoryContext(archive, { query: '我在哪里看到过壁画？' });
   assert.equal(first.personalContext.status, 'not-found');
-  assert.equal(first.semanticReview.required, false);
-
-  const ignored = researchMemoryContext(archive, {
-    query: '我在哪里看到过壁画？',
-    semanticReview: {
-      decisions: [{
-        noteId: 'mural-note',
-        verdict: 'supports',
-        relation: 'observation',
-        evidenceQuote: quote,
-      }],
-    },
-  });
-  assert.equal(ignored.personalContext.status, 'not-found');
+  assert.equal(first.answerBoundary.status, 'not-found');
 
   const confirmed = researchMemoryContext(archive, {
     query: '我在哪里看到过壁画？',

@@ -39,7 +39,7 @@ jobs:
         run: npm ci
 
       - name: Type check
-        run: npm run lint
+        run: npm run typecheck
 
       - name: Type check Edge Functions
         run: npm run lint:edge

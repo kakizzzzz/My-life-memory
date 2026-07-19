@@ -1,4 +1,4 @@
-export const MCP_SERVER_VERSION = '0.7.1';
+export const MCP_SERVER_VERSION = '1.0.0';
 
 export const RESEARCH_MEMORY_TOOL_DESCRIPTION = 'Primary read-only tool for natural-language questions about the authenticated user archive: public places, dates, trips, routines, personal anchors such as home/work/study, observations, activities, nearby routes, and combinations of those constraints. Put only an explicit public geographic name in place; keep private user-relative wording in query. The strict status union is authoritative. Answer only when status is supported. For ambiguous, not-found, or candidate-review, repeat directive.exactText exactly and add nothing. Optional semanticHints may broaden query vocabulary only; they never become evidence. After the user explicitly confirms a returned safe clue label or ordinal option, call this same tool with referenceConfirmation. The encrypted token restores the original question, so query may contain the user\'s short confirmation reply. My Life Memory does not call a model service and exposes exactly nine read-only tools.';
 
@@ -17,7 +17,7 @@ const baseInstructions = [
   'The status and directive are mandatory. For supported with ANSWER_FROM_EVIDENCE, answer only from evidence and preserve uncertainty.',
   'For ambiguous with ASK_USER_EXACT, not-found with STATE_NO_EVIDENCE_EXACT, or candidate-review with CALL_TOOL_AGAIN, output directive.exactText verbatim and add no explanation, guesses, candidate facts, or model knowledge.',
   'Candidate notes are unverified and are never evidence. Clarification labels may contain only a bounded safe title, explicit name, generic soft cue, or ordinal; they contain no body text, date, coordinate, score, route, image, or internal identifier. Only call referenceConfirmation after the user explicitly selects, confirms, rejects, or says none. Never choose an option on the user’s behalf. The confirmation token restores the original question even when the new query is only a short reply.',
-  'Host-model semantic judgments cannot promote candidates into evidence. The legacy semanticReview input is ignored for evidence authority.',
+  'Host-model semantic judgments cannot promote candidates into evidence. Only deterministic stored evidence or the user’s explicit confirmation can authorize a supported answer.',
   'Do not infer or invent missing memories or places. Never invent or reverse-geocode a city, neighbourhood, building, landmark, or address. A place name is usable only when returned in supported evidence.',
   'Call get_memory_images only with selectedImageNoteIds from a supported research result and only when visual analysis is useful. Without image blocks, do not claim to have seen photos.',
   'Confidence values are score-derived heuristics, not calibrated probabilities.',

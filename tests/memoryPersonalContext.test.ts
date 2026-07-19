@@ -208,14 +208,13 @@ test('the first unresolved public response withholds all unverified candidate te
   assert.deepEqual(result.selectedNoteIds, []);
   assert.deepEqual(result.selectedStarIds, []);
   assert.deepEqual(result.selectedTrackIds, []);
-  assert.equal(result.semanticReview.phase, 'not-needed');
   const disclosed = applyMemoryResearchDisclosureBoundary(result as unknown as Record<string, unknown>);
   assert.equal(disclosed.status, 'not-found');
   assert.equal(disclosed.evidence, null);
   assert.doesNotMatch(JSON.stringify(disclosed), /candidate|titleIndex|coordinates|午餐|河边/u);
 });
 
-test('legacy candidate requests cannot expose small-archive candidate text publicly', () => {
+test('small-archive candidate text remains internal and cannot enter the public response', () => {
   const possibleHome = star('possible-home', 31.2, 121.4, 1);
   const unrelated = star('unrelated', 31.3, 121.5, 2);
   const archive = memory(
@@ -225,13 +224,9 @@ test('legacy candidate requests cannot expose small-archive candidate text publi
       note({ id: 'unrelated-note', starId: unrelated.id, day: 2, title: '公园', content: '普通的散步。' }),
     ],
   );
-  const result = researchMemoryContext(archive, {
-    query: '我家附近的笔记',
-    semanticReview: { requestCandidates: true, candidateOffset: 0 },
-  });
+  const result = researchMemoryContext(archive, { query: '我家附近的笔记' });
 
   assert.deepEqual(result.selectedNoteIds, []);
-  assert.equal(result.semanticReview.candidatesExposed, false);
   assert.equal(result.candidateNoteIds[0], 'possible');
   assert.equal(result.candidateReview.candidateExcerpts.length <= 4, true);
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.length <= 2, true);
@@ -250,17 +245,13 @@ test('large archives may rank internally but never disclose candidate batches', 
     title: `记录 ${index}`,
     content: index === 40 ? '我家附近有一家店，但没有说明这个星标就是家。' : '普通内容。',
   }));
-  const result = researchMemoryContext(memory(stars, notes), {
-    query: '我家附近的笔记',
-    semanticReview: { requestCandidates: true, candidateOffset: 0 },
-  });
+  const result = researchMemoryContext(memory(stars, notes), { query: '我家附近的笔记' });
 
   assert.equal(result.candidateReview.available, true);
   assert.deepEqual(result.titleNoteIds, []);
   assert.equal(result.candidateNoteIds[0], 'note-40');
   assert.equal(result.candidateReview.candidateExcerpts.length <= 4, true);
   assert.equal(result.candidateReview.candidateExcerpts[0].excerpts.length, 1);
-  assert.equal(result.semanticReview.candidatesExposed, false);
   const disclosed = applyMemoryResearchDisclosureBoundary(result as unknown as Record<string, unknown>);
   assert.equal(disclosed.status, 'not-found');
   assert.doesNotMatch(JSON.stringify(disclosed), /note-40|candidate|普通内容/u);

@@ -10,9 +10,17 @@ import {
 import {
   buildMcpMemoryInstructions,
   MCP_SERVER_VERSION,
-  RESEARCH_MEMORY_TOOL_DESCRIPTION,
-  SEARCH_MEMORY_TOOL_DESCRIPTION,
 } from '../_shared/mcp-memory-contract.mjs';
+import { MCP_TOOL_MANIFEST } from '../_shared/mcp-tool-manifest.mjs';
+import {
+  createMcpCorsHeaders,
+  isJsonRpcInitialize,
+  isJsonRpcNotification,
+  isJsonRpcResponse,
+  isMcpOriginAllowed,
+  isSupportedMcpProtocolHeader,
+  negotiateMcpProtocolVersion,
+} from '../_shared/mcp-transport.ts';
 import {
   buildMcpImageContent,
   encodeStorageObjectPath,
@@ -23,276 +31,12 @@ import {
   mergeContextualSearchFallback,
   shouldUseContextualSearchFallback,
 } from '../_shared/mcp-query-routing.mjs';
-import { MEMORY_RESEARCH_OUTPUT_SCHEMA } from '../_shared/mcp-memory-public-schema.mjs';
 import { memoryResearchTextContent } from '../_shared/memory-public-response.ts';
-
-const DEFAULT_CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Expose-Headers': 'mcp-session-id',
-};
-
-const optionalDateSchema = {
-  type: 'string',
-  pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-};
-
-const semanticReviewSchema = {
-  type: 'object',
-  description: 'Deprecated compatibility input. Host-model verdicts are ignored and cannot promote candidate text into evidence.',
-  properties: {
-    requestCandidates: {
-      type: 'boolean',
-      description: 'Set true only after the first response requests semantic review. The returned batch is still unverified and must not be used as an answer.',
-    },
-    candidateOffset: {
-      type: 'integer',
-      minimum: 0,
-      maximum: 1000000,
-      description: 'Use 0 for the first bounded candidate batch or the exact nextCandidateOffset returned by the previous batch.',
-    },
-    decisions: {
-      type: 'array',
-      maxItems: 6,
-      items: {
-        type: 'object',
-        properties: {
-          noteId: { type: 'string', minLength: 1, maxLength: 200 },
-          verdict: { type: 'string', enum: ['supports', 'rejects', 'uncertain'] },
-          relation: { type: 'string', enum: ['home', 'work', 'study', 'observation', 'activity'] },
-          evidenceQuote: { type: 'string', minLength: 1, maxLength: 240 },
-        },
-        required: ['noteId', 'verdict', 'relation', 'evidenceQuote'],
-        additionalProperties: false,
-      },
-    },
-  },
-  additionalProperties: false,
-};
-
-const semanticHintsSchema = {
-  type: 'object',
-  description: 'Optional query-only vocabulary hints supplied by the host model. They may rank neutral reference candidates but can never become memory evidence.',
-  properties: {
-    concepts: {
-      type: 'array',
-      maxItems: 6,
-      items: {
-        type: 'object',
-        properties: {
-          surface: { type: 'string', minLength: 1, maxLength: 48 },
-          broadTerms: {
-            type: 'array',
-            maxItems: 8,
-            items: { type: 'string', minLength: 1, maxLength: 48 },
-          },
-        },
-        required: ['surface', 'broadTerms'],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ['concepts'],
-  additionalProperties: false,
-};
-
-const referenceConfirmationSchema = {
-  type: 'object',
-  description: 'Explicit user confirmation or rejection of a neutral option returned by an earlier ambiguous response.',
-  properties: {
-    continuationToken: { type: 'string', minLength: 1, maxLength: 16384 },
-    selectedOptionId: { type: 'string', minLength: 1, maxLength: 80 },
-    answer: { type: 'string', enum: ['confirm', 'reject', 'none'] },
-  },
-  required: ['continuationToken', 'answer'],
-  additionalProperties: false,
-};
-
-const readTools = [
-  {
-    name: 'research_memory_context',
-    title: 'Research Memory Context',
-    description: RESEARCH_MEMORY_TOOL_DESCRIPTION,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', minLength: 1 },
-        place: {
-          type: 'string',
-          maxLength: 160,
-          description: 'Only the place name to resolve, such as Example City, Example Town, or Example Village. Use for cities, towns, villages, neighbourhoods, and administrative places.',
-        },
-        region: {
-          type: 'string',
-          maxLength: 160,
-          description: 'Optional country or broader region used to disambiguate the place.',
-        },
-        dateFrom: optionalDateSchema,
-        dateTo: optionalDateSchema,
-        centerLat: { type: 'number', minimum: -90, maximum: 90 },
-        centerLng: { type: 'number', minimum: -180, maximum: 180 },
-        radiusKm: { type: 'number', minimum: 0.1, maximum: 1000, default: 5 },
-        limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
-        semanticHints: semanticHintsSchema,
-        referenceConfirmation: referenceConfirmationSchema,
-        semanticReview: semanticReviewSchema,
-      },
-      required: ['query'],
-      additionalProperties: false,
-    },
-    outputSchema: MEMORY_RESEARCH_OUTPUT_SCHEMA,
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: true,
-    },
-  },
-  {
-    name: 'get_memory_images',
-    title: 'Read Relevant Memory Photos',
-    description: 'Return private image blocks for up to 10 authenticated-user note ids already returned by another memory tool. Call only for notes relevant to the user question and only when visual analysis is useful. Vision-capable clients may analyze returned image blocks; otherwise use image metadata and never claim to have seen the photos.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        noteIds: {
-          type: 'array',
-          items: { type: 'string', minLength: 1, maxLength: 200 },
-          minItems: 1,
-          maxItems: 10,
-          uniqueItems: true,
-        },
-        maxImages: { type: 'integer', minimum: 1, maximum: 6, default: 3 },
-      },
-      required: ['noteIds'],
-      additionalProperties: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: 'search_memories',
-    title: 'Search My Life Memory',
-    description: SEARCH_MEMORY_TOOL_DESCRIPTION,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', default: '' },
-        dateFrom: optionalDateSchema,
-        dateTo: optionalDateSchema,
-        limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
-      },
-      additionalProperties: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: 'list_locations',
-    title: 'List Memory Locations',
-    description: 'List saved stars for the authenticated user. Answer only from returned data. If count is 0, do not infer or invent.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: 'get_location_memory',
-    title: 'Get Location Memory',
-    description: 'Read notes and image metadata for one authenticated-user star/location. Answer only from returned data. If count is 0, do not infer or invent.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        starId: { type: 'string', minLength: 1 },
-      },
-      required: ['starId'],
-      additionalProperties: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: 'get_day_memory',
-    title: 'Get Day Memory',
-    description: 'Read memories for one local date. Answer only from returned data. If count is 0, do not infer or invent.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        date: optionalDateSchema,
-      },
-      required: ['date'],
-      additionalProperties: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: 'get_routes',
-    title: 'Get Routes',
-    description: 'Read saved GPS routes. Paths are omitted unless includePaths is true. Answer only from returned data. If count is 0, do not infer or invent.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        dateFrom: optionalDateSchema,
-        dateTo: optionalDateSchema,
-        includePaths: { type: 'boolean', default: false },
-      },
-      additionalProperties: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: 'summarize_memory_range',
-    title: 'Summarize Memory Range',
-    description: 'Return counts and top locations for a date range. The AI client may summarize only this returned data and must not invent missing records.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        dateFrom: optionalDateSchema,
-        dateTo: optionalDateSchema,
-      },
-      additionalProperties: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: 'export_memory_report',
-    title: 'Export Memory Report',
-    description: 'Generate a readable HTML report string for the authenticated user using only stored My Life Memory data.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      openWorldHint: false,
-    },
-  },
-];
 
 const jsonResponse = (
   body: unknown,
   status = 200,
-  corsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS,
+  corsHeaders: Record<string, string> = {},
   extraHeaders: Record<string, string> = {},
 ) => (
   new Response(JSON.stringify(body), {
@@ -478,7 +222,7 @@ const downloadPrivateMemoryImage = async (
   };
 };
 
-const availableTools = () => readTools;
+const availableTools = () => MCP_TOOL_MANIFEST;
 
 const handleRpcMessage = async (message: Record<string, unknown>, config: ReturnType<typeof getConfig>, userId: string) => {
   const id = message.id;
@@ -487,14 +231,14 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
     ? message.params as Record<string, unknown>
     : {};
 
-  if (!id && method.startsWith('notifications/')) {
+  if (isJsonRpcNotification(message)) {
     return null;
   }
 
   if (method === 'initialize') {
     const temporalPayload = await callMemoryApi(config, userId, 'get_temporal_context', {}).catch(() => null);
     return rpcResult(id, {
-      protocolVersion: getString(params.protocolVersion) || '2025-03-26',
+      protocolVersion: negotiateMcpProtocolVersion(params.protocolVersion),
       capabilities: {
         tools: {},
       },
@@ -570,15 +314,22 @@ const handleRpcMessage = async (message: Record<string, unknown>, config: Return
 };
 
 serve(async request => {
-  // Native MCP clients use null, custom, or no Origin. This remote endpoint is
-  // protected by a per-user bearer token, while browser-facing functions keep
-  // their stricter ALLOWED_ORIGINS checks.
-  const localCorsHeaders = DEFAULT_CORS_HEADERS;
+  const origin = request.headers.get('origin');
+  const configuredOrigins = Deno.env.get('ALLOWED_ORIGINS') || '';
+  const originAllowed = isMcpOriginAllowed(origin, configuredOrigins);
+  const localCorsHeaders = originAllowed
+    ? createMcpCorsHeaders(origin)
+    : createMcpCorsHeaders(null);
   const json = (
     body: unknown,
     status = 200,
     extraHeaders: Record<string, string> = {},
   ) => jsonResponse(body, status, localCorsHeaders, extraHeaders);
+
+  if (!originAllowed) {
+    console.warn('MCP request rejected', { reason: 'origin_not_allowed', origin });
+    return json(rpcError(null, -32003, 'Origin not allowed.'), 403);
+  }
 
   const ipLimit = await hitRateLimit(`mcp:${clientIp(request)}`, 240, 60_000);
   if (ipLimit.limited) {
@@ -632,11 +383,40 @@ serve(async request => {
 
   try {
     if (Array.isArray(body)) {
-      const results = (await Promise.all(body.map(message => handleRpcMessage(message, config, auth.userId)))).filter(Boolean);
+      if (body.length === 0) {
+        return json(rpcError(null, -32600, 'Invalid Request: empty batch'), 400);
+      }
+      if (body.some(isJsonRpcInitialize)) {
+        return json(rpcError(null, -32600, 'The initialize request must not be sent in a JSON-RPC batch.'), 400);
+      }
+      if (!isSupportedMcpProtocolHeader(request.headers.get('mcp-protocol-version'))) {
+        return json(rpcError(null, -32600, 'Unsupported MCP-Protocol-Version header.'), 400);
+      }
+      const results = (await Promise.all(body.map(message => {
+        if (isJsonRpcResponse(message)) return null;
+        if (!message || typeof message !== 'object' || Array.isArray(message)
+          || (message as Record<string, unknown>).jsonrpc !== '2.0') {
+          return rpcError(null, -32600, 'Invalid Request');
+        }
+        return handleRpcMessage(message as Record<string, unknown>, config, auth.userId);
+      }))).filter(result => result !== null);
+      if (results.length === 0) {
+        return new Response(null, { status: 202, headers: localCorsHeaders });
+      }
       return json(results);
     }
     if (!body || typeof body !== 'object') {
       return json(rpcError(null, -32600, 'Invalid Request'), 400);
+    }
+    if (isJsonRpcResponse(body)) {
+      return new Response(null, { status: 202, headers: localCorsHeaders });
+    }
+    if ((body as Record<string, unknown>).jsonrpc !== '2.0') {
+      return json(rpcError((body as Record<string, unknown>).id, -32600, 'Invalid Request'), 400);
+    }
+    if (!isJsonRpcInitialize(body)
+      && !isSupportedMcpProtocolHeader(request.headers.get('mcp-protocol-version'))) {
+      return json(rpcError((body as Record<string, unknown>).id, -32600, 'Unsupported MCP-Protocol-Version header.'), 400);
     }
     const result = await handleRpcMessage(body as Record<string, unknown>, config, auth.userId);
     if (!result) return new Response(null, { status: 202, headers: localCorsHeaders });

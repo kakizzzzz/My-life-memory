@@ -23,7 +23,6 @@ import {
   type MemoryQueryDateRange,
 } from './memory-query-plan.ts';
 import { buildMemoryAnswerBoundary } from './memory-answer-boundary.ts';
-import type { MemorySemanticReviewInput } from './memory-semantic-review.ts';
 import { buildMemoryTemporalContext } from './time-zone.ts';
 import { MCP_MEMORY_INSTRUCTIONS } from './mcp-memory-contract.mjs';
 
@@ -53,9 +52,6 @@ export type MemoryResearchInput = {
   resolvedPlace?: ResolvedMemoryPlace | null;
   placeResolution?: MemoryPlaceResolutionSummary | null;
   confirmedReference?: ConfirmedMemoryReference | null;
-  // Accepted for backward compatibility only. Host-model candidate verdicts
-  // no longer have authority to promote unverified text into evidence.
-  semanticReview?: MemorySemanticReviewInput | null;
 };
 
 export type ConfirmedMemoryReference = {
@@ -872,8 +868,6 @@ export const researchMemoryContext = (
     personalContext,
     temporalResolutionRequired,
     unresolvedPublicPlace,
-    semanticReviewRequired: false,
-    semanticClarification: null,
     hasMatchingRecords,
     verifiedPlaceNames: input.resolvedPlace
       ? [input.resolvedPlace.displayName || input.resolvedPlace.name].filter(Boolean)
@@ -891,13 +885,6 @@ export const researchMemoryContext = (
       createdAtRole: 'memory-creation-time' as const,
       updatedAtRole: 'storage-mutation-time-not-proof-of-user-edit' as const,
       instruction: 'Use currentLocalDate only to resolve relative query dates. A note happened on createdAt. updatedAt is a storage mutation timestamp and must not be described as a deliberate user edit.',
-    },
-    semanticReview: {
-      required: false,
-      phase: 'not-needed' as const,
-      usesExternalModelService: false as const,
-      candidatesExposed: false,
-      instruction: 'Host-model candidate verdicts are not accepted as evidence. Fuzzy references require explicit user confirmation.',
     },
     searchPlan: {
       mode: personalContext.status === 'resolved'

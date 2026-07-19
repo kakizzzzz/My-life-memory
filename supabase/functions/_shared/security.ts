@@ -266,7 +266,7 @@ const sanitizeOpeningTag = (tag: string, attrs: string) => {
   if (tag === 'img') {
     const src = getAttrValue(attrs, 'src');
     if (!isSafeImageSrc(src)) return '';
-    const safeAttrs = [safeAttr('src', src.trim())];
+    const safeAttrs = [safeAttr('src', src.trim()), safeAttr('referrerpolicy', 'no-referrer')];
     const alt = getAttrValue(attrs, 'alt');
     if (alt) safeAttrs.push(safeAttr('alt', alt.slice(0, 240)));
 

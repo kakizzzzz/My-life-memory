@@ -17,7 +17,10 @@ const isSafeImageSrc = (value: string) => {
   if (lowered.startsWith('storage://')) return true;
 
   try {
-    const parsed = new URL(trimmed, window.location.origin);
+    const origin = window.location.origin;
+    const parsed = origin && origin !== 'null'
+      ? new URL(trimmed, origin)
+      : new URL(trimmed);
     return SAFE_IMAGE_PROTOCOLS.has(parsed.protocol);
   } catch {
     return false;
@@ -107,6 +110,7 @@ const sanitizeNode = (node: Node): Node | null => {
 
     const image = document.createElement('img');
     image.setAttribute('src', src.trim());
+    image.setAttribute('referrerpolicy', 'no-referrer');
     const alt = node.getAttribute('alt');
     if (alt) image.setAttribute('alt', alt.slice(0, 240));
 
