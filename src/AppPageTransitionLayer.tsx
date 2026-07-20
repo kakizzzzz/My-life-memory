@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { APP_CONTENT_FADE, APP_CONTENT_INITIAL_OPACITY } from './constants/motion';
+import {
+  APP_CONTENT_INITIAL_OPACITY,
+  APP_PAGE_ENTER_OFFSET,
+  APP_PAGE_ENTER_TRANSITION,
+} from './constants/motion';
 
 export function AppPageTransitionLayer({
   children,
@@ -26,11 +30,14 @@ export function AppPageTransitionLayer({
       }}
     >
       <motion.div
-        initial={{ opacity: APP_CONTENT_INITIAL_OPACITY }}
-        animate={{ opacity: isActive ? 1 : APP_CONTENT_INITIAL_OPACITY }}
-        transition={APP_CONTENT_FADE}
+        initial={{ opacity: APP_CONTENT_INITIAL_OPACITY, y: APP_PAGE_ENTER_OFFSET }}
+        animate={{
+          opacity: isActive ? 1 : APP_CONTENT_INITIAL_OPACITY,
+          y: isActive ? 0 : APP_PAGE_ENTER_OFFSET,
+        }}
+        transition={APP_PAGE_ENTER_TRANSITION}
         className={contentClassName}
-        style={{ willChange: 'opacity' }}
+        style={{ willChange: 'transform, opacity' }}
       >
         {children}
       </motion.div>

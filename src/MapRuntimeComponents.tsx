@@ -14,13 +14,30 @@ export function FlyToTarget({ target }: { target: [number, number] | null }) {
       const currentCenter = map.getCenter();
       const targetLatLng = L.latLng(target);
       const distance = currentCenter.distanceTo(targetLatLng);
-      const isNearViewport = map.getBounds().pad(0.35).contains(targetLatLng);
+      const currentZoom = map.getZoom();
+      const viewportSize = map.getSize();
+      const viewportDiagonal = Math.max(1, Math.hypot(viewportSize.x, viewportSize.y));
+      const screenDistance = map.project(currentCenter, currentZoom).distanceTo(map.project(targetLatLng, currentZoom));
+      const travelRatio = Math.min(screenDistance / viewportDiagonal, 1);
 
-      // A visible marker should stay attached to the tap instead of starting a long fly animation.
-      if ((distance < 2500 || isNearViewport) && map.getZoom() === 16) {
-        map.panTo(target, { animate: true, duration: 0.32 });
+      if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        map.setView(target, 16, { animate: false });
+        return;
+      }
+
+      // Reserve direct panning for genuinely tiny moves; longer hops need the fly arc to retain spatial depth.
+      if (distance < 200 && currentZoom === 16) {
+        map.panTo(target, {
+          animate: true,
+          duration: 0.62 + (travelRatio * 0.18),
+          easeLinearity: 0.18,
+        });
       } else {
-        map.flyTo(target, 16, { animate: true, duration: 0.55 });
+        map.flyTo(target, 16, {
+          animate: true,
+          duration: 1.25 + (travelRatio * 0.3),
+          easeLinearity: 0.2,
+        });
       }
     }
   }, [target, map]);

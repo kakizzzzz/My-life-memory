@@ -17,3 +17,14 @@ export const APP_CONTENT_FADE = {
   duration: 0.12,
   ease: [0.22, 1, 0.36, 1],
 } as const;
+
+export const APP_PAGE_ENTER_OFFSET = 8;
+
+export const APP_PAGE_ENTER_TRANSITION = {
+  opacity: APP_CONTENT_FADE,
+  y: {
+    type: 'spring',
+    duration: 0.28,
+    bounce: 0,
+  },
+} as const;

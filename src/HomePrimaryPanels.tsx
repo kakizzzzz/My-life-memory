@@ -91,8 +91,14 @@ export function HomeProfilePanel({
           <div className="rounded-[12px] bg-[var(--app-soft-surface)] p-3 text-black">
             <div className="flex min-h-11 items-center gap-3">
               <Lock size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} className="shrink-0" />
-              <span className="min-w-0 flex-1 text-[15px] font-medium leading-snug text-black/45">
-                {homeCopy.passwordManaged}
+              <span
+                role="img"
+                aria-label={homeCopy.passwordManaged}
+                className="flex min-w-0 flex-1 items-center gap-1.5"
+              >
+                {[0, 1, 2, 3, 4, 5, 6, 7].map(dot => (
+                  <span key={dot} aria-hidden="true" className="h-2 w-2 rounded-full bg-black/75" />
+                ))}
               </span>
               <button
                 type="button"
