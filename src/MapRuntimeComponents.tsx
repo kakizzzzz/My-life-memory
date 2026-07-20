@@ -9,16 +9,18 @@ export function FlyToTarget({ target }: { target: [number, number] | null }) {
 
   useEffect(() => {
     if (target) {
+      map.stop();
       map.invalidateSize({ pan: false, debounceMoveend: true });
       const currentCenter = map.getCenter();
       const targetLatLng = L.latLng(target);
       const distance = currentCenter.distanceTo(targetLatLng);
+      const isNearViewport = map.getBounds().pad(0.35).contains(targetLatLng);
 
-      // If we are already close, just pan smoothly to avoid zoom bouncing
-      if (distance < 200 && map.getZoom() === 16) {
-        map.panTo(target, { animate: true, duration: 0.5 });
+      // A visible marker should stay attached to the tap instead of starting a long fly animation.
+      if ((distance < 2500 || isNearViewport) && map.getZoom() === 16) {
+        map.panTo(target, { animate: true, duration: 0.32 });
       } else {
-        map.flyTo(target, 16, { animate: true, duration: 1.2 });
+        map.flyTo(target, 16, { animate: true, duration: 0.55 });
       }
     }
   }, [target, map]);

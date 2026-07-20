@@ -3,6 +3,14 @@ import { Marker } from 'react-leaflet';
 import L from 'leaflet';
 import type { MapStyle, StarData } from './types/app';
 
+type MarkerWithDragTolerance = L.Marker & {
+  dragging?: {
+    _draggable?: L.Draggable & {
+      options: { clickTolerance: number };
+    };
+  };
+};
+
 function createStarIcon(tagNumber?: number, isSelected?: boolean, colorHex?: string, isAerial?: boolean, badgeColor = '#c3c3c3') {
   const color = colorHex || '#EDC727';
   const badgeBg = isAerial ? '#ffffff' : badgeColor;
@@ -67,10 +75,16 @@ export function DraggableStarMarker({
 }) {
   const [markerPosition, setMarkerPosition] = React.useState<[number, number]>([star.lat, star.lng]);
   const isDraggingRef = React.useRef(false);
+  const markerRef = React.useRef<L.Marker | null>(null);
 
   useEffect(() => {
     if (!isDraggingRef.current) setMarkerPosition([star.lat, star.lng]);
   }, [star.lat, star.lng]);
+
+  useEffect(() => {
+    const draggable = (markerRef.current as MarkerWithDragTolerance | null)?.dragging?._draggable;
+    if (draggable) draggable.options.clickTolerance = 10;
+  }, []);
 
   const icon = React.useMemo(
     () => createStarIcon(star.tagOrder, isSelected, star.color, mapStyle === 'aerial', badgeColor),
@@ -100,9 +114,11 @@ export function DraggableStarMarker({
 
   return (
     <Marker
+      ref={markerRef}
       position={markerPosition}
       icon={icon}
       draggable
+      bubblingMouseEvents={false}
       eventHandlers={eventHandlers}
     />
   );

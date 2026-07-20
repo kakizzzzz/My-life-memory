@@ -146,6 +146,14 @@ select {
   will-change: transform;
 }
 
+.app-star-marker {
+  transition: transform 100ms ease-out;
+}
+
+.app-star-div-icon:active .app-star-marker {
+  transform: scale(0.94);
+}
+
 .picker-popup .react-colorful {
   width: 100%;
   height: 46px;

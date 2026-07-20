@@ -55,11 +55,13 @@ export const useMapStarActions = ({
   const starPlacementDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
 
   const onMapClick = React.useCallback(() => {
+    mapInstanceRef.current?.stop();
+    setFlyTarget(null);
     setSelectedStarId(null);
     setActiveTag(null);
     setSelectedTrackId(null);
     setSelectedTrackLatLng(null);
-  }, [setActiveTag, setSelectedStarId, setSelectedTrackId, setSelectedTrackLatLng]);
+  }, [setActiveTag, setFlyTarget, setSelectedStarId, setSelectedTrackId, setSelectedTrackLatLng]);
 
   const handleLocateMe = React.useCallback(() => {
     setFlyTarget([userLocation[0], userLocation[1]]);
@@ -162,10 +164,17 @@ export const useMapStarActions = ({
     }
   }, [addStarAtLatLng]);
 
-  const onStarClick = React.useCallback((id: string, _event: LeafletMouseEvent) => {
+  const onStarClick = React.useCallback((id: string, event: LeafletMouseEvent) => {
+    L.DomEvent.stopPropagation(event.originalEvent);
+
     const clickedStar = stars.find(star => star.id === id);
-    if (clickedStar) {
-      setFlyTarget([clickedStar.lat, clickedStar.lng]);
+
+    if (tagMode === 'none' && selectedStarId === id) {
+      mapInstanceRef.current?.stop();
+      setFlyTarget(null);
+      setSelectedStarId(null);
+      setActiveTag(null);
+      return;
     }
 
     if (tagMode === 'add') {
@@ -197,7 +206,11 @@ export const useMapStarActions = ({
         setActiveTag(null);
       }
     }
-  }, [currentTagGroupId, setActiveTag, setFlyTarget, setSelectedStarId, setStars, stars, tagMode]);
+
+    if (clickedStar) {
+      setFlyTarget([clickedStar.lat, clickedStar.lng]);
+    }
+  }, [currentTagGroupId, selectedStarId, setActiveTag, setFlyTarget, setSelectedStarId, setStars, stars, tagMode]);
 
   const onUpdateStar = React.useCallback((id: string, updates: Partial<StarData>) => {
     setStars(prev => prev.map(star => star.id === id ? { ...star, ...updates } : star));
