@@ -879,8 +879,8 @@ export default function App() {
         />
       )}
 
-      {isSignedIn && activeView === 'records' && (
-        <AppPageTransitionLayer key="records">
+      {isSignedIn && (
+        <AppPageTransitionLayer key="records" isActive={activeView === 'records'}>
           <RecordsScreen
             homeCopy={homeCopy}
             recordsByDate={recordsByDate}
