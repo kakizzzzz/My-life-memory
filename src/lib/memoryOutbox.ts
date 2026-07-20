@@ -1,5 +1,6 @@
 import type { PersistedAppState } from '../types/app';
 import type { CloudProfile } from './cloudBackend';
+import type { MemorySyncErrorInfo } from './memorySyncErrors';
 import {
   compactMemoryMutations,
   diffMemoryState,
@@ -38,6 +39,7 @@ export type MemoryMutationOutbox = {
   legacySnapshotMigratedAt?: number;
   legacySnapshotBlocked?: boolean;
   lastError?: string;
+  lastErrorInfo?: MemorySyncErrorInfo;
 };
 
 export const memoryOutboxForUser = (
@@ -284,6 +286,8 @@ export const enqueueMemoryMutations = async ({
           legacySnapshotMigratedAt: existing?.legacySnapshotMigratedAt,
           legacySnapshotBlocked: existing?.legacySnapshotBlocked,
           inFlightBatch: existing?.inFlightBatch,
+          lastError: existing?.lastError,
+          lastErrorInfo: existing?.lastErrorInfo,
         });
         store.put(next);
       } catch {

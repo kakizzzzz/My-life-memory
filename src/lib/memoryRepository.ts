@@ -2,6 +2,10 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
 import type { CloudProfile } from './cloudBackend';
 import {
+  classifyMemorySyncError,
+  NormalizedMemorySaveError,
+} from './memorySyncErrors';
+import {
   assembleNormalizedMemoryState,
   MAX_MEMORY_MUTATIONS_PER_COMMIT,
   validateMemoryMutations,
@@ -252,11 +256,11 @@ export const applyMemoryMutations = async (
     starId: item.starId,
     payload: item.payload,
   }));
-  const { data, error } = await client.rpc('apply_memory_mutations', {
+  const { data, error, status } = await client.rpc('apply_memory_mutations', {
     p_expected_revision: Math.max(0, expectedRevision),
     p_mutations: wireMutations,
   });
-  if (error) throw error;
+  if (error) throw new NormalizedMemorySaveError(classifyMemorySyncError(error, status));
   const row = (Array.isArray(data) ? data[0] : data) as {
     saved?: boolean;
     dataset_revision?: number;

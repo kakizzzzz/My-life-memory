@@ -366,3 +366,30 @@
 - Token handling: the temporary Supabase access token was read silently into one deployment process, unset before that process exited, and never written to the repository, `.env`, shell configuration, or command output.
 - Production smoke checks: unauthenticated `mcp` returned HTTP 401 with JSON-RPC `Unauthorized`; a concrete disallowed Origin returned HTTP 403 `Origin not allowed`.
 - GitHub verification: CI run `29694342190` and Pages run `29694408928` both completed successfully for `cecf8d83bb8f9e60b609b4d5bb26cb1d7a1b1b21`.
+
+## Follow-up: Normalized Cloud Sync Recovery
+
+- Baseline HEAD: `b32f4a9415c5cf67d2e295d45a0f131ef8d542ab`.
+- Objective: diagnose and repair the persistent normalized-memory sync failure without deleting local IndexedDB changes, clearing the outbox, overwriting cloud data, or weakening validation.
+- Files inspected: cloud auth/sync orchestration, mutation outbox persistence, normalized mutation validation and repository RPC calls, cloud status UI, route recording and normalization, rich HTML sanitizers, the v2 database validator, service worker caching, relevant tests, and recent commits.
+- [Complete] Trace every `error` cloud-sync status path and the full outbox/in-flight/revision lifecycle.
+- [Complete] Identify the concrete compatibility failure: sanitized note images now include `referrerpolicy="no-referrer"`, while the production v2 `memory_html_is_safe()` function still rejects every image attribute except `src`, `alt`, and `data-media-*`.
+- [Complete] Add a narrow post-v2 compatibility migration that accepts only the exact safe `no-referrer` value.
+- [Complete] Isolate locally invalid mutations so one malformed route cannot permanently block unrelated valid changes while retaining the rejected mutation for correction.
+- [Complete] Preserve structured, privacy-safe sync error diagnostics and distinguish network, validation, authorization, storage, and server failures in the user-facing status.
+- [Complete] Add database, IndexedDB, route-validation, retry, conflict-rebase, and cleanup regressions.
+- [Complete] Run `npm run lint`, an equivalent Deno Edge check, `npm test`, `npm run build`, `npm run test:e2e`, and `git diff --check`; inspect the final diff and record exact results.
+- Decision: do not rerun or edit `20260713_normalized_memory_storage_v2.sql`; use a new ordered migration because the incompatibility is proven and production already ran v2.
+- Decision: never discard a blocked mutation. Valid unrelated mutations may continue, while the blocked item remains in the user-scoped IndexedDB outbox until corrected or accepted by the matching server validator.
+- Root cause: commit `cb6f14f` correctly added `referrerpolicy="no-referrer"` to sanitized note images, but production `memory_html_is_safe(text)` still permitted only `src`, `alt`, and `data-media-*` on `<img>`. `apply_memory_mutations()` therefore rejected an image-note mutation with SQLSTATE `22023`; the retained mutation then kept retrying with every later save.
+- Recovery behavior: locally invalid mutations remain in the user-scoped IndexedDB outbox with structured error metadata. Unrelated valid mutations can continue, a corrected mutation for the same entity replaces the blocked version through normal compaction, and only mutations confirmed by the server are removed.
+- Privacy-safe diagnostics contain mutation kinds/counts, hashed entity references, expected/remote revision, sequence, in-flight count, and structured Supabase error fields. They never log note bodies, image contents, route coordinates, passwords, sessions, or tokens.
+- Targeted IndexedDB, validation, status, and database compatibility suite: 31 passed, 0 failed.
+- Final `npm run lint`: passed with exit code 0.
+- Exact `npm run lint:edge` could not start because the machine has no global Deno binary; equivalent `npx --yes deno check` passed all six production Edge Functions with Deno 2.9.3.
+- Final `npm test`: 231 passed, 0 failed.
+- Final `npm run build`: passed. The existing large-chunk advisory remains non-blocking.
+- Final `npm run test:e2e`: 1/1 mobile WebKit test passed.
+- Final `git diff --check`: passed with no whitespace errors.
+- Production migration: `20260722_allow_no_referrer_note_images.sql` was executed once through the official Supabase Management API for project `mbclmtoxxxxahbzissgm` and returned HTTP 201. A follow-up query confirmed `accepts_no_referrer=true`, `rejects_origin=true`, and no direct execute privilege for `anon` or `authenticated`.
+- Token handling: the temporary Supabase access token was read silently into the migration and verification processes, unset before each process exited, and never written to the repository, `.env`, shell configuration, or command output.

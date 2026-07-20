@@ -244,6 +244,15 @@ select
   max(dataset_revision) as maximum_revision
 from public.memory_settings;
 
+-- Sanitized image HTML must accept only the application's exact privacy policy.
+select
+  public.memory_html_is_safe(
+    '<img src="https://example.invalid/image.jpg" alt="memory" referrerpolicy="no-referrer">'
+  ) as accepts_no_referrer_images,
+  not public.memory_html_is_safe(
+    '<img src="https://example.invalid/image.jpg" alt="memory" referrerpolicy="origin">'
+  ) as rejects_other_referrer_policies;
+
 -- 10) MCP tokens must store hashes, never plaintext token values.
 select
   count(*) as active_mcp_tokens,

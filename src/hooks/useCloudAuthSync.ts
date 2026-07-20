@@ -34,10 +34,18 @@ import {
   diffMemoryState,
   MAX_MEMORY_MUTATIONS_PER_COMMIT,
   mutationsAreDisjointFromRemote,
+  partitionMemoryMutationsForSync,
   preserveMutationConflicts,
   reconcileMemoryMutationsAfterRemoteAdvance,
   rebaseMemoryMutationBases,
 } from '../lib/normalizedMemory';
+import {
+  classifyMemorySyncError,
+  logMemorySyncFailure,
+  memorySyncErrorForStorage,
+  memorySyncIssueSummary,
+  memorySyncValidationError,
+} from '../lib/memorySyncErrors';
 import {
   registerCloudConflictResolver,
   setCloudSyncStatus,
@@ -454,10 +462,35 @@ export const useCloudAuthSync = ({
       return;
     }
 
+    const pendingPartition = partitionMemoryMutationsForSync(pendingOutbox.mutations);
+    if (pendingPartition.valid.length === 0) {
+      const info = memorySyncValidationError(
+        pendingPartition.invalid[0]?.message || 'A local memory change cannot be synchronized safely.'
+      );
+      const blockedOutbox: MemoryMutationOutbox = {
+        ...pendingOutbox,
+        inFlightBatch: undefined,
+        lastError: memorySyncIssueSummary(info),
+        lastErrorInfo: info,
+      };
+      pendingMemoryOutboxRef.current = blockedOutbox;
+      await writeMemoryMutationOutbox(blockedOutbox).catch(() => {});
+      logMemorySyncFailure({
+        info,
+        mutations: pendingOutbox.mutations,
+        expectedRevision: pendingOutbox.expectedRevision,
+        remoteRevision: cloudRevisionRef.current,
+        sequence: pendingOutbox.sequence,
+        inFlightCount: pendingOutbox.inFlightBatch?.mutations.length || 0,
+      });
+      setCloudSyncStatus('error', pendingOutbox.language, 'validation');
+      return;
+    }
+
     cloudSaveInFlightRef.current = true;
     cloudFlushRequestedRef.current = false;
     setCloudSyncStatus('syncing', pendingOutbox.language);
-    const pendingBatch = pendingOutbox.mutations.slice(0, MAX_MEMORY_MUTATIONS_PER_COMMIT);
+    const pendingBatch = pendingPartition.valid.slice(0, MAX_MEMORY_MUTATIONS_PER_COMMIT);
     const baseStateAtSend = cloudBaseStateRef.current;
     const baseProfileAtSend = cloudBaseProfileRef.current;
 
@@ -538,17 +571,30 @@ export const useCloudAuthSync = ({
         });
         setCloudSyncStatus('synced', pendingOutbox.language);
       } else {
+        const nextPartition = partitionMemoryMutationsForSync(nextMutations);
+        const onlyBlockedMutationsRemain = nextPartition.valid.length === 0;
+        const validationInfo = onlyBlockedMutationsRemain
+          ? memorySyncValidationError(
+              nextPartition.invalid[0]?.message || 'A local memory change cannot be synchronized safely.'
+            )
+          : undefined;
         const rebasedOutbox: MemoryMutationOutbox = {
           ...(latestOutbox || pendingOutbox),
           expectedRevision: result.revision,
           mutations: nextMutations,
           inFlightBatch: undefined,
           sequence: Math.max(latestOutbox?.sequence || 0, pendingOutbox.sequence) + 1,
+          lastError: validationInfo ? memorySyncIssueSummary(validationInfo) : undefined,
+          lastErrorInfo: validationInfo,
         };
         pendingMemoryOutboxRef.current = rebasedOutbox;
         await writeMemoryMutationOutbox(rebasedOutbox);
-        setCloudSyncStatus('local', rebasedOutbox.language);
-        cloudFlushRequestedRef.current = true;
+        if (onlyBlockedMutationsRemain) {
+          setCloudSyncStatus('error', rebasedOutbox.language, 'validation');
+        } else {
+          setCloudSyncStatus('local', rebasedOutbox.language);
+          cloudFlushRequestedRef.current = true;
+        }
       }
     } catch (error) {
       if (error instanceof NormalizedMemoryConflictError) {
@@ -631,20 +677,33 @@ export const useCloudAuthSync = ({
           setCloudSyncStatus('conflict', pendingOutbox.language);
         }
       } else {
-        console.error('Could not save normalized memory changes:', error);
+        const info = classifyMemorySyncError(error);
         const storedFailedOutbox = await readMemoryMutationOutbox(userId).catch(() => null);
-        const failedOutbox = {
-          ...(newestMemoryOutboxForUser(
-            isCloudAccountScopeCurrent(userId, accountEpoch) ? pendingMemoryOutboxRef.current : null,
-            storedFailedOutbox,
-            userId
-          ) || pendingOutbox),
-          lastError: error instanceof Error ? error.message : 'Normalized memory save failed.',
+        const latestFailedOutbox = newestMemoryOutboxForUser(
+          isCloudAccountScopeCurrent(userId, accountEpoch) ? pendingMemoryOutboxRef.current : null,
+          storedFailedOutbox,
+          userId
+        ) || pendingOutbox;
+        const failedOutbox: MemoryMutationOutbox = {
+          ...latestFailedOutbox,
+          ...(info.kind === 'validation' || info.kind === 'authorization'
+            ? { inFlightBatch: undefined }
+            : {}),
+          lastError: memorySyncIssueSummary(info),
+          lastErrorInfo: info,
         };
+        logMemorySyncFailure({
+          info,
+          mutations: pendingBatch,
+          expectedRevision: pendingOutbox.expectedRevision,
+          remoteRevision: cloudRevisionRef.current,
+          sequence: failedOutbox.sequence,
+          inFlightCount: failedOutbox.inFlightBatch?.mutations.length || 0,
+        });
         if (isCloudAccountScopeCurrent(userId, accountEpoch)) pendingMemoryOutboxRef.current = failedOutbox;
         await writeMemoryMutationOutbox(failedOutbox).catch(() => {});
         if (isCloudAccountScopeCurrent(userId, accountEpoch)) {
-          setCloudSyncStatus('error', pendingOutbox.language);
+          setCloudSyncStatus('error', pendingOutbox.language, info.kind);
         }
       }
     } finally {
@@ -1157,8 +1216,14 @@ export const useCloudAuthSync = ({
       })
       .catch(error => {
         if (!isCloudAccountScopeCurrent(userId, accountEpoch)) return;
-        console.error('Could not persist normalized memory changes:', error);
-        setCloudSyncStatus('error', language);
+        const info = memorySyncErrorForStorage(error);
+        console.error('Could not persist normalized memory changes:', {
+          kind: info.kind,
+          code: info.code || undefined,
+          status: info.status,
+          message: info.message,
+        });
+        setCloudSyncStatus('error', language, 'storage');
       });
 
     return () => {

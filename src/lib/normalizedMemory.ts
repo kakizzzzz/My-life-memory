@@ -298,49 +298,164 @@ const MAX_IMAGES_PER_NOTE = 1_000;
 const MAX_ROUTE_SEGMENTS = 200;
 const MAX_ROUTE_POINTS = 20_000;
 
-export const validateMemoryMutations = (items: MemoryMutation[]) => {
-  items.forEach(item => {
-    if (!item.entityId || item.entityId.length > MAX_ENTITY_ID_LENGTH) {
-      throw new Error('A memory change has an invalid entity ID.');
+const MEMORY_MUTATION_TYPES = new Set<MemoryMutationType>([
+  'settings_update',
+  'profile_update',
+  'star_upsert',
+  'star_soft_delete',
+  'note_upsert',
+  'note_soft_delete',
+  'track_upsert',
+  'track_soft_delete',
+]);
+
+export class MemoryMutationValidationError extends Error {
+  mutationType: string;
+  mutationKey: string;
+
+  constructor(message: string, item: MemoryMutation) {
+    super(message);
+    this.name = 'MemoryMutationValidationError';
+    this.mutationType = String(item?.type || 'unknown');
+    this.mutationKey = item && typeof item === 'object' ? memoryMutationKey(item) : 'unknown';
+  }
+}
+
+export type InvalidMemoryMutation = {
+  mutation: MemoryMutation;
+  message: string;
+};
+
+const rejectMemoryMutation = (item: MemoryMutation, message: string): never => {
+  throw new MemoryMutationValidationError(message, item);
+};
+
+const isValidCoordinate = (value: unknown, minimum: number, maximum: number) => (
+  typeof value === 'number'
+  && Number.isFinite(value)
+  && value >= minimum
+  && value <= maximum
+);
+
+export const validateMemoryMutation = (item: MemoryMutation) => {
+  if (!item || typeof item !== 'object' || !MEMORY_MUTATION_TYPES.has(item.type)) {
+    rejectMemoryMutation(item, 'A memory change has an unsupported type.');
+  }
+  if (!item.mutationId || item.mutationId.length > MAX_ENTITY_ID_LENGTH) {
+    rejectMemoryMutation(item, 'A memory change has an invalid mutation ID.');
+  }
+  if (!item.entityId || item.entityId.length > MAX_ENTITY_ID_LENGTH) {
+    rejectMemoryMutation(item, 'A memory change has an invalid entity ID.');
+  }
+  if (item.starId && item.starId.length > MAX_ENTITY_ID_LENGTH) {
+    rejectMemoryMutation(item, 'A memory change has an invalid star ID.');
+  }
+
+  const payload = item.payload || {};
+  if (item.type.endsWith('_upsert') || item.type === 'settings_update' || item.type === 'profile_update') {
+    if (!item.payload || typeof item.payload !== 'object' || Array.isArray(item.payload)) {
+      rejectMemoryMutation(item, 'A memory change is missing its saved data.');
     }
-    if (item.starId && item.starId.length > MAX_ENTITY_ID_LENGTH) {
-      throw new Error('A memory change has an invalid star ID.');
+  }
+
+  if (item.type === 'star_upsert') {
+    if (!isValidCoordinate(payload.lat, -90, 90) || !isValidCoordinate(payload.lng, -180, 180)) {
+      rejectMemoryMutation(item, 'A star has invalid coordinates.');
     }
-    const payload = item.payload || {};
-    if (item.type === 'note_upsert') {
-      if (String(payload.title || '').length > MAX_TEXT_LENGTH || String(payload.content || '').length > MAX_TEXT_LENGTH) {
-        throw new Error('A note is too large to save safely.');
-      }
-      if (String(payload.titleHtml || '').length > MAX_HTML_LENGTH || String(payload.contentHtml || '').length > MAX_HTML_LENGTH) {
-        throw new Error('A formatted note is too large to save safely.');
-      }
-      if ((Array.isArray(payload.imageUrls) && payload.imageUrls.length > MAX_IMAGES_PER_NOTE)
-        || (Array.isArray(payload.images) && payload.images.length > MAX_IMAGES_PER_NOTE)) {
-        throw new Error('A note contains too many images to save safely.');
-      }
-      if (String(payload.imageUrl || '').length > 2_000_000
-        || (Array.isArray(payload.imageUrls)
-          && payload.imageUrls.some(value => String(value || '').length > 2_000_000))) {
-        throw new Error('A legacy note image is too large to save safely.');
-      }
+  }
+
+  if (item.type === 'note_upsert') {
+    if (!item.starId) rejectMemoryMutation(item, 'A note is missing its parent star ID.');
+    if (String(payload.title || '').length > MAX_TEXT_LENGTH || String(payload.content || '').length > MAX_TEXT_LENGTH) {
+      rejectMemoryMutation(item, 'A note is too large to save safely.');
     }
-    if (item.type === 'track_upsert') {
-      const duration = Number(payload.durationSeconds);
-      const distance = Number(payload.distanceKm);
-      if (!Number.isFinite(duration) || duration < 0 || !Number.isFinite(distance) || distance < 0) {
-        throw new Error('A route has an invalid duration or distance.');
+    if (String(payload.titleHtml || '').length > MAX_HTML_LENGTH || String(payload.contentHtml || '').length > MAX_HTML_LENGTH) {
+      rejectMemoryMutation(item, 'A formatted note is too large to save safely.');
+    }
+    if ((Array.isArray(payload.imageUrls) && payload.imageUrls.length > MAX_IMAGES_PER_NOTE)
+      || (Array.isArray(payload.images) && payload.images.length > MAX_IMAGES_PER_NOTE)) {
+      rejectMemoryMutation(item, 'A note contains too many images to save safely.');
+    }
+    if (String(payload.imageUrl || '').length > 2_000_000
+      || (Array.isArray(payload.imageUrls)
+        && payload.imageUrls.some(value => String(value || '').length > 2_000_000))) {
+      rejectMemoryMutation(item, 'A legacy note image is too large to save safely.');
+    }
+  }
+
+  if (item.type === 'track_upsert') {
+    const duration = Number(payload.durationSeconds);
+    const distance = Number(payload.distanceKm);
+    if (!Number.isFinite(duration) || duration < 0 || !Number.isFinite(distance) || distance < 0) {
+      rejectMemoryMutation(item, 'A route has an invalid duration or distance.');
+    }
+    const paths = payload.paths;
+    if (!Array.isArray(paths) || paths.length === 0 || paths.length > MAX_ROUTE_SEGMENTS) {
+      rejectMemoryMutation(item, 'A route has an invalid number of segments.');
+    }
+    let pointCount = 0;
+    for (const segment of paths as unknown[]) {
+      if (!Array.isArray(segment)) {
+        rejectMemoryMutation(item, 'A route contains an invalid segment.');
       }
-      if (!Array.isArray(payload.paths) || payload.paths.length > MAX_ROUTE_SEGMENTS) {
-        throw new Error('A route contains too many segments to save safely.');
+      const points = segment as unknown[];
+      if (points.length < 2) {
+        rejectMemoryMutation(item, 'A route contains an empty or incomplete segment.');
       }
-      const pointCount = payload.paths.reduce((total, segment) => (
-        total + (Array.isArray(segment) ? segment.length : MAX_ROUTE_POINTS + 1)
-      ), 0);
+      pointCount += points.length;
       if (pointCount > MAX_ROUTE_POINTS) {
-        throw new Error('A route contains too many points to save safely.');
+        rejectMemoryMutation(item, 'A route contains too many points to save safely.');
       }
+      for (const point of points) {
+        if (!Array.isArray(point) || point.length !== 2
+          || !isValidCoordinate(point[0], -90, 90)
+          || !isValidCoordinate(point[1], -180, 180)) {
+          rejectMemoryMutation(item, 'A route contains an invalid coordinate point.');
+        }
+      }
+    }
+  }
+};
+
+export const partitionMemoryMutationsForSync = (items: MemoryMutation[]) => {
+  const valid: MemoryMutation[] = [];
+  const invalid: InvalidMemoryMutation[] = [];
+
+  items.forEach(item => {
+    try {
+      validateMemoryMutation(item);
+      valid.push(item);
+    } catch (error) {
+      invalid.push({
+        mutation: item,
+        message: error instanceof Error ? error.message : 'A memory change is invalid.',
+      });
     }
   });
+
+  const invalidStarIds = new Set(
+    invalid
+      .filter(issue => issue.mutation.type.startsWith('star_'))
+      .map(issue => issue.mutation.entityId)
+  );
+  if (invalidStarIds.size > 0) {
+    for (let index = valid.length - 1; index >= 0; index -= 1) {
+      const item = valid[index];
+      if (item.type.startsWith('note_') && item.starId && invalidStarIds.has(item.starId)) {
+        valid.splice(index, 1);
+        invalid.push({
+          mutation: item,
+          message: 'A note is waiting for its parent star to become valid.',
+        });
+      }
+    }
+  }
+
+  return { valid, invalid };
+};
+
+export const validateMemoryMutations = (items: MemoryMutation[]) => {
+  items.forEach(validateMemoryMutation);
 };
 
 const noteFromPayload = (payload: Record<string, unknown>): NoteData => ({

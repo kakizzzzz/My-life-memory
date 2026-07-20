@@ -1,9 +1,12 @@
+import type { MemorySyncIssueKind } from './memorySyncErrors';
+
 export type CloudSyncPhase = 'idle' | 'local' | 'syncing' | 'synced' | 'error' | 'conflict';
 
 export type CloudSyncStatus = {
   phase: CloudSyncPhase;
   language: string;
   updatedAt: number;
+  issue?: MemorySyncIssueKind;
 };
 
 export type CloudConflictStrategy = 'merge' | 'local' | 'cloud';
@@ -27,11 +30,16 @@ export const subscribeCloudSyncStatus = (listener: () => void) => {
   };
 };
 
-export const setCloudSyncStatus = (phase: CloudSyncPhase, language = currentStatus.language) => {
+export const setCloudSyncStatus = (
+  phase: CloudSyncPhase,
+  language = currentStatus.language,
+  issue?: MemorySyncIssueKind
+) => {
   currentStatus = {
     phase,
     language,
     updatedAt: Date.now(),
+    ...(phase === 'error' && issue ? { issue } : {}),
   };
   listeners.forEach(listener => listener());
 };

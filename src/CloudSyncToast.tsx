@@ -6,6 +6,7 @@ import {
   subscribeCloudSyncStatus,
   type CloudSyncPhase,
 } from './lib/cloudSyncStatus';
+import type { MemorySyncIssueKind } from './lib/memorySyncErrors';
 
 const COPY: Record<string, Record<Exclude<CloudSyncPhase, 'idle'>, string>> = {
   en: {
@@ -28,6 +29,33 @@ const COPY: Record<string, Record<Exclude<CloudSyncPhase, 'idle'>, string>> = {
     synced: '동기화됨',
     error: '클라우드 동기화에 실패했습니다. 기기 사본은 보관되었습니다.',
     conflict: '다른 페이지 또는 기기의 변경이 감지되어 이 사본을 보관하고 클라우드는 덮어쓰지 않았습니다.',
+  },
+};
+
+const ERROR_COPY: Record<string, Record<MemorySyncIssueKind, string>> = {
+  en: {
+    network: 'Network unavailable. A local copy was kept.',
+    validation: 'One local change cannot sync yet. A local copy was kept.',
+    authorization: 'Cloud access expired. A local copy was kept; please sign in again.',
+    storage: 'The local sync queue is temporarily unavailable. Your open copy was kept.',
+    server: 'Cloud sync is temporarily unavailable. A local copy was kept.',
+    unknown: 'Cloud sync failed. A local copy was kept.',
+  },
+  zh: {
+    network: '网络暂不可用，本机副本已保留',
+    validation: '一项本机修改暂不能同步，本机副本已保留',
+    authorization: '云端权限已失效，本机副本已保留，请重新登录',
+    storage: '本机同步队列暂不可用，当前内容仍保留',
+    server: '云端服务暂不可用，本机副本已保留',
+    unknown: '云端同步失败，本机副本已保留',
+  },
+  ko: {
+    network: '네트워크를 사용할 수 없어 기기 사본을 보관했습니다.',
+    validation: '한 변경 사항을 아직 동기화할 수 없어 기기 사본을 보관했습니다.',
+    authorization: '클라우드 권한이 만료되었습니다. 기기 사본을 보관했으니 다시 로그인해 주세요.',
+    storage: '로컬 동기화 대기열을 사용할 수 없습니다. 현재 내용은 보관되었습니다.',
+    server: '클라우드 동기화를 일시적으로 사용할 수 없습니다. 기기 사본은 보관되었습니다.',
+    unknown: '클라우드 동기화에 실패했습니다. 기기 사본은 보관되었습니다.',
   },
 };
 
@@ -57,7 +85,11 @@ export function CloudSyncToast() {
 
   if (status.phase === 'idle') return null;
   const languageCopy = COPY[status.language] || COPY.en;
+  const errorCopy = ERROR_COPY[status.language] || ERROR_COPY.en;
   const actionCopy = CONFLICT_ACTION_COPY[status.language] || CONFLICT_ACTION_COPY.en;
+  const message = status.phase === 'error'
+    ? errorCopy[status.issue || 'unknown']
+    : languageCopy[status.phase];
 
   const handleResolve = async (strategy: 'merge' | 'local' | 'cloud') => {
     if (isResolving) return;
@@ -79,7 +111,7 @@ export function CloudSyncToast() {
       role="status"
       aria-live="polite"
     >
-      <div>{languageCopy[status.phase]}</div>
+      <div>{message}</div>
       {status.phase === 'conflict' && (
         <div className="mt-2 flex flex-wrap justify-center gap-2">
           <button

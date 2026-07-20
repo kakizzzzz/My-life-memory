@@ -24,6 +24,14 @@ test('publishes cloud sync phase changes and supports unsubscribe', () => {
   assert.equal(notificationCount, 1);
 });
 
+test('keeps a diagnostic issue only on an error status', () => {
+  setCloudSyncStatus('error', 'en', 'validation');
+  assert.equal(getCloudSyncStatus().issue, 'validation');
+
+  setCloudSyncStatus('syncing', 'en');
+  assert.equal(getCloudSyncStatus().issue, undefined);
+});
+
 test('routes an explicit cloud conflict choice to the registered resolver', async () => {
   const choices: string[] = [];
   registerCloudConflictResolver(async strategy => {

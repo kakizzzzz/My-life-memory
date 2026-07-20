@@ -11,6 +11,14 @@ test('deployment documentation includes the latest hardening migration', () => {
   assert.match(backendSetup, /20260719_harden_media_deletion_enqueue\.sql/);
   assert.match(backendSetup, /20260720_schedule_media_retention_with_supabase_cron\.sql/);
   assert.match(backendSetup, /20260721_require_media_retention_prerequisites\.sql/);
+  assert.match(backendSetup, /20260722_allow_no_referrer_note_images\.sql/);
+});
+
+test('backend verifier checks the rich-image database sanitizer compatibility', () => {
+  assert.match(verifyBackend, /accepts_no_referrer_images/);
+  assert.match(verifyBackend, /rejects_other_referrer_policies/);
+  assert.match(verifyBackend, /referrerpolicy="no-referrer"/);
+  assert.match(verifyBackend, /referrerpolicy="origin"/);
 });
 
 test('deployment order configures the Function and Vault before strict Cron scheduling', () => {

@@ -13,10 +13,12 @@ import {
   diffMemoryState,
   memoryMutationKey,
   mutationsAreDisjointFromRemote,
+  partitionMemoryMutationsForSync,
   preserveMutationConflicts,
   reconcileMemoryMutationsAfterRemoteAdvance,
   rebaseMemoryMutationBases,
   validateMemoryMutations,
+  type MemoryMutation,
 } from '../src/lib/normalizedMemory';
 import type { PersistedAppState } from '../src/types/app';
 import {
@@ -306,6 +308,41 @@ test('invalid route measurements are rejected instead of silently clamped', () =
     base: null,
     createdAt: 1,
   }]), /invalid duration or distance/);
+});
+
+test('invalid route shapes are isolated without blocking unrelated memory changes', () => {
+  const routes: MemoryMutation[] = [
+    {
+      mutationId: 'empty-segment', type: 'track_upsert', entityId: 'route-empty',
+      payload: { paths: [[]], durationSeconds: 1, distanceKm: 0 }, base: null, createdAt: 1,
+    },
+    {
+      mutationId: 'bad-level', type: 'track_upsert', entityId: 'route-level',
+      payload: { paths: [[30, 120]], durationSeconds: 1, distanceKm: 0 }, base: null, createdAt: 2,
+    },
+    {
+      mutationId: 'infinite-point', type: 'track_upsert', entityId: 'route-infinite',
+      payload: { paths: [[[30, 120], [Infinity, 120]]], durationSeconds: 1, distanceKm: 0 }, base: null, createdAt: 3,
+    },
+    {
+      mutationId: 'too-many-segments', type: 'track_upsert', entityId: 'route-segments',
+      payload: {
+        paths: Array.from({ length: 201 }, () => [[30, 120], [30.001, 120.001]]),
+        durationSeconds: 1,
+        distanceKm: 0,
+      },
+      base: null,
+      createdAt: 4,
+    },
+  ];
+  const settings: MemoryMutation = {
+    mutationId: 'valid-settings', type: 'settings_update', entityId: 'settings',
+    payload: { language: 'zh' }, base: { language: 'en' }, createdAt: 5,
+  };
+  const partition = partitionMemoryMutationsForSync([...routes, settings]);
+  assert.equal(partition.invalid.length, 4);
+  assert.deepEqual(partition.valid.map(item => item.type), ['settings_update']);
+  assert.ok(partition.invalid.every(issue => routes.includes(issue.mutation)));
 });
 
 test('an unknown legacy route date never becomes 1970', () => {
