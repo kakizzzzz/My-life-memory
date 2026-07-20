@@ -1788,7 +1788,7 @@ export function NoteEditorModal({ accountScopeKey, star, initialNoteId, language
   };
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center pointer-events-auto p-4">
+    <div className="fixed inset-0 z-[2100] flex items-center justify-center pointer-events-auto p-4">
       <div className="absolute inset-0 bg-black/50" />
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}

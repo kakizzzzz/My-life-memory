@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { BookOpen, Camera, Copy, Download, Home, Lock, Map as MapIcon, MapPin, PieChart, Route, Save, Search, Share, Star, X } from 'lucide-react';
 import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
+import { APP_MOTION_SPRING, APP_NAV_SPRING } from './constants/motion';
 import type { AppView, SearchField, UploadedImage } from './types/app';
 
 type InitialPermissionCopy = {
@@ -469,59 +470,69 @@ export function BottomNavigation({
 }) {
   if (!isVisible) return null;
 
-  const bottomNavTransition = { type: 'spring' as const, stiffness: 420, damping: 34 };
+  const bottomNavViews: AppView[] = ['map', 'stats', 'records', 'home'];
+  const activeIndex = Math.max(bottomNavViews.indexOf(activeView), 0);
+
   const getBottomNavClass = (view: AppView) => (
-    activeView === view
-      ? 'bg-[var(--app-dark)] text-white rounded-full px-6 py-3 flex items-center justify-center transition-all duration-300 ease-out'
-      : 'text-gray-800 rounded-full px-4 py-3 flex items-center justify-center hover:bg-[var(--app-card)] transition-all duration-300 ease-out'
+    `group relative z-10 flex h-12 w-[60px] shrink-0 items-center justify-center rounded-full transition-colors duration-150 ${
+      activeView === view ? 'text-white' : 'text-gray-800 hover:bg-[var(--app-card)]'
+    }`
   );
 
   return (
     <div className="absolute bottom-[var(--app-chrome-bottom)] left-1/2 -translate-x-1/2 z-[1000]">
-      <div className="bg-[var(--app-nav-surface)] backdrop-blur-lg rounded-[2rem] px-2.5 py-2 flex items-center gap-2.5 shadow-sm border border-[var(--app-icon)] transition-all duration-300 ease-out">
-        <motion.button
-          layout
-          transition={bottomNavTransition}
-          whileTap={{ scale: 0.96 }}
+      <div className="relative flex items-center gap-2.5 rounded-[2rem] border border-[var(--app-icon)] bg-[var(--app-nav-surface)] px-2.5 py-2 shadow-sm backdrop-blur-lg">
+        <motion.span
+          initial={false}
+          animate={{ x: activeIndex * 70 }}
+          transition={APP_NAV_SPRING}
+          className="pointer-events-none absolute left-2.5 top-2 h-12 w-[60px] rounded-full bg-[var(--app-dark)]"
+          style={{ willChange: 'transform' }}
+        />
+
+        <button
           onClick={onMap}
           className={getBottomNavClass('map')}
           aria-label={copy.bottomMap}
+          aria-current={activeView === 'map' ? 'page' : undefined}
         >
-          <MapIcon size={24} strokeWidth={iconStrokeWidth} />
-        </motion.button>
+          <span className="flex transition-transform duration-100 ease-out group-active:scale-95">
+            <MapIcon size={24} strokeWidth={iconStrokeWidth} />
+          </span>
+        </button>
 
-        <motion.button
-          layout
-          transition={bottomNavTransition}
-          whileTap={{ scale: 0.96 }}
+        <button
           onClick={onStats}
           className={getBottomNavClass('stats')}
           aria-label={copy.bottomStats}
+          aria-current={activeView === 'stats' ? 'page' : undefined}
         >
-          <PieChart size={24} strokeWidth={iconStrokeWidth} />
-        </motion.button>
+          <span className="flex transition-transform duration-100 ease-out group-active:scale-95">
+            <PieChart size={24} strokeWidth={iconStrokeWidth} />
+          </span>
+        </button>
 
-        <motion.button
-          layout
-          transition={bottomNavTransition}
-          whileTap={{ scale: 0.96 }}
+        <button
           onClick={onRecords}
           className={getBottomNavClass('records')}
           aria-label={copy.bottomNotes}
+          aria-current={activeView === 'records' ? 'page' : undefined}
         >
-          <BookOpen size={24} strokeWidth={iconStrokeWidth} />
-        </motion.button>
+          <span className="flex transition-transform duration-100 ease-out group-active:scale-95">
+            <BookOpen size={24} strokeWidth={iconStrokeWidth} />
+          </span>
+        </button>
 
-        <motion.button
-          layout
-          transition={bottomNavTransition}
-          whileTap={{ scale: 0.96 }}
+        <button
           onClick={onHome}
           className={getBottomNavClass('home')}
           aria-label={copy.bottomHome}
+          aria-current={activeView === 'home' ? 'page' : undefined}
         >
-          <Home size={24} strokeWidth={iconStrokeWidth} />
-        </motion.button>
+          <span className="flex transition-transform duration-100 ease-out group-active:scale-95">
+            <Home size={24} strokeWidth={iconStrokeWidth} />
+          </span>
+        </button>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Star } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AutoUserManualModal,
   BottomNavigation,
@@ -11,10 +11,13 @@ import {
 } from './AppChrome';
 import { HomeScreen } from './HomeScreen';
 import { MapCanvas } from './MapCanvas';
+import { AppPageTransitionLayer } from './AppPageTransitionLayer';
 import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingControlsOverlay } from './MapControlsOverlay';
 import { SearchResultsScreen } from './SearchResultsScreen';
 import { RecordsScreen } from './RecordsScreen';
 import { ReaderScreen } from './ReaderScreen';
+import { TripStatisticsSkeleton } from './TripStatisticsSkeleton';
+import { APP_CONTENT_FADE, APP_CONTENT_INITIAL_OPACITY } from './constants/motion';
 import { useMemoryDerivedData } from './hooks/useMemoryDerivedData';
 import { useMcpTokens } from './hooks/useMcpTokens';
 import { usePasswordChange } from './hooks/usePasswordChange';
@@ -322,17 +325,26 @@ export default function App() {
     return result;
   }, [stars, mapStyle, systemTheme.icon]);
 
-  const onUpdateTrack = (id: string, updates: Partial<TrackData>) => {
+  const onUpdateTrack = useCallback((id: string, updates: Partial<TrackData>) => {
     setSavedTracks(prev => prev.map(t => t.id === id ? { ...t, ...updates, updatedAt: Date.now() } : t));
-  };
+  }, [setSavedTracks]);
 
-  const onDeleteTrack = (id: string) => {
+  const onDeleteTrack = useCallback((id: string) => {
     setSavedTracks(prev => prev.filter(t => t.id !== id));
     if (selectedTrackId === id) {
       setSelectedTrackId(null);
       setSelectedTrackLatLng(null);
     }
-  };
+  }, [selectedTrackId, setSavedTracks]);
+
+  const openStarNoteEditor = useCallback((starId: string) => {
+    setEditingNoteTarget({ starId });
+  }, []);
+
+  const selectTrackOnMap = useCallback((trackId: string, latLng: [number, number] | null) => {
+    setSelectedTrackId(trackId);
+    if (latLng) setSelectedTrackLatLng(latLng);
+  }, []);
 
   const homeCopy = HOME_COPY[language as keyof typeof HOME_COPY] || HOME_COPY.en;
   const languageLocale = LANGUAGE_LOCALES[language] || LANGUAGE_LOCALES.en;
@@ -613,7 +625,6 @@ export default function App() {
     activeHomePanel,
     setActiveHomePanel,
     profileAccount: profile.account,
-    homeScrollRef,
     resetLocationSession,
     resetTrackDraftCheck,
     setActiveThemeColorKey,
@@ -743,6 +754,17 @@ export default function App() {
         onChange={handlePhotoLocationInput}
       />
       
+      <motion.div
+        initial={false}
+        animate={{ opacity: activeView === 'map' ? 1 : APP_CONTENT_INITIAL_OPACITY }}
+        transition={APP_CONTENT_FADE}
+        aria-hidden={activeView !== 'map'}
+        className="absolute inset-0 z-0"
+        style={{
+          pointerEvents: activeView === 'map' ? 'auto' : 'none',
+          willChange: 'opacity',
+        }}
+      >
       <MapCanvas
         mapStyle={mapStyle}
         mapTiles={MAP_TILES}
@@ -770,16 +792,14 @@ export default function App() {
         onNextTag={handleNextTag}
         onUpdateStar={onUpdateStar}
         onDeleteStar={onDeleteStar}
-        onEditStarNote={starId => setEditingNoteTarget({ starId })}
+        onEditStarNote={openStarNoteEditor}
         onUpdateTrack={onUpdateTrack}
         onDeleteTrack={onDeleteTrack}
-        onSelectTrack={(trackId, latLng) => {
-          setSelectedTrackId(trackId);
-          if (latLng) setSelectedTrackLatLng(latLng);
-        }}
+        onSelectTrack={selectTrackOnMap}
         onSelectStar={onStarClick}
         onMoveStar={onMoveStar}
       />
+      </motion.div>
 
       {starDragPreview && (
         <div
@@ -859,8 +879,8 @@ export default function App() {
         />
       )}
 
-      <AnimatePresence>
-        {isSignedIn && activeView === 'records' && (
+      {isSignedIn && activeView === 'records' && (
+        <AppPageTransitionLayer key="records">
           <RecordsScreen
             homeCopy={homeCopy}
             recordsByDate={recordsByDate}
@@ -903,93 +923,111 @@ export default function App() {
               setRecordsCalendarMode('month');
             }}
           />
-        )}
-      </AnimatePresence>
+        </AppPageTransitionLayer>
+      )}
 
-      <HomeScreen
-        isOpen={activeView === 'home'}
-        isSignedIn={isSignedIn}
-        homeCopy={homeCopy}
-        language={language}
-        screenTopPaddingClass={screenTopPaddingClass}
-        iconStrokeWidth={UI_ICON_STROKE}
-        avatarInputRef={avatarInputRef}
-        homeScrollRef={homeScrollRef}
-        onAvatarInput={handleAvatarInput}
-        authMode={authMode}
-        isAuthBusy={isAuthBusy}
-        cloudAuthHydrating={cloudAuthHydrating}
-        cloudConfigError={cloudConfigError}
-        loginAccount={loginAccount}
-        loginPassword={loginPassword}
-        registerConfirmPassword={registerConfirmPassword}
-        registerInviteCode={registerInviteCode}
-        loginError={loginError}
-        onLoginAccountChange={setLoginAccount}
-        onLoginPasswordChange={setLoginPassword}
-        onRegisterConfirmPasswordChange={setRegisterConfirmPassword}
-        onRegisterInviteCodeChange={setRegisterInviteCode}
-        onLanguageChange={setLanguage}
-        onAuthModeChange={setAuthMode}
-        onLoginErrorChange={setLoginError}
-        onPasswordRevealChange={setIsPasswordRevealed}
-        onLoginSubmit={handleLogin}
-        onRegisterSubmit={handleRegister}
-        profile={profile}
-        profileAvatarSrc={profileAvatarSrc}
-        activeHomePanel={activeHomePanel}
-        onActiveHomePanelChange={setActiveHomePanel}
-        onCloseHomePanel={closeHomePanel}
-        isCloudBackendEnabled={isCloudBackendEnabled}
-        isPasswordRevealed={isPasswordRevealed}
-        passwordChangeStatus={passwordChangeStatus}
-        onProfileNameChange={name => setProfile(prev => ({ ...prev, name }))}
-        onProfilePasswordChange={password => setProfile(prev => ({ ...prev, password }))}
-        onOpenPasswordChange={() => {
-          setIsPasswordChangeOpen(true);
-          setPasswordChangeStatus('');
-        }}
-        systemTheme={systemTheme}
-        activeThemeColorKey={activeThemeColorKey}
-        showThemeCustomPicker={showThemeCustomPicker}
-        onThemePresetSelect={theme => {
-          setSystemTheme(theme);
-          setActiveThemeColorKey(null);
-          setShowThemeCustomPicker(false);
-        }}
-        onThemeColorMenuToggle={key => {
-          const isOpen = activeThemeColorKey === key;
-          setActiveThemeColorKey(isOpen ? null : key);
-          setShowThemeCustomPicker(false);
-        }}
-        onThemeColorChange={updateThemeColor}
-        onToggleThemeCustomPicker={() => setShowThemeCustomPicker(prev => !prev)}
-        uploadedImages={uploadedImages}
-        onPreviewImage={setGalleryPreviewImage}
-        permissionRequestState={permissionRequestState}
-        permissionStatusText={permissionStatusText}
-        mcpPlainToken={mcpPlainToken}
-        mcpTokenStatus={mcpTokenStatus}
-        mcpTokens={mcpTokens}
-        isMcpTokenBusy={isMcpTokenBusy}
-        isExportingData={isExportingData}
-        exportDataStatus={exportDataStatus}
-        exportDataProgress={exportDataProgress}
-        accountDeletePassword={accountDeletePassword}
-        accountDeleteStatus={accountDeleteStatus}
-        isDeletingAccount={isDeletingAccount}
-        onOpenPermissions={handleOpenPermissions}
-        onSignOut={handleSignOut}
-        onExportUserData={handleExportUserData}
-        onAccountDeletePasswordChange={value => {
-          setAccountDeletePassword(value);
-          setAccountDeleteStatus('');
-        }}
-        onDeleteAccount={() => { void handleDeleteAccount(); }}
-        onCopyMcpText={handleCopyMcpText}
-        onCreateMcpToken={handleCreateMcpToken}
-        onRevokeMcpToken={handleRevokeMcpToken}
-      />
+      {activeView === 'home' && (
+        <AppPageTransitionLayer key="home">
+          <HomeScreen
+            isOpen={activeView === 'home'}
+            isSignedIn={isSignedIn}
+            homeCopy={homeCopy}
+            language={language}
+            screenTopPaddingClass={screenTopPaddingClass}
+            iconStrokeWidth={UI_ICON_STROKE}
+            avatarInputRef={avatarInputRef}
+            homeScrollRef={homeScrollRef}
+            onAvatarInput={handleAvatarInput}
+            authMode={authMode}
+            isAuthBusy={isAuthBusy}
+            cloudAuthHydrating={cloudAuthHydrating}
+            cloudConfigError={cloudConfigError}
+            loginAccount={loginAccount}
+            loginPassword={loginPassword}
+            registerConfirmPassword={registerConfirmPassword}
+            registerInviteCode={registerInviteCode}
+            loginError={loginError}
+            onLoginAccountChange={setLoginAccount}
+            onLoginPasswordChange={setLoginPassword}
+            onRegisterConfirmPasswordChange={setRegisterConfirmPassword}
+            onRegisterInviteCodeChange={setRegisterInviteCode}
+            onLanguageChange={setLanguage}
+            onAuthModeChange={setAuthMode}
+            onLoginErrorChange={setLoginError}
+            onPasswordRevealChange={setIsPasswordRevealed}
+            onLoginSubmit={handleLogin}
+            onRegisterSubmit={handleRegister}
+            profile={profile}
+            profileAvatarSrc={profileAvatarSrc}
+            activeHomePanel={activeHomePanel}
+            onActiveHomePanelChange={setActiveHomePanel}
+            onCloseHomePanel={closeHomePanel}
+            isCloudBackendEnabled={isCloudBackendEnabled}
+            isPasswordRevealed={isPasswordRevealed}
+            passwordChangeStatus={passwordChangeStatus}
+            onProfileNameChange={name => setProfile(prev => ({ ...prev, name }))}
+            onProfilePasswordChange={password => setProfile(prev => ({ ...prev, password }))}
+            onOpenPasswordChange={() => {
+              setIsPasswordChangeOpen(true);
+              setPasswordChangeStatus('');
+            }}
+            systemTheme={systemTheme}
+            activeThemeColorKey={activeThemeColorKey}
+            showThemeCustomPicker={showThemeCustomPicker}
+            onThemePresetSelect={theme => {
+              setSystemTheme(theme);
+              setActiveThemeColorKey(null);
+              setShowThemeCustomPicker(false);
+            }}
+            onThemeColorMenuToggle={key => {
+              const isOpen = activeThemeColorKey === key;
+              setActiveThemeColorKey(isOpen ? null : key);
+              setShowThemeCustomPicker(false);
+            }}
+            onThemeColorChange={updateThemeColor}
+            onToggleThemeCustomPicker={() => setShowThemeCustomPicker(prev => !prev)}
+            uploadedImages={uploadedImages}
+            onPreviewImage={setGalleryPreviewImage}
+            permissionRequestState={permissionRequestState}
+            permissionStatusText={permissionStatusText}
+            mcpPlainToken={mcpPlainToken}
+            mcpTokenStatus={mcpTokenStatus}
+            mcpTokens={mcpTokens}
+            isMcpTokenBusy={isMcpTokenBusy}
+            isExportingData={isExportingData}
+            exportDataStatus={exportDataStatus}
+            exportDataProgress={exportDataProgress}
+            accountDeletePassword={accountDeletePassword}
+            accountDeleteStatus={accountDeleteStatus}
+            isDeletingAccount={isDeletingAccount}
+            onOpenPermissions={handleOpenPermissions}
+            onSignOut={handleSignOut}
+            onExportUserData={handleExportUserData}
+            onAccountDeletePasswordChange={value => {
+              setAccountDeletePassword(value);
+              setAccountDeleteStatus('');
+            }}
+            onDeleteAccount={() => { void handleDeleteAccount(); }}
+            onCopyMcpText={handleCopyMcpText}
+            onCreateMcpToken={handleCreateMcpToken}
+            onRevokeMcpToken={handleRevokeMcpToken}
+          />
+        </AppPageTransitionLayer>
+      )}
+
+      {isSignedIn && (
+        <AppPageTransitionLayer key="stats" scroll isActive={activeView === 'stats'}>
+          <React.Suspense fallback={<TripStatisticsSkeleton />}>
+            <TripStatisticsView
+              activityPoints={mapActivity.points}
+              activityCount={markedLocationCount}
+              textRankings={starRecordRankings}
+              language={language}
+              isActive={activeView === 'stats'}
+            />
+          </React.Suspense>
+        </AppPageTransitionLayer>
+      )}
 
       <AutoUserManualModal
         isOpen={isAutoUserManualOpen && isSignedIn}
@@ -1091,28 +1129,6 @@ export default function App() {
         formatRecordMonth={formatRecordMonth}
       />
       )}
-
-      <AnimatePresence>
-        {isSignedIn && activeView === 'stats' && (
-          <motion.div
-            initial={false}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 1 }}
-            transition={{ duration: 0 }}
-            className="absolute inset-0 z-[900] overflow-y-auto overscroll-contain bg-[var(--app-page)] pointer-events-auto [touch-action:pan-y]"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            <React.Suspense fallback={null}>
-              <TripStatisticsView
-                activityPoints={mapActivity.points}
-                activityCount={markedLocationCount}
-                textRankings={starRecordRankings}
-                language={language}
-              />
-            </React.Suspense>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {isSignedIn && activeView === 'searchResults' && (

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { MapContainer, Marker } from 'react-leaflet';
 import type { DivIcon, Icon, LeafletMouseEvent, Map as LeafletMap } from 'leaflet';
 import { StarActionOverlay } from './StarActionOverlay';
@@ -49,7 +50,7 @@ type MapCanvasProps = {
   onMoveStar: (id: string, lat: number, lng: number) => void;
 };
 
-export function MapCanvas({
+export const MapCanvas = memo(function MapCanvas({
   mapStyle,
   mapTiles,
   position,
@@ -177,4 +178,4 @@ export function MapCanvas({
       />
     </div>
   );
-}
+});

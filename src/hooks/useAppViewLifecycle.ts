@@ -19,7 +19,6 @@ export const useAppViewLifecycle = ({
   activeHomePanel,
   setActiveHomePanel,
   profileAccount,
-  homeScrollRef,
   resetLocationSession,
   resetTrackDraftCheck,
   setActiveThemeColorKey,
@@ -47,7 +46,6 @@ export const useAppViewLifecycle = ({
   activeHomePanel: HomePanel;
   setActiveHomePanel: React.Dispatch<React.SetStateAction<HomePanel>>;
   profileAccount: string;
-  homeScrollRef: React.RefObject<HTMLDivElement | null>;
   resetLocationSession: () => void;
   resetTrackDraftCheck: () => void;
   setActiveThemeColorKey: React.Dispatch<React.SetStateAction<keyof SystemTheme | null>>;
@@ -162,10 +160,6 @@ export const useAppViewLifecycle = ({
   ]);
 
   const closeHomePanel = React.useCallback(() => {
-    if (homeScrollRef.current) {
-      homeScrollRef.current.scrollTop = 0;
-      homeScrollRef.current.scrollLeft = 0;
-    }
     setActiveHomePanel(current => (
       current === 'language' ||
       current === 'permissions' ||
@@ -176,7 +170,7 @@ export const useAppViewLifecycle = ({
         ? 'settings'
         : null
     ));
-  }, [homeScrollRef, setActiveHomePanel]);
+  }, [setActiveHomePanel]);
 
   const closeAutoUserManual = React.useCallback(() => {
     const account = normalizeAccountId(profileAccount);

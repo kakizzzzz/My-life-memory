@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Menu, Search, X } from 'lucide-react';
 import { HOME_COPY } from './copy/homeCopy';
+import { APP_MOTION_SPRING } from './constants/motion';
 import { addMonths, formatRecordMonth, formatRecordTime, getCalendarDateKey, getMonthTitle } from './lib/dateUtils';
 import type { RecordsByDateGroup, RecordsCalendarMode, RecordsFilter } from './types/app';
 
@@ -66,14 +67,8 @@ export function RecordsScreen({
   onSelectCalendarMonth,
 }: RecordsScreenProps) {
   return (
-    <motion.div
-      initial={false}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 1 }}
-      transition={{ duration: 0 }}
-      className="absolute inset-0 z-[900] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
-    >
-      <div className={`flex-1 overflow-y-auto px-6 pb-32 ${screenTopPaddingClass}`}>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--app-page)] font-sans">
+      <div className={`flex-1 overflow-y-auto px-6 pb-32 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${screenTopPaddingClass}`}>
         <div className="mb-4 flex items-start justify-between">
           <h1 className="mt-1 text-4xl font-bold tracking-tight text-black">{homeCopy.recordsTitle}</h1>
           <div className="relative flex flex-col gap-2">
@@ -88,9 +83,10 @@ export function RecordsScreen({
             <AnimatePresence>
               {isRecordsMenuOpen && (
                 <motion.div
-                  initial={{ opacity: 0, y: -20, scale: 0.8 }}
+                  initial={{ opacity: 0, y: -12, scale: 0.96 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -20, scale: 0.8, transition: { duration: 0.2 } }}
+                  exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                  transition={APP_MOTION_SPRING}
                   className="absolute left-0 top-[56px] z-10 flex flex-col gap-2"
                 >
                   <button
@@ -191,7 +187,7 @@ export function RecordsScreen({
             initial={{ opacity: 0, y: '100%' }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: '100%' }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            transition={APP_MOTION_SPRING}
             className="absolute inset-0 z-[1000] flex flex-col overflow-hidden bg-[var(--app-page)] font-sans pointer-events-auto"
           >
             <div className={`flex flex-1 flex-col items-center overflow-y-auto px-6 pb-32 ${screenTopPaddingClass}`}>
@@ -237,14 +233,14 @@ export function RecordsScreen({
                     </div>
                   </div>
 
-                  <AnimatePresence mode="wait">
+                  <AnimatePresence initial={false} mode="sync">
                     {recordsCalendarMode === 'month' ? (
                       <motion.div
                         key="month"
-                        initial={{ opacity: 0, scale: 0.95 }}
+                        initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.15 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        transition={APP_MOTION_SPRING}
                       >
                         <div className="mb-3 grid grid-cols-7">
                           {homeCopy.weekdays.map(day => (
@@ -289,10 +285,10 @@ export function RecordsScreen({
                     ) : (
                       <motion.div
                         key="year"
-                        initial={{ opacity: 0, scale: 0.95 }}
+                        initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.15 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        transition={APP_MOTION_SPRING}
                         className="grid grid-cols-3 gap-x-2 gap-y-4 pt-2"
                       >
                         {recordsCalendarMonths.map(month => {
@@ -318,6 +314,6 @@ export function RecordsScreen({
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }

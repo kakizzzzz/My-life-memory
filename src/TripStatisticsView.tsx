@@ -89,6 +89,8 @@ const mosaicMapHtml = `<!DOCTYPE html>
       }
 
       isInitialized = true;
+      loadingEl.removeAttribute('aria-hidden');
+      loadingEl.innerText = window.MAP_COPY?.mapLoading || 'Loading world map...';
 
       const ctx = canvas.getContext('2d', { alpha: true });
       const isFullscreen = window.IS_FULLSCREEN === true;
@@ -307,6 +309,11 @@ const mosaicMapHtml = `<!DOCTYPE html>
           loadingEl.style.opacity = '0';
           loadingEl.setAttribute('aria-hidden', 'true');
           draw();
+          window.parent.postMessage({
+            type: 'trip-mosaic-map-ready',
+            sessionKey: window.MAP_SESSION_KEY,
+            fullscreen: isFullscreen
+          }, '*');
         }, 50);
       }
 
@@ -571,6 +578,7 @@ const TRIP_COPY = {
     mosaicMap: 'Mosaic map',
     expandedMosaicMap: 'Expanded mosaic map',
     closeExpandedMap: 'Close expanded map',
+    mapLoading: 'Loading world map...',
     mapEngineError: 'Map engine failed to load. Please check the network and refresh.',
     geoDataError: 'Could not fetch geographic data. Please refresh.',
     gridLoading: 'Preparing map grid...',
@@ -586,6 +594,7 @@ const TRIP_COPY = {
     mosaicMap: '马赛克地图',
     expandedMosaicMap: '展开的马赛克地图',
     closeExpandedMap: '关闭展开地图',
+    mapLoading: '正在加载世界地图...',
     mapEngineError: '地图引擎加载失败，请检查网络或刷新重试。',
     geoDataError: '获取地理数据失败，请刷新重试。',
     gridLoading: '正在网格化地图数据...',
@@ -601,6 +610,7 @@ const TRIP_COPY = {
     mosaicMap: '모자이크 지도',
     expandedMosaicMap: '확대된 모자이크 지도',
     closeExpandedMap: '확대 지도 닫기',
+    mapLoading: '세계 지도를 불러오는 중...',
     mapEngineError: '지도 엔진을 불러오지 못했습니다. 네트워크를 확인하고 새로고침해 주세요.',
     geoDataError: '지리 데이터를 가져오지 못했습니다. 새로고침해 주세요.',
     gridLoading: '지도 그리드를 준비하는 중...',
@@ -609,7 +619,12 @@ const TRIP_COPY = {
 
 type TripCopy = typeof TRIP_COPY.en;
 
-const createMosaicMapHtml = (activityPoints: MapActivityPoint[], isFullscreen = false, copy: TripCopy = TRIP_COPY.en) => {
+const createMosaicMapHtml = (
+  activityPoints: MapActivityPoint[],
+  isFullscreen = false,
+  copy: TripCopy = TRIP_COPY.en,
+  sessionKey = '',
+) => {
   const safeActivityPoints = activityPoints
     .filter(point => (
       Number.isFinite(point.lat) &&
@@ -625,7 +640,8 @@ const createMosaicMapHtml = (activityPoints: MapActivityPoint[], isFullscreen = 
 
   return mosaicMapHtml.replace(
     '</head>',
-    `<script>window.IS_FULLSCREEN = ${isFullscreen ? 'true' : 'false'}; window.MAP_ACTIVITY_POINTS = ${JSON.stringify(safeActivityPoints)}; window.MAP_COPY = ${JSON.stringify({
+    `<script>window.IS_FULLSCREEN = ${isFullscreen ? 'true' : 'false'}; window.MAP_SESSION_KEY = ${JSON.stringify(sessionKey)}; window.MAP_ACTIVITY_POINTS = ${JSON.stringify(safeActivityPoints)}; window.MAP_COPY = ${JSON.stringify({
+      mapLoading: copy.mapLoading,
       mapEngineError: copy.mapEngineError,
       geoDataError: copy.geoDataError,
       gridLoading: copy.gridLoading,
@@ -638,6 +654,7 @@ type TripStatisticsViewProps = {
   activityCount?: number;
   textRankings?: TextRankingItem[];
   language?: string;
+  isActive?: boolean;
 };
 
 const formatChartValue = (value: number) => {
@@ -650,26 +667,28 @@ const RANKING_HOLD_SCROLL_PX = 18;
 const RANKING_HOLD_DELAY_MS = 260;
 const RANKING_HOLD_INTERVAL_MS = 90;
 
-export function TripStatisticsView({ activityPoints = [], activityCount = 0, textRankings = [], language = 'en' }: TripStatisticsViewProps) {
+export function TripStatisticsView({ activityPoints = [], activityCount = 0, textRankings = [], language = 'en', isActive = true }: TripStatisticsViewProps) {
   const [rankingScrollState, setRankingScrollState] = React.useState({ canLeft: false, canRight: false, hasOverflow: false });
   const [expandedMapKey, setExpandedMapKey] = React.useState(0);
   const [isExpandedMapOpen, setIsExpandedMapOpen] = React.useState(false);
   const rankingScrollRef = React.useRef<HTMLDivElement>(null);
+  const mosaicMapRef = React.useRef<HTMLIFrameElement>(null);
   const rankingHoldRef = React.useRef<{ delayId: number | null; intervalId: number | null; didRepeat: boolean }>({
     delayId: null,
     intervalId: null,
     didRepeat: false,
   });
   const fullscreenMapRef = React.useRef<HTMLDivElement>(null);
-  const mapSessionKey = React.useMemo(() => Date.now(), []);
+  const mapSessionKey = React.useMemo(() => String(Date.now()), []);
+  const [isMosaicMapReady, setIsMosaicMapReady] = React.useState(false);
   const copy = TRIP_COPY[language as keyof typeof TRIP_COPY] || TRIP_COPY.en;
   const mosaicHtml = React.useMemo(
-    () => createMosaicMapHtml(activityPoints, false, copy),
-    [activityPoints, copy]
+    () => createMosaicMapHtml(activityPoints, false, copy, mapSessionKey),
+    [activityPoints, copy, mapSessionKey]
   );
   const fullscreenMapHtml = React.useMemo(
-    () => createMosaicMapHtml(activityPoints, true, copy),
-    [activityPoints, copy]
+    () => createMosaicMapHtml(activityPoints, true, copy, mapSessionKey),
+    [activityPoints, copy, mapSessionKey]
   );
   const markedCount = Math.max(0, Math.round(activityCount));
   const maxChartValue = Math.max(1, ...textRankings.map(item => item.value));
@@ -714,6 +733,20 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
   }, [updateRankingScrollState]);
 
   React.useEffect(() => clearRankingHold, [clearRankingHold]);
+
+  React.useEffect(() => {
+    setIsMosaicMapReady(false);
+
+    const handleMapReady = (event: MessageEvent) => {
+      if (event.source !== mosaicMapRef.current?.contentWindow) return;
+      if (event.data?.type !== 'trip-mosaic-map-ready') return;
+      if (event.data?.sessionKey !== mapSessionKey || event.data?.fullscreen) return;
+      setIsMosaicMapReady(true);
+    };
+
+    window.addEventListener('message', handleMapReady);
+    return () => window.removeEventListener('message', handleMapReady);
+  }, [mapSessionKey, mosaicHtml]);
 
   const scrollRanking = React.useCallback((
     direction: -1 | 1,
@@ -765,9 +798,16 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     setIsExpandedMapOpen(false);
   }, []);
 
+  React.useLayoutEffect(() => {
+    if (isActive) return;
+    clearRankingHold();
+    fullscreenMapRef.current?.hidePopover?.();
+    setIsExpandedMapOpen(false);
+  }, [clearRankingHold, isActive]);
+
   return (
     <div
-      className="relative z-[900] flex min-h-[100svh] w-full flex-col overflow-visible bg-[var(--app-page)] pb-32 font-sans pointer-events-auto"
+      className="flex min-h-[100svh] w-full flex-col overflow-visible bg-[var(--app-page)] pb-32 font-sans"
     >
       <div className="flex flex-col items-center pb-6 pt-14">
         <div className="mb-6 w-[320px]">
@@ -789,12 +829,21 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
           }}
         >
           <iframe
+            ref={mosaicMapRef}
             key={`mosaic-${mapSessionKey}`}
             srcDoc={mosaicHtml}
             className="h-full w-full border-none pointer-events-none"
             sandbox="allow-scripts"
+            loading="eager"
             title={copy.mosaicMap}
           />
+
+          <div
+            className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-[#0f172a] px-8 text-center text-[13px] font-medium text-white/70 transition-opacity duration-150 ${isMosaicMapReady ? 'opacity-0' : 'opacity-100'}`}
+            aria-hidden={isMosaicMapReady}
+          >
+            {copy.mapLoading}
+          </div>
 
           <div className="absolute left-6 top-6 pointer-events-none">
             <h2 className="text-[20px] font-bold leading-tight tracking-tight text-white">{copy.markedPrefix}</h2>
@@ -808,7 +857,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
               event.stopPropagation();
               openExpandedMap();
             }}
-            className="absolute bottom-6 right-6 z-10 rounded-full bg-[var(--app-page)] px-5 py-2 text-sm font-bold text-black shadow-lg transition-all hover:brightness-105"
+            className="absolute bottom-6 right-6 z-10 rounded-full bg-[var(--app-page)] px-5 py-2 text-sm font-bold text-black shadow-lg transition-[filter] duration-100 hover:brightness-105"
           >
             {copy.expand}
           </button>

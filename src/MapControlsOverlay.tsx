@@ -128,19 +128,21 @@ export function MapControlsOverlay({
           <motion.div
             initial={{ opacity: 0, y: -20, scale: 0.8 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.8, transition: { duration: 0.2 } }}
+            exit={{ opacity: 0, y: -20, scale: 0.8 }}
             className="flex flex-col items-end gap-3"
+            style={{ transformOrigin: 'top right' }}
           >
-            <div className="relative flex justify-end items-center h-[48px]">
-              <AnimatePresence mode="wait">
+            <div className="pointer-events-none relative h-[48px] w-[136px]">
+              <AnimatePresence initial={false} mode="sync">
                 {isMapStyleMenuOpen ? (
                   <motion.div
                     key="open"
-                    initial={{ opacity: 0, scale: 0.8, x: 20 }}
-                    animate={{ opacity: 1, scale: 1, x: 0 }}
-                    exit={{ opacity: 0, scale: 0.8, x: 20 }}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
                     transition={{ duration: 0.15 }}
-                    className="h-[48px] bg-[var(--app-icon)] px-[4px] rounded-[24px] flex items-center gap-[4px] shadow-lg relative"
+                    className="pointer-events-auto absolute right-0 top-0 flex h-[48px] w-[136px] items-center gap-[4px] rounded-[24px] bg-[var(--app-icon)] px-[4px] shadow-lg"
+                    style={{ transformOrigin: 'right center' }}
                   >
                     <div className="relative z-10 flex items-center gap-[4px]">
                       {MAP_STYLE_OPTIONS.map(option => (
@@ -165,7 +167,8 @@ export function MapControlsOverlay({
                     exit={{ opacity: 0, scale: 0.8 }}
                     transition={{ duration: 0.15 }}
                     onClick={onOpenMapStyleMenu}
-                    className="w-[48px] h-[48px] rounded-full bg-[var(--app-icon)] p-[6px] shadow-sm hover:opacity-90 transition-opacity focus:outline-none block"
+                    className="pointer-events-auto absolute right-0 top-0 block h-[48px] w-[48px] rounded-full bg-[var(--app-icon)] p-[6px] shadow-sm transition-[filter] duration-150 hover:brightness-95 focus:outline-none"
+                    style={{ transformOrigin: 'right center' }}
                     aria-label={homeCopy.currentMapStyleAlt}
                   >
                     <div className="w-full h-full rounded-full border-[3px] border-black overflow-hidden relative">
@@ -180,15 +183,17 @@ export function MapControlsOverlay({
               <MapPin size={24} strokeWidth={mapToolIconStroke} />
             </button>
 
-            <div className="relative flex flex-col items-start h-[48px]">
-              <AnimatePresence mode="popLayout">
+            <div className="pointer-events-none relative h-[48px] w-[136px]">
+              <AnimatePresence initial={false} mode="sync">
                 {tagMenuOpen ? (
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.8, x: 20 }}
-                    animate={{ opacity: 1, scale: 1, x: 0 }}
-                    exit={{ opacity: 0, scale: 0.8, x: 20 }}
+                    key="open"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
                     transition={{ duration: 0.15 }}
-                    className="h-[48px] bg-[var(--app-icon)] px-[4px] rounded-[24px] flex items-center gap-[4px] shadow-md relative"
+                    className="pointer-events-auto absolute right-0 top-0 flex h-[48px] w-[136px] items-center gap-[4px] rounded-[24px] bg-[var(--app-icon)] px-[4px] shadow-md"
+                    style={{ transformOrigin: 'right center' }}
                   >
                     <button
                       className={`w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all ${tagMode === 'add' ? 'bg-[var(--app-dark)] text-white shadow-md' : 'text-black hover:bg-black/10'}`}
@@ -216,8 +221,9 @@ export function MapControlsOverlay({
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
                     transition={{ duration: 0.15 }}
-                    className="w-[48px] h-[48px] rounded-full bg-[var(--app-icon)] shadow-sm hover:brightness-95 transition-all flex items-center justify-center text-black"
+                    className="pointer-events-auto absolute right-0 top-0 flex h-[48px] w-[48px] items-center justify-center rounded-full bg-[var(--app-icon)] text-black shadow-sm transition-[filter,background-color,color] duration-150 hover:brightness-95"
                     onClick={onToggleTagMenu}
+                    style={{ transformOrigin: 'right center' }}
                   >
                     <Tag size={22} strokeWidth={mapToolIconStroke} fill="none" />
                   </motion.button>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   Asterisk,
   AtSign,
@@ -38,6 +38,7 @@ import { getCloudMcpEndpoint, type CloudAuthAction, type CloudMcpTokenInfo } fro
 import { supabaseFunctionUrl } from './lib/supabaseClient';
 import { LANGUAGE_OPTIONS, LOGIN_LANGUAGE_LABELS } from './constants/language';
 import { CLOUD_PASSWORD_MIN_LENGTH } from './constants/appDefaults';
+import { APP_CONTENT_FADE, APP_CONTENT_INITIAL_OPACITY } from './constants/motion';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE } from './constants/ui';
 import { HOME_COPY } from './copy/homeCopy';
 import type { UserDataExportRange } from './lib/userDataExport';
@@ -190,6 +191,13 @@ export function HomeScreen({
   onCreateMcpToken,
   onRevokeMcpToken,
 }: HomeScreenProps) {
+  React.useLayoutEffect(() => {
+    const scroller = homeScrollRef.current;
+    if (!scroller) return;
+    scroller.scrollTop = 0;
+    scroller.scrollLeft = 0;
+  }, [activeHomePanel, homeScrollRef]);
+
   const [isPrivacyConsentOpen, setIsPrivacyConsentOpen] = React.useState(false);
   const [hasAcceptedPrivacyForRegistration, setHasAcceptedPrivacyForRegistration] = React.useState(false);
 
@@ -301,16 +309,10 @@ export function HomeScreen({
     { icon: <Search size={18} strokeWidth={iconStrokeWidth} />, label: homeCopy.search, body: homeCopy.manualIconSearch },
   ];
 
+  if (!isOpen) return null;
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={false}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 1 }}
-          transition={{ duration: 0 }}
-          className="home-screen absolute inset-0 z-[900] flex justify-center overflow-hidden bg-[var(--app-page)] pointer-events-auto"
-        >
+        <div className="home-screen flex h-full w-full justify-center overflow-hidden bg-[var(--app-page)]">
           <input
             ref={avatarInputRef}
             type="file"
@@ -319,7 +321,7 @@ export function HomeScreen({
             onChange={onAvatarInput}
           />
 
-          <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto overscroll-contain px-10 pb-28 [touch-action:pan-y] ${screenTopPaddingClass}`} style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div ref={homeScrollRef} className={`relative h-full w-full max-w-[430px] overflow-y-auto overscroll-contain px-10 pb-28 [touch-action:pan-y] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${screenTopPaddingClass}`} style={{ WebkitOverflowScrolling: 'touch' }}>
             {!isSignedIn && activeHomePanel === 'privacy' ? (
               <div className="relative z-10 pb-4">
                 <button
@@ -502,63 +504,72 @@ export function HomeScreen({
                 </form>
                 )}
               </>
-            ) : !activeHomePanel && (
-              <>
-                <div className="flex items-center gap-8">
-                  <button
-                    onClick={() => avatarInputRef.current?.click()}
-                    className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[18px] bg-[var(--app-card)] text-black"
-                    aria-label={homeCopy.uploadAvatar}
-                  >
-                    {profileAvatarSrc ? (
-                      <img src={profileAvatarSrc} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-[var(--app-card)]">
-                        <UserRound size={42} strokeWidth={iconStrokeWidth} />
-                      </div>
-                    )}
-                  </button>
+            ) : null}
 
-                  <div className="min-w-0">
-                    <div className="truncate text-[26px] font-semibold leading-tight text-black">{profile.name || homeCopy.userFallback}</div>
-                    <div className="mt-1.5 text-[14px] font-medium leading-tight text-black">ID:{profile.account || '----'}</div>
-                  </div>
-                </div>
-
-                <div className="mt-14 space-y-2.5">
-                  {homeMenuItems.map(item => (
+            {isSignedIn && (
+              <section>
+                <motion.div
+                  key={activeHomePanel || 'main'}
+                  initial={{ opacity: APP_CONTENT_INITIAL_OPACITY }}
+                  animate={{ opacity: 1 }}
+                  transition={APP_CONTENT_FADE}
+                  style={{ willChange: 'opacity' }}
+                >
+              {activeHomePanel && (
+                <button
+                  type="button"
+                  onClick={onCloseHomePanel}
+                  className="mb-5 isolate flex h-11 items-center gap-2 overflow-hidden rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black no-underline outline-none"
+                  aria-label={homeCopy.back}
+                >
+                  <ChevronLeft size={24} strokeWidth={iconStrokeWidth} />
+                  <span className="block translate-y-[-1px] leading-none no-underline [text-decoration:none]">{activeHomeTitle}</span>
+                </button>
+              )}
+              {!activeHomePanel && (
+                <>
+                  <div className="flex items-center gap-8">
                     <button
-                      key={item.panel}
-                      onClick={() => onActiveHomePanelChange(item.panel)}
-                      className="flex h-[58px] w-full items-center rounded-[14px] bg-[var(--app-card)] px-4 text-left text-black transition-transform active:scale-[0.99]"
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[18px] bg-[var(--app-card)] text-black"
+                      aria-label={homeCopy.uploadAvatar}
                     >
-                      <span className="mr-4 flex shrink-0 items-center justify-center text-black">{item.icon}</span>
-                      <span className="min-w-0 flex-1 truncate text-[18px] font-medium leading-tight">{item.label}</span>
-                      <ChevronRight
-                        size={28}
-                        strokeWidth={iconStrokeWidth}
-                        className="ml-3 text-black/15"
-                      />
+                      {profileAvatarSrc ? (
+                        <img src={profileAvatarSrc} alt={homeCopy.userAvatarAlt} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-[var(--app-card)]">
+                          <UserRound size={42} strokeWidth={iconStrokeWidth} />
+                        </div>
+                      )}
                     </button>
-                  ))}
-                </div>
-              </>
-            )}
 
-            {isSignedIn && activeHomePanel && (
-              <button
-                type="button"
-                onClick={onCloseHomePanel}
-                className="mb-5 isolate flex h-11 items-center gap-2 overflow-hidden rounded-full bg-[var(--app-card)] px-4 text-[18px] font-medium text-black no-underline outline-none"
-                aria-label={homeCopy.back}
-              >
-                <ChevronLeft size={24} strokeWidth={iconStrokeWidth} />
-                <span className="block translate-y-[-1px] leading-none no-underline [text-decoration:none]">{activeHomeTitle}</span>
-              </button>
-            )}
+                    <div className="min-w-0">
+                      <div className="truncate text-[26px] font-semibold leading-tight text-black">{profile.name || homeCopy.userFallback}</div>
+                      <div className="mt-1.5 text-[14px] font-medium leading-tight text-black">ID:{profile.account || '----'}</div>
+                    </div>
+                  </div>
 
-            <AnimatePresence mode="wait">
-              {isSignedIn && activeHomePanel === 'profile' && (
+                  <div className="mt-14 space-y-2.5">
+                    {homeMenuItems.map(item => (
+                      <button
+                        key={item.panel}
+                        onClick={() => onActiveHomePanelChange(item.panel)}
+                        className="flex h-[58px] w-full items-center rounded-[14px] bg-[var(--app-card)] px-4 text-left text-black transition-transform active:scale-[0.99]"
+                      >
+                        <span className="mr-4 flex shrink-0 items-center justify-center text-black">{item.icon}</span>
+                        <span className="min-w-0 flex-1 truncate text-[18px] font-medium leading-tight">{item.label}</span>
+                        <ChevronRight
+                          size={28}
+                          strokeWidth={iconStrokeWidth}
+                          className="ml-3 text-black/15"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {activeHomePanel === 'profile' && (
                 <HomeProfilePanel
                   homeCopy={homeCopy}
                   profile={profile}
@@ -574,7 +585,7 @@ export function HomeScreen({
                 />
               )}
 
-              {isSignedIn && activeHomePanel === 'theme' && (
+              {activeHomePanel === 'theme' && (
                 <HomeThemePanel
                   homeCopy={homeCopy}
                   language={language}
@@ -589,7 +600,7 @@ export function HomeScreen({
                 />
               )}
 
-              {isSignedIn && activeHomePanel === 'gallery' && (
+              {activeHomePanel === 'gallery' && (
                 <HomeGalleryPanel
                   homeCopy={homeCopy}
                   uploadedImages={uploadedImages}
@@ -597,7 +608,7 @@ export function HomeScreen({
                 />
               )}
 
-              {isSignedIn && isHomeSettingsPanel(activeHomePanel) && (
+              {isHomeSettingsPanel(activeHomePanel) && (
                 <HomeSettingsPanels
                   activeHomePanel={activeHomePanel}
                   homeCopy={homeCopy}
@@ -633,7 +644,9 @@ export function HomeScreen({
                   onRevokeMcpToken={onRevokeMcpToken}
                 />
               )}
-            </AnimatePresence>
+                </motion.div>
+              </section>
+            )}
           </div>
           <PrivacyConsentDialog
             open={isPrivacyConsentOpen}
@@ -642,8 +655,6 @@ export function HomeScreen({
             onDecline={() => setIsPrivacyConsentOpen(false)}
             onAgree={acceptPrivacyAndRegister}
           />
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
   );
 }

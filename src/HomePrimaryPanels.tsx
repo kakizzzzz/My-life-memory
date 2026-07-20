@@ -1,5 +1,4 @@
 import { Eye, EyeOff, Lock, Palette, UserRound } from 'lucide-react';
-import { motion } from 'motion/react';
 import { HexColorInput, HexColorPicker } from 'react-colorful';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE, UI_ICON_STROKE } from './constants/ui';
 import { THEME_PICKER_COLORS, THEME_PRESETS } from './constants/theme';
@@ -60,14 +59,7 @@ export function HomeProfilePanel({
   onTogglePasswordReveal,
 }: HomeProfilePanelProps) {
   return (
-    <motion.div
-      key="profile-panel"
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 0 }}
-      transition={{ duration: 0.12 }}
-      className="mt-4 rounded-[18px] bg-[var(--app-card)] p-4"
-    >
+    <div className="mt-4 rounded-[18px] bg-[var(--app-card)] p-4">
       <div className="mb-3 flex items-center gap-2 text-[18px] font-medium text-black">
         <UserRound size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
         {homeCopy.modify}
@@ -143,7 +135,7 @@ export function HomeProfilePanel({
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -160,13 +152,7 @@ export function HomeThemePanel({
   onToggleThemeCustomPicker,
 }: HomeThemePanelProps) {
   return (
-    <motion.div
-      key="theme-panel"
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      className="mt-4 rounded-[18px] bg-[var(--app-card)] p-4"
-    >
+    <div className="mt-4 rounded-[18px] bg-[var(--app-card)] p-4">
       <div className="mb-3 flex items-center gap-2 text-[18px] font-medium text-black">
         <Palette size={HOME_SETTINGS_ICON_SIZE} strokeWidth={HOME_SETTINGS_ICON_STROKE} />
         {homeCopy.theme}
@@ -249,19 +235,13 @@ export function HomeThemePanel({
           </div>
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
 export function HomeGalleryPanel({ homeCopy, uploadedImages, onPreviewImage }: HomeGalleryPanelProps) {
   return (
-    <motion.div
-      key="gallery-panel"
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      className="mt-4"
-    >
+    <div className="mt-4">
       {uploadedImages.length > 0 ? (
         <div className="grid grid-cols-3 gap-2">
           {uploadedImages.map((image, index) => (
@@ -286,6 +266,6 @@ export function HomeGalleryPanel({ homeCopy, uploadedImages, onPreviewImage }: H
           {homeCopy.noImages}
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
