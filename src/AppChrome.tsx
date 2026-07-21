@@ -1,15 +1,26 @@
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { BookOpen, Camera, Copy, Download, Home, Lock, Map as MapIcon, MapPin, PieChart, Route, Save, Search, Share, Star, X } from 'lucide-react';
 import { PhotoGpsStarIcon } from './PhotoGpsStarIcon';
 import { APP_MOTION_SPRING, APP_NAV_SPRING } from './constants/motion';
+import type { PermissionRequestState } from './hooks/useLocationController';
 import type { AppView, SearchField, UploadedImage } from './types/app';
 
 type InitialPermissionCopy = {
   initialPermissionsTitle: string;
   initialPermissionsBody: string;
   notNow: string;
+  allowLocation: string;
   permissionRequesting: string;
-  openPermissions: string;
+  permissionRetry: string;
+};
+
+type RouteTrackingPermissionCopy = {
+  routePermissionTitle: string;
+  routePermissionBody: string;
+  routePermissionDecline: string;
+  routePermissionAgree: string;
+  routePermissionRequesting: string;
+  routePermissionRetry: string;
 };
 
 type AutoUserManualCopy = {
@@ -71,12 +82,11 @@ type GalleryPreviewCopy = {
   downloadImage: string;
 };
 
-type PermissionRequestState = 'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported';
-
 export function InitialPermissionPrompt({
   isOpen,
   copy,
   permissionRequestState,
+  errorText,
   iconStrokeWidth,
   onClose,
   onRequest,
@@ -84,10 +94,14 @@ export function InitialPermissionPrompt({
   isOpen: boolean;
   copy: InitialPermissionCopy;
   permissionRequestState: PermissionRequestState;
+  errorText: string;
   iconStrokeWidth: number;
   onClose: () => void;
   onRequest: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
+  const isRequesting = permissionRequestState === 'requesting';
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -96,39 +110,149 @@ export function InitialPermissionPrompt({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[2300] flex items-end justify-center bg-black/25 px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-6 pointer-events-auto"
+          onKeyDown={event => {
+            if (event.key === 'Escape' && !isRequesting) onClose();
+          }}
         >
-          <motion.div
-            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          <motion.section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="initial-permission-title"
+            aria-describedby="initial-permission-description"
+            aria-busy={isRequesting}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 14, scale: 0.98 }}
-            transition={{ duration: 0.18 }}
-            className="w-full max-w-[360px] rounded-[18px] bg-[var(--app-card)] p-4 text-black shadow-xl"
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.98 }}
+            transition={{ duration: reduceMotion ? 0.08 : 0.18 }}
+            className="w-full max-w-[360px] rounded-[24px] bg-[var(--app-card)] p-5 text-black shadow-xl"
           >
-            <div className="mb-2 flex items-center gap-2 text-[17px] font-medium leading-tight">
+            <div id="initial-permission-title" className="mb-2 flex items-center gap-2 text-[20px] font-bold leading-tight">
               <MapPin size={22} strokeWidth={iconStrokeWidth} />
               {copy.initialPermissionsTitle}
             </div>
-            <div className="text-[13px] font-medium leading-snug text-black/55">
+            <div id="initial-permission-description" className="text-[14px] font-medium leading-[1.42] text-black/60">
               {copy.initialPermissionsBody}
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+
+            {errorText && (
+              <div
+                role="alert"
+                className="mt-3 rounded-[14px] bg-[var(--app-soft-card)] px-3 py-2.5 text-[13px] font-medium leading-snug text-black/70"
+              >
+                {errorText}
+              </div>
+            )}
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="h-11 rounded-full bg-[var(--app-soft-card)] text-[14px] font-medium text-black transition-transform active:scale-[0.98]"
+                disabled={isRequesting}
+                className="h-11 rounded-full bg-[var(--app-soft-card)] px-3 text-[14px] font-semibold text-black transition-transform active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-55"
               >
                 {copy.notNow}
               </button>
               <button
                 type="button"
                 onClick={onRequest}
-                disabled={permissionRequestState === 'requesting'}
-                className="h-11 rounded-full bg-[var(--app-dark)] text-[14px] font-medium text-white transition-transform active:scale-[0.98] disabled:opacity-60"
+                disabled={isRequesting}
+                autoFocus
+                className="h-11 rounded-full bg-[var(--app-dark)] px-3 text-[14px] font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
               >
-                {permissionRequestState === 'requesting' ? copy.permissionRequesting : copy.openPermissions}
+                {isRequesting ? copy.permissionRequesting : errorText ? copy.permissionRetry : copy.allowLocation}
               </button>
             </div>
-          </motion.div>
+          </motion.section>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function RouteTrackingPermissionPrompt({
+  isOpen,
+  copy,
+  isRequesting,
+  errorText,
+  iconStrokeWidth,
+  onClose,
+  onRequest,
+}: {
+  isOpen: boolean;
+  copy: RouteTrackingPermissionCopy;
+  isRequesting: boolean;
+  errorText: string;
+  iconStrokeWidth: number;
+  onClose: () => void;
+  onRequest: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[2400] flex items-end justify-center bg-black/30 px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-6 pointer-events-auto"
+          onKeyDown={event => {
+            if (event.key === 'Escape' && !isRequesting) onClose();
+          }}
+        >
+          <motion.section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="route-permission-title"
+            aria-describedby="route-permission-description"
+            aria-busy={isRequesting}
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.98 }}
+            transition={{ duration: reduceMotion ? 0.08 : 0.18 }}
+            className="w-full max-w-[360px] rounded-[24px] bg-[var(--app-card)] p-5 text-black shadow-xl"
+          >
+            <div id="route-permission-title" className="mb-2 flex items-center gap-2 text-[20px] font-bold leading-tight">
+              <Route size={22} strokeWidth={iconStrokeWidth} />
+              {copy.routePermissionTitle}
+            </div>
+            <div id="route-permission-description" className="text-[14px] font-medium leading-[1.42] text-black/60">
+              {copy.routePermissionBody}
+            </div>
+
+            {errorText && (
+              <div
+                role="alert"
+                className="mt-3 rounded-[14px] bg-[var(--app-soft-card)] px-3 py-2.5 text-[13px] font-medium leading-snug text-black/70"
+              >
+                {errorText}
+              </div>
+            )}
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isRequesting}
+                className="min-h-11 rounded-full bg-[var(--app-soft-card)] px-3 text-[14px] font-semibold text-black transition-transform active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-55"
+              >
+                {copy.routePermissionDecline}
+              </button>
+              <button
+                type="button"
+                onClick={onRequest}
+                disabled={isRequesting}
+                autoFocus
+                className="min-h-11 rounded-full bg-[var(--app-dark)] px-3 text-[14px] font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+              >
+                {isRequesting
+                  ? copy.routePermissionRequesting
+                  : errorText
+                    ? copy.routePermissionRetry
+                    : copy.routePermissionAgree}
+              </button>
+            </div>
+          </motion.section>
         </motion.div>
       )}
     </AnimatePresence>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
+import type { PermissionRequestState } from './hooks/useLocationController';
 import {
   Asterisk,
   AtSign,
@@ -45,8 +46,6 @@ import type { UserDataExportRange } from './lib/userDataExport';
 import type { AppLanguage, HomePanel, SystemTheme, UploadedImage, UserProfile } from './types/app';
 
 type HomeCopy = typeof HOME_COPY.en;
-type PermissionRequestState = 'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported';
-
 type HomeScreenProps = {
   isOpen: boolean;
   isSignedIn: boolean;

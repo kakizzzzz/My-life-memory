@@ -7,6 +7,7 @@ import {
   GalleryPreviewOverlay,
   InitialPermissionPrompt,
   PasswordChangeModal,
+  RouteTrackingPermissionPrompt,
   SearchModal,
 } from './AppChrome';
 import { HomeScreen } from './HomeScreen';
@@ -51,6 +52,7 @@ import {
   ROUTE_DETAIL_DOT_MIN_ZOOM,
 } from './lib/trackUtils';
 import { createLocationIcon } from './lib/mapMarkerUtils';
+import type { LocationFailureReason } from './lib/sensorUtils';
 import { normalizeAccountId } from './lib/accountUtils';
 import {
   getPublicProfileSnapshot,
@@ -180,6 +182,9 @@ export default function App() {
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
   const [selectedTrackLatLng, setSelectedTrackLatLng] = useState<[number, number] | null>(null);
   const [mapZoom, setMapZoom] = useState(16);
+  const [isRoutePermissionPromptOpen, setIsRoutePermissionPromptOpen] = useState(false);
+  const [isRoutePermissionRequesting, setIsRoutePermissionRequesting] = useState(false);
+  const [routePermissionFailure, setRoutePermissionFailure] = useState<LocationFailureReason | null>(null);
 
   const {
     userLocation,
@@ -191,8 +196,7 @@ export default function App() {
     permissionRequestState,
     isInitialPermissionPromptOpen,
     appendTrackPointRef,
-    requestUserLocation,
-    startHeadingWatch,
+    requestTrackingLocation,
     handleOpenPermissions,
     closeInitialPermissionPrompt,
     handleInitialPermissionRequest,
@@ -227,9 +231,8 @@ export default function App() {
     isSignedIn,
     profileAccount: profile.account,
     language,
-    userLocation,
-    requestUserLocation,
-    startHeadingWatch,
+    requestTrackingLocation,
+    getLastGpsLocation,
     setActiveView,
     setActiveHomePanel,
     onStart: () => setIsMenuOpen(false),
@@ -347,6 +350,47 @@ export default function App() {
   }, []);
 
   const homeCopy = HOME_COPY[language as keyof typeof HOME_COPY] || HOME_COPY.en;
+  const locationFailureText: Record<LocationFailureReason, string> = {
+    insecure: homeCopy.permissionInsecure,
+    unsupported: homeCopy.permissionUnsupported,
+    denied: homeCopy.permissionDenied,
+    unavailable: homeCopy.permissionUnavailable,
+    timeout: homeCopy.permissionTimeout,
+  };
+  const openRoutePermissionPrompt = useCallback(() => {
+    if (isTracking || isRoutePermissionRequesting) return;
+    setRoutePermissionFailure(null);
+    setIsRoutePermissionPromptOpen(true);
+  }, [isRoutePermissionRequesting, isTracking]);
+
+  const closeRoutePermissionPrompt = useCallback(() => {
+    if (isRoutePermissionRequesting) return;
+    setRoutePermissionFailure(null);
+    setIsRoutePermissionPromptOpen(false);
+  }, [isRoutePermissionRequesting]);
+
+  const confirmRoutePermission = useCallback(async () => {
+    if (isRoutePermissionRequesting || isTracking) return;
+    setIsRoutePermissionRequesting(true);
+    setRoutePermissionFailure(null);
+    try {
+      const result = await startTrackingRoute();
+      if (result.ready) {
+        setIsRoutePermissionPromptOpen(false);
+      } else {
+        setRoutePermissionFailure(result.reason);
+      }
+    } finally {
+      setIsRoutePermissionRequesting(false);
+    }
+  }, [isRoutePermissionRequesting, isTracking, startTrackingRoute]);
+
+  useEffect(() => {
+    if (isSignedIn && activeView === 'map' && !isTracking) return;
+    setIsRoutePermissionPromptOpen(false);
+    setRoutePermissionFailure(null);
+  }, [activeView, isSignedIn, isTracking]);
+
   const languageLocale = LANGUAGE_LOCALES[language] || LANGUAGE_LOCALES.en;
   const selectedFontFamily = LANGUAGE_FONT_FAMILIES[language] || LANGUAGE_FONT_FAMILIES.en;
   const selectedFontScale = LANGUAGE_FONT_SCALE[language] || LANGUAGE_FONT_SCALE.en;
@@ -475,9 +519,8 @@ export default function App() {
   const permissionStatusText = (
     permissionRequestState === 'requesting' ? homeCopy.permissionRequesting :
     permissionRequestState === 'ready' ? '' :
-    permissionRequestState === 'denied' ? homeCopy.permissionDenied :
-    permissionRequestState === 'unsupported' ? homeCopy.permissionUnsupported :
-    ''
+    permissionRequestState === 'idle' ? '' :
+    locationFailureText[permissionRequestState] || ''
   );
   const isOriginalSystemTheme = (Object.keys(DEFAULT_SYSTEM_THEME) as (keyof SystemTheme)[]).every(
     key => systemTheme[key].toLowerCase() === DEFAULT_SYSTEM_THEME[key].toLowerCase()
@@ -834,7 +877,7 @@ export default function App() {
           onLocateMe={handleLocateMe}
           onToggleTagMenu={toggleTagMenu}
           onSetTagMode={setTagMode}
-          onStartRoute={startTrackingRoute}
+          onStartRoute={openRoutePermissionPrompt}
           onStarPointerDown={handleStarPlacementPointerDown}
           onStarPointerMove={handleStarPlacementPointerMove}
           onStarPointerUp={finishStarPlacementPointer}
@@ -1040,9 +1083,32 @@ export default function App() {
         isOpen={isInitialPermissionPromptOpen && isSignedIn && !isAutoUserManualOpen}
         copy={homeCopy}
         permissionRequestState={permissionRequestState}
+        errorText={
+          permissionRequestState === 'idle' ||
+          permissionRequestState === 'requesting' ||
+          permissionRequestState === 'ready'
+            ? ''
+            : permissionStatusText
+        }
         iconStrokeWidth={UI_ICON_STROKE}
         onClose={closeInitialPermissionPrompt}
         onRequest={handleInitialPermissionRequest}
+      />
+
+      <RouteTrackingPermissionPrompt
+        isOpen={
+          isRoutePermissionPromptOpen &&
+          isSignedIn &&
+          activeView === 'map' &&
+          !isInitialPermissionPromptOpen &&
+          !isAutoUserManualOpen
+        }
+        copy={homeCopy}
+        isRequesting={isRoutePermissionRequesting}
+        errorText={routePermissionFailure ? locationFailureText[routePermissionFailure] : ''}
+        iconStrokeWidth={UI_ICON_STROKE}
+        onClose={closeRoutePermissionPrompt}
+        onRequest={() => { void confirmRoutePermission(); }}
       />
 
       <PasswordChangeModal

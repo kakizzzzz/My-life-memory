@@ -15,9 +15,12 @@ import {
 } from '../lib/defaultStarUtils';
 import {
   canUseBrowserGeolocation,
+  getBrowserGeolocationFailure,
   getCompassHeading,
+  getGeolocationFailureReason,
   type DeviceOrientationEventConstructorWithPermission,
   type DeviceOrientationEventWithCompass,
+  type LocationRequestResult,
 } from '../lib/sensorUtils';
 import {
   getBearingBetweenPoints,
@@ -25,7 +28,7 @@ import {
 } from '../lib/trackUtils';
 import type { AppView, StarData } from '../types/app';
 
-export type PermissionRequestState = 'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported';
+export type PermissionRequestState = 'idle' | 'requesting' | 'ready' | 'insecure' | 'unsupported' | 'denied' | 'unavailable' | 'timeout';
 
 type TrackingState = {
   isTracking: boolean;
@@ -65,7 +68,7 @@ export const useLocationController = ({
   const isLocating = React.useRef(false);
   const pendingLocationShouldFlyRef = React.useRef(false);
   const locationRequestEpochRef = React.useRef(0);
-  const locationRequestWaitersRef = React.useRef<Array<(ready: boolean) => void>>([]);
+  const locationRequestWaitersRef = React.useRef<Array<(result: LocationRequestResult) => void>>([]);
   const gpsWatchIdRef = React.useRef<number | null>(null);
   const headingWatchCleanupRef = React.useRef<(() => void) | null>(null);
   const lastGpsLocationRef = React.useRef<[number, number] | null>(null);
@@ -147,10 +150,10 @@ export const useLocationController = ({
     isLocating.current = false;
     pendingLocationShouldFlyRef.current = false;
     const waiters = locationRequestWaitersRef.current.splice(0);
-    waiters.forEach(resolve => resolve(false));
+    waiters.forEach(resolve => resolve({ ready: false, reason: 'unavailable' }));
   }, []);
 
-  const requestCurrentPosition = React.useCallback((options: PositionOptions) => new Promise<boolean>(resolve => {
+  const requestCurrentPosition = React.useCallback((options: PositionOptions) => new Promise<LocationRequestResult>(resolve => {
     locationRequestWaitersRef.current.push(resolve);
     if (isLocating.current) return;
 
@@ -164,23 +167,22 @@ export const useLocationController = ({
         pendingLocationShouldFlyRef.current = false;
         applyGpsPosition(position, shouldFly);
         const waiters = locationRequestWaitersRef.current.splice(0);
-        waiters.forEach(waiter => waiter(true));
+        waiters.forEach(waiter => waiter({ ready: true, reason: null }));
       },
       error => {
         if (locationRequestEpochRef.current !== requestEpoch) return;
-        const shouldFly = pendingLocationShouldFlyRef.current;
         isLocating.current = false;
         pendingLocationShouldFlyRef.current = false;
-        if (shouldFly) setFlyTarget([userLocation[0], userLocation[1]]);
         if (error.code === error.PERMISSION_DENIED && !trackingStateRef.current.isTracking) {
           setIsWatchingUserLocation(false);
         }
+        const reason = getGeolocationFailureReason(error);
         const waiters = locationRequestWaitersRef.current.splice(0);
-        waiters.forEach(waiter => waiter(false));
+        waiters.forEach(waiter => waiter({ ready: false, reason }));
       },
       options
     );
-  }), [applyGpsPosition, userLocation]);
+  }), [applyGpsPosition]);
 
   const stopGpsWatch = React.useCallback(() => {
     if (gpsWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
@@ -230,56 +232,55 @@ export const useLocationController = ({
     };
   }, []);
 
-  const requestUserLocation = React.useCallback((shouldFly = false) => {
-    if (!canUseBrowserGeolocation()) {
-      if (shouldFly) setFlyTarget([userLocation[0], userLocation[1]]);
-      return false;
+  const requestTrackingLocation = React.useCallback(async (): Promise<LocationRequestResult> => {
+    const capabilityFailure = getBrowserGeolocationFailure();
+    if (capabilityFailure) return { ready: false, reason: capabilityFailure } as LocationRequestResult;
+
+    // Route recording must wait for a fresh, successful high-accuracy fix. It
+    // intentionally does not enable the map's separate passive location watch.
+    cancelPendingLocationRequest();
+    pendingLocationShouldFlyRef.current = true;
+    const result = await requestCurrentPosition(GEOLOCATION_OPTIONS);
+    if (!result.ready || lastGpsLocationRef.current !== null) return result;
+    return { ready: false, reason: 'unavailable' };
+  }, [cancelPendingLocationRequest, requestCurrentPosition]);
+
+  const requestLocationPermissionOnce = React.useCallback(async (): Promise<LocationRequestResult> => {
+    const capabilityFailure = getBrowserGeolocationFailure();
+    if (capabilityFailure) {
+      setIsWatchingUserLocation(false);
+      return { ready: false, reason: capabilityFailure } as LocationRequestResult;
     }
 
-    setIsWatchingUserLocation(true);
-    pendingLocationShouldFlyRef.current = pendingLocationShouldFlyRef.current || shouldFly;
-    const options = trackingStateRef.current.isTracking
-      ? GEOLOCATION_OPTIONS
-      : PASSIVE_GEOLOCATION_OPTIONS;
-    void requestCurrentPosition(options);
-    return true;
-  }, [requestCurrentPosition, userLocation]);
+    const result = await requestCurrentPosition(PASSIVE_GEOLOCATION_OPTIONS);
+    setIsWatchingUserLocation(result.ready);
+    return result;
+  }, [requestCurrentPosition]);
 
-  const requestLocationPermissionOnce = React.useCallback(() => new Promise<boolean>(resolve => {
-    if (!canUseBrowserGeolocation()) {
-      resolve(false);
-      return;
+  const requestAppPermissions = React.useCallback(async (): Promise<PermissionRequestState> => {
+    const capabilityFailure = getBrowserGeolocationFailure();
+    if (capabilityFailure) {
+      setPermissionRequestState(capabilityFailure);
+      return capabilityFailure;
     }
 
-    setIsWatchingUserLocation(true);
-    requestCurrentPosition(PASSIVE_GEOLOCATION_OPTIONS).then(resolve);
-  }), [requestCurrentPosition]);
+    const canRequestHeading = Boolean(window.DeviceOrientationEvent);
+    setPermissionRequestState('requesting');
+    const headingRequest = canRequestHeading
+      ? startHeadingWatch(true).catch(() => undefined)
+      : Promise.resolve();
+    const [locationResult] = await Promise.all([requestLocationPermissionOnce(), headingRequest]);
+    const nextState: PermissionRequestState = locationResult.ready ? 'ready' : locationResult.reason;
+    setPermissionRequestState(nextState);
+    return nextState;
+  }, [requestLocationPermissionOnce, startHeadingWatch]);
 
   const handleOpenPermissions = React.useCallback(async () => {
     if (typeof window === 'undefined') return;
-
     setHasSeenInitialPermissionPrompt(true);
     setIsInitialPermissionPromptOpen(false);
-
-    const canRequestLocation = canUseBrowserGeolocation();
-    const canRequestHeading = Boolean(window.DeviceOrientationEvent);
-
-    if (!canRequestLocation && !canRequestHeading) {
-      setPermissionRequestState('unsupported');
-      return;
-    }
-
-    setPermissionRequestState('requesting');
-    const headingRequest = canRequestHeading
-      ? startHeadingWatch(true).then(() => Boolean(headingWatchCleanupRef.current)).catch(() => false)
-      : Promise.resolve(false);
-    const locationRequest = canRequestLocation
-      ? requestLocationPermissionOnce()
-      : Promise.resolve(false);
-
-    const [headingReady, locationReady] = await Promise.all([headingRequest, locationRequest]);
-    setPermissionRequestState(headingReady || locationReady ? 'ready' : 'denied');
-  }, [requestLocationPermissionOnce, startHeadingWatch]);
+    await requestAppPermissions();
+  }, [requestAppPermissions]);
 
   const closeInitialPermissionPrompt = React.useCallback(() => {
     setHasSeenInitialPermissionPrompt(true);
@@ -287,12 +288,14 @@ export const useLocationController = ({
   }, []);
 
   const handleInitialPermissionRequest = React.useCallback(async () => {
-    closeInitialPermissionPrompt();
-    await handleOpenPermissions();
+    setHasSeenInitialPermissionPrompt(true);
+    const nextState = await requestAppPermissions();
+    if (nextState !== 'ready') return;
+    setIsInitialPermissionPromptOpen(false);
     if (lastGpsLocationRef.current) {
       setFlyTarget(lastGpsLocationRef.current);
     }
-  }, [closeInitialPermissionPrompt, handleOpenPermissions]);
+  }, [requestAppPermissions]);
 
   React.useEffect(() => {
     if (!isSignedIn || activeView !== 'map' || hasRequestedEntryLocationRef.current) return;
@@ -303,17 +306,18 @@ export const useLocationController = ({
       return;
     }
 
-    if (!canUseBrowserGeolocation()) {
-      setPermissionRequestState('unsupported');
+    const capabilityFailure = getBrowserGeolocationFailure();
+    if (capabilityFailure) {
+      setPermissionRequestState(capabilityFailure);
       return;
     }
 
     let isCancelled = false;
     setPermissionRequestState('requesting');
-    requestLocationPermissionOnce().then(locationReady => {
+    requestLocationPermissionOnce().then(locationResult => {
       if (isCancelled) return;
-      setPermissionRequestState(locationReady ? 'ready' : 'denied');
-      if (locationReady && lastGpsLocationRef.current) {
+      setPermissionRequestState(locationResult.ready ? 'ready' : locationResult.reason);
+      if (locationResult.ready && lastGpsLocationRef.current) {
         setFlyTarget(lastGpsLocationRef.current);
       }
     });
@@ -406,6 +410,7 @@ export const useLocationController = ({
     hasSyncedDefaultStarToGpsRef.current = false;
     setHasSeenInitialPermissionPrompt(false);
     setIsInitialPermissionPromptOpen(false);
+    setPermissionRequestState('idle');
     setIsWatchingUserLocation(false);
     stopGpsWatch();
     if (!trackingStateRef.current.isTracking) stopHeadingWatch();
@@ -413,8 +418,14 @@ export const useLocationController = ({
 
   const setTrackingState = React.useCallback((state: TrackingState) => {
     trackingStateRef.current = state;
-    setTrackingActive(state.isTracking);
-  }, []);
+    const shouldCollectTrackLocation = state.isTracking && !state.isPaused;
+    setTrackingActive(shouldCollectTrackLocation);
+    if (shouldCollectTrackLocation) {
+      void startHeadingWatch(true);
+    } else {
+      stopHeadingWatch();
+    }
+  }, [startHeadingWatch, stopHeadingWatch]);
 
   return {
     userLocation,
@@ -427,8 +438,9 @@ export const useLocationController = ({
     permissionRequestState,
     isInitialPermissionPromptOpen,
     appendTrackPointRef,
-    requestUserLocation,
+    requestTrackingLocation,
     startHeadingWatch,
+    stopHeadingWatch,
     handleOpenPermissions,
     closeInitialPermissionPrompt,
     handleInitialPermissionRequest,

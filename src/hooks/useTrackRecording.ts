@@ -20,6 +20,7 @@ import {
   TRACK_STALE_POSITION_GRACE_MS,
 } from '../constants/appDefaults';
 import { useTrackSummary } from './useTrackSummary';
+import type { LocationRequestResult } from '../lib/sensorUtils';
 import type { AppView, HomePanel, TrackData } from '../types/app';
 
 type TrackingState = {
@@ -34,9 +35,8 @@ export const useTrackRecording = ({
   isSignedIn,
   profileAccount,
   language,
-  userLocation,
-  requestUserLocation,
-  startHeadingWatch,
+  requestTrackingLocation,
+  getLastGpsLocation,
   setActiveView,
   setActiveHomePanel,
   onStart,
@@ -46,9 +46,8 @@ export const useTrackRecording = ({
   isSignedIn: boolean;
   profileAccount: string;
   language: string;
-  userLocation: [number, number];
-  requestUserLocation: (shouldFly?: boolean) => boolean;
-  startHeadingWatch: (requestPermission?: boolean) => Promise<void>;
+  requestTrackingLocation: () => Promise<LocationRequestResult>;
+  getLastGpsLocation: () => [number, number] | null;
   setActiveView: React.Dispatch<React.SetStateAction<AppView>>;
   setActiveHomePanel: React.Dispatch<React.SetStateAction<HomePanel>>;
   onStart: () => void;
@@ -71,6 +70,7 @@ export const useTrackRecording = ({
   const activeClockStartedAtRef = React.useRef<number | null>(null);
   const weakGpsStartedAtRef = React.useRef<number | null>(null);
   const shouldStartSegmentAfterWeakGpsRef = React.useRef(false);
+  const isStartingTrackRef = React.useRef(false);
   const { trackDistanceKm, activeTrackDistanceDisplay, formatTime } = useTrackSummary(trackPaths);
 
   const getElapsedTrackSeconds = React.useCallback((now = Date.now()) => {
@@ -199,30 +199,44 @@ export const useTrackRecording = ({
     lastTrackPointRef.current = nextPoint;
   }, []);
 
-  const startTrackingRoute = React.useCallback(() => {
-    clearTrackDraft(profileAccount);
-    void startHeadingWatch();
-    const startedAt = Date.now();
-    trackingStartedAtRef.current = startedAt;
-    routeCreatedAtRef.current = startedAt;
-    accumulatedActiveMsRef.current = 0;
-    activeClockStartedAtRef.current = startedAt;
-    weakGpsStartedAtRef.current = null;
-    shouldStartSegmentAfterWeakGpsRef.current = false;
-    lastTrackPointRef.current = null;
-    setIsTrackGpsWeak(false);
-    const nextTrackingState = { isTracking: true, isPaused: false };
-    onTrackingStateChange?.(nextTrackingState);
-    setIsTracking(true);
-    setIsPaused(false);
-    const didRequestGps = requestUserLocation(true);
-    setTrackPaths(didRequestGps ? [] : [[userLocation]]);
-    if (!didRequestGps) {
-      lastTrackPointRef.current = { location: userLocation, timestamp: Date.now() };
+  const startTrackingRoute = React.useCallback(async () => {
+    if (isTracking || isStartingTrackRef.current) {
+      return { ready: false, reason: 'unavailable' } as LocationRequestResult;
     }
-    setTrackTime(0);
-    onStart();
-  }, [onStart, onTrackingStateChange, profileAccount, requestUserLocation, startHeadingWatch, userLocation]);
+    isStartingTrackRef.current = true;
+
+    try {
+      const locationResult = await requestTrackingLocation();
+      const startingLocation = getLastGpsLocation();
+
+      if (!locationResult.ready || !startingLocation) {
+        return locationResult.ready
+          ? { ready: false, reason: 'unavailable' } as LocationRequestResult
+          : locationResult;
+      }
+
+      clearTrackDraft(profileAccount);
+      const startedAt = Date.now();
+      trackingStartedAtRef.current = startedAt;
+      routeCreatedAtRef.current = startedAt;
+      accumulatedActiveMsRef.current = 0;
+      activeClockStartedAtRef.current = startedAt;
+      weakGpsStartedAtRef.current = null;
+      shouldStartSegmentAfterWeakGpsRef.current = false;
+      lastTrackPointRef.current = { location: startingLocation, timestamp: startedAt };
+      setIsTrackGpsWeak(false);
+      const nextTrackingState = { isTracking: true, isPaused: false };
+      onTrackingStateChange?.(nextTrackingState);
+      setIsTracking(true);
+      setIsPaused(false);
+      setTrackPaths([[startingLocation]]);
+      setTrackTime(0);
+      onStart();
+      return { ready: true, reason: null } as LocationRequestResult;
+    } finally {
+      isStartingTrackRef.current = false;
+    }
+  }, [getLastGpsLocation, isTracking, onStart, onTrackingStateChange, profileAccount, requestTrackingLocation]);
 
   const toggleTrackingPause = React.useCallback(() => {
     const nextPaused = !isPaused;

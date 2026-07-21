@@ -8,6 +8,7 @@ import type { UserDataExportRange } from './lib/userDataExport';
 import { LANGUAGE_OPTIONS } from './constants/language';
 import { HOME_SETTINGS_ICON_SIZE, HOME_SETTINGS_ICON_STROKE, UI_ICON_STROKE } from './constants/ui';
 import { HOME_COPY } from './copy/homeCopy';
+import type { PermissionRequestState } from './hooks/useLocationController';
 import type { HomePanel } from './types/app';
 
 export type HomeSettingsPanel = Extract<HomePanel, 'settings' | 'language' | 'permissions' | 'manual' | 'privacy' | 'apiSecurity' | 'mcp' | 'export' | 'deleteAccount'>;
@@ -36,7 +37,7 @@ type HomeSettingsPanelsProps = {
   activeHomePanel: HomeSettingsPanel;
   homeCopy: HomeCopy;
   language: string;
-  permissionRequestState: 'idle' | 'requesting' | 'ready' | 'denied' | 'unsupported';
+  permissionRequestState: PermissionRequestState;
   permissionStatusText: string;
   settingsMenuItems: SettingsMenuItem[];
   manualIconGuide: ManualIconGuideItem[];
