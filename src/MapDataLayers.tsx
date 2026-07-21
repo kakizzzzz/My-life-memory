@@ -26,6 +26,7 @@ type MapDataLayersProps = {
   onSelectStar: (id: string, event: L.LeafletMouseEvent) => void;
   onStarDragStart: () => void;
   onMoveStar: (id: string, lat: number, lng: number) => void;
+  onStarMarkerReady: (id: string) => void;
 };
 
 export function MapDataLayers({
@@ -43,6 +44,7 @@ export function MapDataLayers({
   onSelectStar,
   onStarDragStart,
   onMoveStar,
+  onStarMarkerReady,
 }: MapDataLayersProps) {
   return (
     <>
@@ -135,6 +137,7 @@ export function MapDataLayers({
             onSelect={onSelectStar}
             onDragStart={onStarDragStart}
             onMove={onMoveStar}
+            onReady={onStarMarkerReady}
           />
         </Fragment>
       ))}

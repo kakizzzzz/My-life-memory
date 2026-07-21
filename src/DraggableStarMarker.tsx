@@ -70,6 +70,7 @@ export const DraggableStarMarker = React.memo(function DraggableStarMarker({
   onSelect,
   onDragStart,
   onMove,
+  onReady,
 }: {
   star: StarData;
   isSelected: boolean;
@@ -79,6 +80,7 @@ export const DraggableStarMarker = React.memo(function DraggableStarMarker({
   onSelect: (id: string, event: L.LeafletMouseEvent) => void;
   onDragStart: () => void;
   onMove: (id: string, lat: number, lng: number) => void;
+  onReady: (id: string) => void;
 }) {
   const [markerPosition, setMarkerPosition] = React.useState<[number, number]>([star.lat, star.lng]);
   const isDraggingRef = React.useRef(false);
@@ -172,6 +174,10 @@ export const DraggableStarMarker = React.memo(function DraggableStarMarker({
   useLayoutEffect(() => {
     markerRef.current?.getElement()?.classList.toggle('is-selected', isSelected);
   }, [icon, isSelected]);
+
+  useLayoutEffect(() => {
+    if (markerRef.current?.getElement()) onReady(star.id);
+  }, [icon, onReady, star.id]);
 
   const eventHandlers = React.useMemo(() => ({
     click: (event: L.LeafletMouseEvent) => {

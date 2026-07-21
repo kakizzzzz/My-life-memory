@@ -237,6 +237,7 @@ export function MapControlsOverlay({
 
             <button
               className={`${starPlacementButtonClass} pointer-events-auto`}
+              style={{ touchAction: 'none' }}
               aria-label={homeCopy.addStar}
               onPointerDown={onStarPointerDown}
               onPointerMove={onStarPointerMove}

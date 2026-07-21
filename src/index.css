@@ -137,6 +137,13 @@ select {
 }
 
 /* Keep the vector basemap restrained so it stays behind the memory markers. */
+.app-vector-map {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  contain: paint;
+  will-change: transform, filter;
+}
+
 .theme-dark .app-vector-map {
   filter: saturate(72%) brightness(82%) contrast(108%);
 }

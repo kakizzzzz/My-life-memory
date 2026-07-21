@@ -50,6 +50,7 @@ type MapCanvasProps = {
   onSelectStar: (id: string, event: LeafletMouseEvent) => void;
   onStarDragStart: () => void;
   onMoveStar: (id: string, lat: number, lng: number) => void;
+  onStarMarkerReady: (id: string) => void;
 };
 
 export const MapCanvas = memo(function MapCanvas({
@@ -87,6 +88,7 @@ export const MapCanvas = memo(function MapCanvas({
   onSelectStar,
   onStarDragStart,
   onMoveStar,
+  onStarMarkerReady,
 }: MapCanvasProps) {
   const tileConfig = mapTiles[mapStyle];
   const attributionAppearance = mapStyle === 'dark'
@@ -166,6 +168,7 @@ export const MapCanvas = memo(function MapCanvas({
           onSelectStar={onSelectStar}
           onStarDragStart={onStarDragStart}
           onMoveStar={onMoveStar}
+          onStarMarkerReady={onStarMarkerReady}
         />
       </MapContainer>
 

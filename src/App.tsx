@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Star } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AutoUserManualModal,
@@ -12,6 +11,7 @@ import {
 } from './AppChrome';
 import { HomeScreen } from './HomeScreen';
 import { MapCanvas } from './MapCanvas';
+import { StarMarkerGlyph } from './StarMarkerGlyph';
 import { AppPageTransitionLayer } from './AppPageTransitionLayer';
 import { MapControlsOverlay, MapSearchButton, PhotoLocationToast, TrackingControlsOverlay } from './MapControlsOverlay';
 import { SearchResultsScreen } from './SearchResultsScreen';
@@ -275,6 +275,7 @@ export default function App() {
     handleStarPlacementPointerMove,
     finishStarPlacementPointer,
     cancelStarPlacementPointer,
+    onStarMarkerReady,
     handleMapDrop,
     onStarClick,
     onUpdateStar,
@@ -881,15 +882,22 @@ export default function App() {
         onSelectStar={onStarClick}
         onStarDragStart={cancelMapFlight}
         onMoveStar={onMoveStar}
+        onStarMarkerReady={onStarMarkerReady}
       />
       </motion.div>
 
       {starDragPreview && (
         <div
-          className="pointer-events-none fixed z-[2400] flex h-11 w-11 items-center justify-center rounded-full text-[#EDC727] drop-shadow-lg"
+          className="pointer-events-none fixed z-[2400] flex h-[52px] w-[52px] items-center justify-center drop-shadow-lg"
           style={{ left: starDragPreview.x, top: starDragPreview.y, transform: 'translate(-50%, -50%)' }}
         >
-          <Star size={34} strokeWidth={UI_ICON_STROKE} fill="currentColor" />
+          <motion.div
+            initial={{ scale: 2 / 3 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', bounce: 0, duration: 0.16 }}
+          >
+            <StarMarkerGlyph />
+          </motion.div>
         </div>
       )}
 

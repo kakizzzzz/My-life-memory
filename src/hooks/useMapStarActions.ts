@@ -8,6 +8,15 @@ import type { StarData, TagMode } from '../types/app';
 
 type ActiveTag = { order: number; groupId: number } | null;
 
+type StarPlacementDragState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  grabOffsetX: number;
+  grabOffsetY: number;
+  dragging: boolean;
+};
+
 const deleteStoredImages = (metadataList: StoredImageMetadata[]) => {
   uniqueStoredImages(metadataList).forEach(metadata => {
     void scheduleImageDeletion(metadata);
@@ -53,7 +62,10 @@ export const useMapStarActions = ({
 }) => {
   const [starDragPreview, setStarDragPreview] = React.useState<{ x: number; y: number } | null>(null);
   const mapInstanceRef = React.useRef<LeafletMap | null>(null);
-  const starPlacementDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
+  const starPlacementDragRef = React.useRef<StarPlacementDragState | null>(null);
+  const pendingPlacementStarIdRef = React.useRef<string | null>(null);
+  const previewCleanupFrameRef = React.useRef<number | null>(null);
+  const previewCleanupFallbackRef = React.useRef<number | null>(null);
   const starsRef = React.useRef(stars);
   const selectedStarIdRef = React.useRef(selectedStarId);
   const tagModeRef = React.useRef(tagMode);
@@ -91,14 +103,13 @@ export const useMapStarActions = ({
   }, [setStars]);
 
   const addStarAtUserLocation = React.useCallback(() => {
-    addStarAtLatLng(userLocation[0], userLocation[1]);
+    return addStarAtLatLng(userLocation[0], userLocation[1]);
   }, [addStarAtLatLng, userLocation]);
 
   const placeStarAtClientPoint = React.useCallback((clientX: number, clientY: number) => {
     const map = mapInstanceRef.current;
     if (!map) {
-      addStarAtUserLocation();
-      return;
+      return addStarAtUserLocation();
     }
 
     const rect = map.getContainer().getBoundingClientRect();
@@ -108,23 +119,50 @@ export const useMapStarActions = ({
       clientY >= rect.top &&
       clientY <= rect.bottom;
 
-    if (!isInsideMap) return;
+    if (!isInsideMap) return null;
 
     const latlng = map.containerPointToLatLng(L.point(clientX - rect.left, clientY - rect.top));
-    addStarAtLatLng(latlng.lat, latlng.lng);
+    return addStarAtLatLng(latlng.lat, latlng.lng);
   }, [addStarAtLatLng, addStarAtUserLocation]);
+
+  const cancelPreviewCleanup = React.useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (previewCleanupFrameRef.current !== null) {
+      window.cancelAnimationFrame(previewCleanupFrameRef.current);
+      previewCleanupFrameRef.current = null;
+    }
+    if (previewCleanupFallbackRef.current !== null) {
+      window.clearTimeout(previewCleanupFallbackRef.current);
+      previewCleanupFallbackRef.current = null;
+    }
+  }, []);
+
+  const clearPlacementPreview = React.useCallback((starId?: string) => {
+    if (starId && pendingPlacementStarIdRef.current !== starId) return;
+    cancelPreviewCleanup();
+    pendingPlacementStarIdRef.current = null;
+    setStarDragPreview(null);
+  }, [cancelPreviewCleanup]);
+
+  React.useEffect(() => () => cancelPreviewCleanup(), [cancelPreviewCleanup]);
 
   const handleStarPlacementPointerDown = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    cancelPreviewCleanup();
+    pendingPlacementStarIdRef.current = null;
+    setStarDragPreview(null);
+    const rect = event.currentTarget.getBoundingClientRect();
     starPlacementDragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      grabOffsetX: event.clientX - (rect.left + rect.width / 2),
+      grabOffsetY: event.clientY - (rect.top + rect.height / 2),
       dragging: false,
     };
-  }, []);
+  }, [cancelPreviewCleanup]);
 
   const handleStarPlacementPointerMove = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
     const dragState = starPlacementDragRef.current;
@@ -132,7 +170,10 @@ export const useMapStarActions = ({
     const distance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
     if (distance > 6) {
       dragState.dragging = true;
-      setStarDragPreview({ x: event.clientX, y: event.clientY });
+      setStarDragPreview({
+        x: event.clientX - dragState.grabOffsetX,
+        y: event.clientY - dragState.grabOffsetY,
+      });
       event.preventDefault();
     }
   }, []);
@@ -148,24 +189,55 @@ export const useMapStarActions = ({
     }
 
     if (dragState.dragging) {
-      placeStarAtClientPoint(event.clientX, event.clientY);
+      const previewX = event.clientX - dragState.grabOffsetX;
+      const previewY = event.clientY - dragState.grabOffsetY;
+      setStarDragPreview({ x: previewX, y: previewY });
+      const placedStarId = placeStarAtClientPoint(previewX, previewY);
+      if (placedStarId) {
+        pendingPlacementStarIdRef.current = placedStarId;
+        if (typeof window !== 'undefined') {
+          previewCleanupFallbackRef.current = window.setTimeout(() => {
+            clearPlacementPreview(placedStarId);
+          }, 600);
+        }
+      } else {
+        clearPlacementPreview();
+      }
       event.preventDefault();
       event.stopPropagation();
     } else {
       addStarAtUserLocation();
+      clearPlacementPreview();
     }
 
     starPlacementDragRef.current = null;
-    setStarDragPreview(null);
-  }, [addStarAtUserLocation, placeStarAtClientPoint]);
+  }, [addStarAtUserLocation, clearPlacementPreview, placeStarAtClientPoint]);
 
   const cancelStarPlacementPointer = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
     const dragState = starPlacementDragRef.current;
     if (dragState?.pointerId === event.pointerId) {
       starPlacementDragRef.current = null;
-      setStarDragPreview(null);
+      clearPlacementPreview();
     }
-  }, []);
+  }, [clearPlacementPreview]);
+
+  const onStarMarkerReady = React.useCallback((starId: string) => {
+    if (pendingPlacementStarIdRef.current !== starId) return;
+    if (typeof window === 'undefined') {
+      clearPlacementPreview(starId);
+      return;
+    }
+
+    if (previewCleanupFallbackRef.current !== null) {
+      window.clearTimeout(previewCleanupFallbackRef.current);
+      previewCleanupFallbackRef.current = null;
+    }
+    previewCleanupFrameRef.current = window.requestAnimationFrame(() => {
+      previewCleanupFrameRef.current = window.requestAnimationFrame(() => {
+        clearPlacementPreview(starId);
+      });
+    });
+  }, [clearPlacementPreview]);
 
   const handleMapDrop = React.useCallback((event: DragEvent, map: LeafletMap) => {
     const type = event.dataTransfer?.getData('text/plain');
@@ -329,6 +401,7 @@ export const useMapStarActions = ({
     handleStarPlacementPointerMove,
     finishStarPlacementPointer,
     cancelStarPlacementPointer,
+    onStarMarkerReady,
     handleMapDrop,
     onStarClick,
     onUpdateStar,
