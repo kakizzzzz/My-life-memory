@@ -6,6 +6,15 @@ on:
       - fix-ranking-scroll
     paths:
       - .github/workflows/fix-ranking-scroll.yml
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - .github/workflows/fix-ranking-scroll.yml
 
 permissions:
   contents: write
