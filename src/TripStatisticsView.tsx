@@ -696,13 +696,17 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     });
   }, []);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const el = rankingScrollRef.current;
-    if (!el) return;
+    if (!el || !isActive) return;
 
-    el.scrollTo({ left: 0 });
-    requestAnimationFrame(updateRankingScrollState);
-  }, [textRankings, updateRankingScrollState]);
+    el.scrollLeft = 0;
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(updateRankingScrollState);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [isActive, textRankings, updateRankingScrollState]);
 
   React.useEffect(() => {
     const update = () => requestAnimationFrame(updateRankingScrollState);
@@ -828,20 +832,22 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             <div
               ref={rankingScrollRef}
               onScroll={updateRankingScrollState}
-              className={`flex h-full min-h-0 w-[226px] items-end gap-2 overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${rankingScrollState.hasOverflow ? 'justify-start' : 'justify-center'}`}
+              className="h-full min-h-0 w-[226px] overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
-              {textRankings.map((item, index) => (
-                <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
-                  <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
-                  <span
-                    className="w-[20px] rounded-t-[3px]"
-                    style={{
-                      height: `${Math.max(12, (item.value / maxChartValue) * 132)}px`,
-                      backgroundColor: item.fill || chartPalette[index % chartPalette.length],
-                    }}
-                  />
-                </div>
-              ))}
+              <div className="flex h-full min-w-full w-max items-end justify-center gap-2">
+                {textRankings.map((item, index) => (
+                  <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
+                    <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
+                    <span
+                      className="w-[20px] rounded-t-[3px]"
+                      style={{
+                        height: `${Math.max(12, (item.value / maxChartValue) * 132)}px`,
+                        backgroundColor: item.fill || chartPalette[index % chartPalette.length],
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
 
             <button
