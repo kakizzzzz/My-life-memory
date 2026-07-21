@@ -29,6 +29,7 @@ const source = readFileSync(new URL('../supabase/functions/mcp/index.ts', import
 const memoryApiSource = readFileSync(new URL('../supabase/functions/memory-api/index.ts', import.meta.url), 'utf8');
 const contractSource = readFileSync(new URL('../supabase/functions/_shared/mcp-memory-contract.mjs', import.meta.url), 'utf8');
 const publicSchemaSource = readFileSync(new URL('../supabase/functions/_shared/mcp-memory-public-schema.mjs', import.meta.url), 'utf8');
+const localOutputSchemaSource = readFileSync(new URL('../mcp/memory-output-schema.mjs', import.meta.url), 'utf8');
 
 const withoutSchemaDialect = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(withoutSchemaDialect);
@@ -162,7 +163,14 @@ test('local and cloud transports publish the same complete nine-tool manifest', 
         withoutSchemaDialect(definition.inputSchema),
         definition.name,
       );
+      if (definition.name === 'research_memory_context') {
+        assert.ok(local.outputSchema, definition.name);
+        assert.match(JSON.stringify(local.outputSchema), /localDate/);
+      }
     }
+    assert.equal(client.getServerVersion()?.version, '1.0.1');
+    assert.match(localOutputSchemaSource, /MEMORY_RESEARCH_OUTPUT_SCHEMA/);
+    assert.match(localOutputSchemaSource, /exactPublicStateSchema/);
   } finally {
     await client.close();
     await server.close();
@@ -172,8 +180,12 @@ test('local and cloud transports publish the same complete nine-tool manifest', 
 test('cloud MCP advertises the shared evidence-grounded research contract', () => {
   assert.match(source, /MCP_TOOL_MANIFEST/);
   assert.match(source, /buildMcpMemoryInstructions\(temporalPayload\?\.temporalContext\)/);
-  assert.match(contractSource, /MCP_SERVER_VERSION = '1\.0\.0'/);
+  assert.match(contractSource, /MCP_SERVER_VERSION = '1\.0\.1'/);
   assert.match(contractSource, /repeat directive\.exactText exactly and add nothing/i);
+  assert.match(contractSource, /empty passages do not mean empty results/i);
+  assert.match(contractSource, /server.*scope and query filters/i);
+  assert.match(contractSource, /happiest, best, or most memorable/i);
+  assert.match(contractSource, /get_day_memory.*merely because passages is empty/i);
   assert.match(contractSource, /Never choose an option on the user’s behalf/);
   assert.match(contractSource, /confirmation token restores the original question/i);
   assert.doesNotMatch(contractSource, /semanticReview/);

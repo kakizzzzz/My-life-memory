@@ -33,7 +33,7 @@ export const isFiniteCoordinate = (lat: unknown, lng: unknown) => {
     && lngNumber >= -180 && lngNumber <= 180;
 };
 
-const stripHtml = (html = '') => html
+export const stripHtml = (html = '') => html
   .replace(/<style[\s\S]*?<\/style>/gi, ' ')
   .replace(/<script[\s\S]*?<\/script>/gi, ' ')
   .replace(/<[^>]+>/g, ' ')
@@ -62,6 +62,13 @@ const cleanImageMetadata = (value: unknown) => {
 export const noteImages = (note: NoteRow) => getArray(note.images)
   .map(cleanImageMetadata)
   .filter(image => image.path || image.key);
+
+export const noteHasStoredImages = (note: NoteRow) => Boolean(
+  note.image_url
+  || note.image_urls?.length
+  || note.images?.length
+  || /data-media-(?:path|key)=/i.test(`${note.title_html} ${note.content_html}`)
+);
 
 export const noteText = (note: NoteRow) => note.content.trim() || stripHtml(note.content_html);
 

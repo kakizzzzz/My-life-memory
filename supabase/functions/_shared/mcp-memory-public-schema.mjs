@@ -72,10 +72,11 @@ const evidenceRecordSchema = {
     title: { type: 'string' },
     excerpt: { type: 'string', maxLength: 240 },
     createdAt: { type: ['number', 'null'] },
+    localDate: { type: 'string', pattern: '^(?:\\d{4}-\\d{2}-\\d{2})?$' },
     hasImages: { type: 'boolean' },
     coordinates: coordinatesSchema,
   },
-  required: ['id', 'starId', 'title', 'excerpt', 'createdAt', 'hasImages', 'coordinates'],
+  required: ['id', 'starId', 'title', 'excerpt', 'createdAt', 'localDate', 'hasImages', 'coordinates'],
   additionalProperties: false,
 };
 
@@ -145,6 +146,28 @@ const supported = {
         selectedImageNoteIds: { type: 'array', maxItems: 10, items: { type: 'string' } },
       },
       required: ['passages', 'records', 'locations', 'routes', 'verifiedPlaceNames', 'selectedImageNoteIds'],
+      anyOf: [
+        {
+          type: 'object',
+          required: ['passages'],
+          properties: { passages: { type: 'array', minItems: 1, maxItems: 12, items: evidencePassageSchema } },
+        },
+        {
+          type: 'object',
+          required: ['records'],
+          properties: { records: { type: 'array', minItems: 1, maxItems: 100, items: evidenceRecordSchema } },
+        },
+        {
+          type: 'object',
+          required: ['locations'],
+          properties: { locations: { type: 'array', minItems: 1, maxItems: 100, items: evidenceLocationSchema } },
+        },
+        {
+          type: 'object',
+          required: ['routes'],
+          properties: { routes: { type: 'array', minItems: 1, maxItems: 20, items: evidenceRouteSchema } },
+        },
+      ],
       additionalProperties: false,
     },
     confidenceKind: { const: 'heuristic' },

@@ -29,6 +29,39 @@ const notFoundResult = {
   evidence: null,
 };
 
+const { clarification: _notFoundClarification, ...commonResult } = notFoundResult;
+
+const supportedResult = {
+  ...commonResult,
+  query: 'record-only memory',
+  status: 'supported',
+  directive: {
+    action: 'ANSWER_FROM_EVIDENCE',
+    exactText: null,
+    mayAddExplanation: true,
+  },
+  evidence: {
+    passages: [],
+    records: [{
+      id: 'note-1',
+      starId: 'star-1',
+      title: 'Synthetic memory',
+      excerpt: 'Synthetic record evidence.',
+      createdAt: 1,
+      localDate: '1970-01-01',
+      hasImages: false,
+      coordinates: { lat: 35, lng: 139 },
+    }],
+    locations: [],
+    routes: [],
+    verifiedPlaceNames: [],
+    selectedImageNoteIds: [],
+  },
+  confidenceKind: 'heuristic',
+  confidenceBand: 'medium',
+  reasonCodes: ['server-authorized-records'],
+};
+
 test('local MCP SDK publishes and validates the structured memory output schema', async () => {
   const server = new McpServer({ name: 'schema-test', version: '1.0.0' });
   server.registerTool('research_memory_context', {
@@ -72,4 +105,15 @@ test('local MCP output schema rejects fields forbidden by a non-supported state'
     },
   });
   assert.equal(result.success, false);
+});
+
+test('local MCP output schema accepts record-only evidence and rejects a supported empty shell', () => {
+  assert.equal(memoryResearchOutputSchema.safeParse(supportedResult).success, true);
+  assert.equal(memoryResearchOutputSchema.safeParse({
+    ...supportedResult,
+    evidence: {
+      ...supportedResult.evidence,
+      records: [],
+    },
+  }).success, false);
 });

@@ -199,3 +199,61 @@ test('local MCP keeps actionable 4xx errors and hides Memory API 5xx details', a
   assert.equal(internalText, MEMORY_API_INTERNAL_ERROR_MESSAGE);
   assert.doesNotMatch(internalText, /private database detail/);
 });
+
+test('local search fallback preserves supported record-only research without archive traversal', async () => {
+  const actions: string[] = [];
+  const memoryApiCaller = async (action: string, input: Record<string, unknown> = {}) => {
+    actions.push(action);
+    if (action === 'get_temporal_context') return { temporalContext: null };
+    if (action === 'search_memories') return { query: input.query, count: 0, records: [] };
+    if (action === 'research_memory_context') return {
+      schemaVersion: '2',
+      status: 'supported',
+      directive: { action: 'ANSWER_FROM_EVIDENCE', exactText: null, mayAddExplanation: true },
+      evidence: {
+        passages: [],
+        records: [{
+          id: 'synthetic-note',
+          starId: 'synthetic-star',
+          title: 'Synthetic memory',
+          excerpt: 'A synthetic scoped record.',
+          createdAt: 1,
+          localDate: '1970-01-01',
+          hasImages: false,
+          coordinates: { lat: 35, lng: 139 },
+        }],
+        locations: [],
+        routes: [],
+        verifiedPlaceNames: ['Japan'],
+        selectedImageNoteIds: [],
+      },
+      confidenceKind: 'heuristic',
+      confidenceBand: 'medium',
+      reasonCodes: ['server-authorized-records'],
+    };
+    throw new Error(`Unexpected archive traversal: ${action}`);
+  };
+  const server = await createMemoryMcpServer({ memoryApiCaller });
+  const client = new Client({ name: 'record-only-fallback-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  try {
+    const result = await client.callTool({
+      name: 'search_memories',
+      arguments: { query: 'Japan trip memories' },
+    });
+    const text = String(result.content[0]?.type === 'text' ? result.content[0].text : '');
+    assert.match(text, /synthetic-note/);
+    assert.match(text, /1970-01-01/);
+    assert.deepEqual(actions, [
+      'get_temporal_context',
+      'search_memories',
+      'research_memory_context',
+    ]);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});

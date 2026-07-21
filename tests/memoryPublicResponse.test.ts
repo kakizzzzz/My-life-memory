@@ -10,6 +10,7 @@ import {
 const forbiddenKeys = new Set([
   'candidateNotes', 'candidateReview', 'titleIndex', 'clusters', 'latestRecordedMemory',
   'totals', 'personalContext', 'selectedNoteIds', 'selectedStarIds', 'selectedTrackIds',
+  'authorizedRecordNoteIds', 'authorizedLocationStarIds', 'authorizedRouteTrackIds',
   'decisionReasons', 'scores',
 ]);
 
@@ -78,6 +79,7 @@ test('supported research exposes only bounded evidence allowlist fields', () => 
       title: 'Sculpture',
       excerpt: 'I saw the sculpture here.',
       createdAt: 1,
+      localDate: '1970-01-01',
       hasImages: true,
       coordinates: { lat: 35, lng: 139 },
     }],
@@ -91,6 +93,70 @@ test('supported research exposes only bounded evidence allowlist fields', () => 
   assert.equal('hiddenInternalScore' in result.evidence.passages[0], false);
   assert.equal(JSON.stringify(result).includes('must not escape'), false);
   assert.deepEqual(result.evidence.selectedImageNoteIds, ['note-1']);
+});
+
+test('supported projection applies record, location, route, and image authorization allowlists', () => {
+  const authorizedRecord = {
+    id: 'authorized-note',
+    starId: 'authorized-star',
+    title: 'Authorized synthetic memory',
+    excerpt: 'Authorized synthetic excerpt.',
+    createdAt: 1,
+    localDate: '1970-01-01',
+    hasImages: true,
+    coordinates: { lat: 35, lng: 139 },
+  };
+  const unauthorizedRecord = {
+    ...authorizedRecord,
+    id: 'unauthorized-note',
+    starId: 'unauthorized-star',
+    title: 'Private injected record',
+  };
+  const result = projectPublicMemoryResearchResponse({
+    research: {
+      query: 'Show the authorized synthetic scope.',
+      answerBoundary: { status: 'supported', verifiedPlaceNames: ['Example City'] },
+      queryPlan: { originalQuery: 'Show the authorized synthetic scope.', routeIntent: true },
+      evidencePassages: [],
+      authorizedRecordNoteIds: ['authorized-note'],
+      authorizedLocationStarIds: ['authorized-star'],
+      authorizedRouteTrackIds: ['authorized-route'],
+      selectedImageNoteIds: ['authorized-note', 'unauthorized-note'],
+      confidenceBand: 'medium',
+    },
+    records: [authorizedRecord, unauthorizedRecord],
+    locations: [
+      { id: 'authorized-star', index: 0, coordinates: { lat: 35, lng: 139 }, noteCount: 1 },
+      { id: 'unauthorized-star', index: 1, coordinates: { lat: 36, lng: 140 }, noteCount: 1 },
+    ],
+    routes: [
+      { id: 'authorized-route' },
+      { id: 'unauthorized-route' },
+    ],
+  });
+
+  assert.equal(result.status, 'supported');
+  assert.deepEqual(result.evidence.records.map(record => record.id), ['authorized-note']);
+  assert.deepEqual(result.evidence.locations.map(location => location.id), ['authorized-star']);
+  assert.deepEqual(result.evidence.routes.map(route => route.id), ['authorized-route']);
+  assert.deepEqual(result.evidence.selectedImageNoteIds, ['authorized-note']);
+  assert.equal(JSON.stringify(result).includes('Private injected record'), false);
+  forbiddenKeys.forEach(key => assert.equal(collectKeys(result).has(key), false, `unexpected key ${key}`));
+
+  const withoutRouteIntent = projectPublicMemoryResearchResponse({
+    research: {
+      query: 'Show notes only.',
+      answerBoundary: { status: 'supported', verifiedPlaceNames: [] },
+      queryPlan: { originalQuery: 'Show notes only.', routeIntent: false },
+      evidencePassages: [],
+      authorizedRecordNoteIds: ['authorized-note'],
+      authorizedRouteTrackIds: ['authorized-route'],
+    },
+    records: [authorizedRecord],
+    routes: [{ id: 'authorized-route' }],
+  });
+  assert.equal(withoutRouteIntent.status, 'supported');
+  assert.deepEqual(withoutRouteIntent.evidence.routes, []);
 });
 
 test('user-confirmed evidence is projected with an explicit reference source', () => {
@@ -138,6 +204,9 @@ test('not-found response physically omits every candidate and coordinate-bearing
       candidateReview: { coordinates: { lat: 1, lng: 2 } },
       selectedNoteIds: ['candidate-1'],
       selectedImageNoteIds: ['candidate-1'],
+      authorizedRecordNoteIds: ['candidate-1'],
+      authorizedLocationStarIds: ['candidate-star'],
+      authorizedRouteTrackIds: ['candidate-route'],
       latestRecordedMemory: { coordinates: { lat: 1, lng: 2 } },
       totals: { notes: 100 },
       classification: { label: 'daily' },
@@ -152,6 +221,42 @@ test('not-found response physically omits every candidate and coordinate-bearing
   const weakClientView = visibleStrings(result).join(' ');
   assert.doesNotMatch(weakClientView, /Private candidate|Sensitive candidate body|candidate-1/u);
   assert.equal(memoryResearchTextContent(result), result.directive.exactText);
+});
+
+test('every non-supported state ignores injected authorized ids and private evidence payloads', () => {
+  const cases = [
+    ['unresolved public place', 'needs-place-resolution', 'candidate-review'],
+    ['ambiguous personal reference', 'ambiguous', 'ambiguous'],
+    ['not found', 'not-found', 'not-found'],
+    ['relative time candidate review', 'needs-time-range', 'candidate-review'],
+  ] as const;
+
+  for (const [label, boundaryStatus, publicStatus] of cases) {
+    const result = projectPublicMemoryResearchResponse({
+      research: {
+        query: label,
+        answerBoundary: { status: boundaryStatus },
+        queryPlan: { originalQuery: label, routeIntent: true },
+        authorizedRecordNoteIds: ['private-note'],
+        authorizedLocationStarIds: ['private-star'],
+        authorizedRouteTrackIds: ['private-route'],
+        selectedImageNoteIds: ['private-note'],
+        candidateReview: { body: 'Private candidate body', coordinates: { lat: 1, lng: 2 } },
+      },
+      records: [{ id: 'private-note', title: 'Private title', excerpt: 'Private body' }],
+      locations: [{ id: 'private-star', coordinates: { lat: 1, lng: 2 } }],
+      routes: [{ id: 'private-route' }],
+    });
+
+    assert.equal(result.status, publicStatus, label);
+    assert.equal(result.evidence, null, label);
+    assert.doesNotMatch(
+      visibleStrings(result).join(' '),
+      /Private title|Private body|private-note|private-star|private-route/u,
+      label,
+    );
+    forbiddenKeys.forEach(key => assert.equal(collectKeys(result).has(key), false, `${label}: ${key}`));
+  }
 });
 
 test('ambiguous response contains only neutral options and an opaque continuation token', () => {
@@ -251,4 +356,41 @@ test('the advertised MCP output schema accepts strict states and rejects extra f
     ...result,
     candidateNotes: ['forbidden'],
   })).success, false);
+});
+
+test('the output schema rejects a supported empty shell and accepts record-only evidence', () => {
+  const schema = z.fromJSONSchema(MEMORY_RESEARCH_OUTPUT_SCHEMA);
+  const empty = projectPublicMemoryResearchResponse({
+    research: {
+      query: 'Synthetic empty supported response',
+      answerBoundary: { status: 'supported', verifiedPlaceNames: [] },
+      queryPlan: { originalQuery: 'Synthetic empty supported response', routeIntent: false },
+      evidencePassages: [],
+      selectedImageNoteIds: [],
+    },
+  });
+  assert.equal(schema.safeParse(wrapped('Synthetic empty supported response', empty)).success, false);
+
+  const recordOnly = projectPublicMemoryResearchResponse({
+    research: {
+      query: 'Synthetic record-only supported response',
+      answerBoundary: { status: 'supported', verifiedPlaceNames: [] },
+      queryPlan: { originalQuery: 'Synthetic record-only supported response', routeIntent: false },
+      evidencePassages: [],
+      authorizedRecordNoteIds: ['record-only'],
+      selectedImageNoteIds: [],
+      confidenceBand: 'low',
+    },
+    records: [{
+      id: 'record-only',
+      starId: 'star-only',
+      title: 'Synthetic record',
+      excerpt: 'Synthetic excerpt',
+      createdAt: null,
+      localDate: '',
+      hasImages: false,
+      coordinates: { lat: 0, lng: 0 },
+    }],
+  });
+  assert.equal(schema.safeParse(wrapped('Synthetic record-only supported response', recordOnly)).success, true);
 });

@@ -30,11 +30,11 @@ import {
   isFiniteCoordinate,
   isInDateRange,
   noteSummary,
-  noteTitle,
   notesByStarId,
   routeSummary,
   starSummary,
 } from '../_shared/memory-presenters.ts';
+import { buildMemoryResearchEvidencePayload } from '../_shared/memory-research-evidence.ts';
 import { resolveMemoryPlace } from '../_shared/memory-place-resolver.ts';
 import {
   researchMemoryContext,
@@ -191,13 +191,6 @@ const semanticHintsInput = (value: unknown): {
   }
   return { value: { concepts: parsed as NonNullable<typeof parsed[number]>[] } };
 };
-
-const noteHasStoredImages = (note: NoteRow) => Boolean(
-  note.image_url
-  || note.image_urls?.length
-  || note.images?.length
-  || /data-media-(?:path|key)=/i.test(`${note.title_html} ${note.content_html}`)
-);
 
 const memoryLoadOptions = (action: string, body: Record<string, unknown>): NormalizedMemoryLoadOptions => {
   const date = getString(body.date);
@@ -699,58 +692,11 @@ serve(async request => {
         }
       }
 
-      const starById = new Map(memory.stars.map(star => [star.id, star]));
-      const starIndex = new Map(memory.stars.map((star, index) => [star.id, index]));
-      const noteById = new Map(memory.notes.map(note => [note.id, note]));
-      const trackById = new Map(memory.tracks.map(track => [track.id, track]));
-      const evidenceNoteIds = new Set(research.evidencePassages.map(passage => passage.noteId));
-      const records = research.selectedNoteIds.flatMap(noteId => {
-        if (!evidenceNoteIds.has(noteId)) return [];
-        const note = noteById.get(noteId);
-        const star = note ? starById.get(note.star_id) : null;
-        if (!note || !star) return [];
-        const excerpt = research.evidencePassages
-          .filter(passage => passage.noteId === note.id)
-          .map(passage => passage.text.trim())
-          .filter(Boolean)
-          .join(' ')
-          .slice(0, 240);
-        return [{
-          id: note.id,
-          starId: star.id,
-          title: noteTitle(note),
-          excerpt,
-          createdAt: note.created_at_ms ?? star.created_at_ms,
-          hasImages: noteHasStoredImages(note),
-          coordinates: { lat: star.lat, lng: star.lng },
-        }];
+      const { records, locations, routes } = buildMemoryResearchEvidencePayload({
+        memory,
+        research,
+        timeZone,
       });
-      const evidenceStarIds = new Set([
-        ...records.map(record => record.starId),
-        ...research.evidencePassages.map(passage => passage.starId),
-      ]);
-      const locations = [...evidenceStarIds].flatMap(starId => {
-        const star = starById.get(starId);
-        return star ? [{
-          id: star.id,
-          index: starIndex.get(star.id) || 0,
-          coordinates: { lat: star.lat, lng: star.lng },
-          noteCount: (groupedNotes.get(star.id) || []).length,
-        }] : [];
-      });
-      const routes = research.queryPlan.routeIntent ? research.selectedTrackIds.flatMap(trackId => {
-        const track = trackById.get(trackId);
-        if (!track) return [];
-        const summary = routeSummary(track, false);
-        return [{
-          id: summary.id,
-          durationSeconds: summary.durationSeconds,
-          distance: summary.distance,
-          createdAt: summary.createdAt,
-          segmentCount: summary.segmentCount,
-          pointCount: summary.pointCount,
-        }];
-      }) : [];
       const publicResearch = projectPublicMemoryResearchResponse({
         research,
         records,

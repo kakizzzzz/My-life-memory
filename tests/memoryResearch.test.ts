@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as z from 'zod/v4';
 import {
   MCP_MEMORY_INSTRUCTIONS,
   researchMemoryContext,
@@ -7,6 +8,9 @@ import {
   resolveMemoryCountryRegion,
   type ResolvedMemoryPlace,
 } from '../supabase/functions/_shared/memory-research.ts';
+import { projectPublicMemoryResearchResponse } from '../supabase/functions/_shared/memory-public-response.ts';
+import { buildMemoryResearchEvidencePayload } from '../supabase/functions/_shared/memory-research-evidence.ts';
+import { MEMORY_RESEARCH_OUTPUT_SCHEMA } from '../supabase/functions/_shared/mcp-memory-public-schema.mjs';
 import { resolveMemoryPlace } from '../supabase/functions/_shared/memory-place-resolver.ts';
 import type {
   NormalizedMemoryRows,
@@ -71,6 +75,22 @@ const memory = (
   tracks,
 });
 
+const publicEnvelope = (query: string, response: Record<string, unknown>) => ({
+  ok: true,
+  source: 'my-life-memory-normalized-v2',
+  action: 'research_memory_context',
+  query,
+  timestamp: '2026-07-18T00:00:00.000Z',
+  temporalContext: {
+    timeZone: 'Asia/Tokyo',
+    currentUtcDateTime: '2026-07-18T00:00:00.000Z',
+    currentLocalDate: '2026-07-18',
+    currentLocalDateTime: '2026-07-18T09:00:00+09:00',
+    currentDateRole: 'query-evaluation-only',
+  },
+  ...response,
+});
+
 test('country aliases retrieve geographically even when notes omit the country keyword', () => {
   const tokyo = star('tokyo', 35.6762, 139.6503, at('2026-01-03'));
   const osaka = star('osaka', 34.6937, 135.5023, at('2026-01-05'));
@@ -89,6 +109,10 @@ test('country aliases retrieve geographically even when notes omit the country k
   assert.equal(result.searchPlan.resolvedRegion?.code, 'JP');
   assert.deepEqual(new Set(result.selectedNoteIds), new Set(['n-tokyo', 'n-osaka']));
   assert.deepEqual(result.selectedTrackIds, ['route-jp']);
+  assert.deepEqual(new Set(result.authorizedRecordNoteIds), new Set(['n-tokyo', 'n-osaka']));
+  assert.deepEqual(new Set(result.authorizedLocationStarIds), new Set(['tokyo', 'osaka']));
+  assert.deepEqual(result.authorizedRouteTrackIds, []);
+  assert.deepEqual(result.answerBoundary.verifiedPlaceNames, ['Japan']);
   assert.equal(result.latestRecordedMemory?.starId, 'shanghai');
   assert.equal(result.latestRecordedMemory?.relationToSearchArea, 'outside');
   assert.match(result.latestRecordedMemory?.caution || '', /not verified current location/i);
@@ -127,6 +151,148 @@ test('resolved cities and towns use the same spatial and temporal research flow'
   assert.deepEqual(result.selectedNoteIds, ['n-ningbo']);
   assert.deepEqual(result.selectedStarIds, ['ningbo']);
   assert.equal(result.latestRecordedMemory?.relationToSearchArea, 'outside');
+});
+
+test('resolved public places expose selected records even without claim passages', () => {
+  const tokyo = star('tokyo', 35.6762, 139.6503, at('2026-07-10'));
+  const outside = star('outside', 31.2304, 121.4737, at('2026-07-12'));
+  const tokyoMemory = {
+    ...note('tokyo-note', tokyo.id, at('2026-07-10'), 'A joyful synthetic afternoon beside the river.'),
+    image_url: 'storage://synthetic/tokyo.jpg',
+  };
+  const resolvedPlace: ResolvedMemoryPlace = {
+    name: 'Tokyo',
+    displayName: 'Tokyo, Japan',
+    type: 'city',
+    countryCode: 'JP',
+    center: { lat: 35.6762, lng: 139.6503 },
+    boxes: [[35.5, 139.4, 35.9, 139.9]],
+    provider: 'test',
+    attribution: 'test',
+  };
+  const archive = memory(
+    [tokyo, outside],
+    [
+      tokyoMemory,
+      note('outside-note', outside.id, at('2026-07-12'), 'A synthetic ordinary weekday.'),
+    ],
+  );
+  const research = researchMemoryContext(archive, {
+    query: 'What memories do I have in Tokyo?',
+    place: 'Tokyo',
+    resolvedPlace,
+    placeResolution: { status: 'resolved', query: 'Tokyo' },
+  });
+
+  assert.equal(research.answerBoundary.status, 'supported');
+  assert.deepEqual(research.selectedNoteIds, ['tokyo-note']);
+  assert.deepEqual(research.authorizedRecordNoteIds, ['tokyo-note']);
+  assert.deepEqual(research.authorizedLocationStarIds, ['tokyo']);
+  assert.deepEqual(research.answerBoundary.verifiedPlaceNames, ['Tokyo, Japan']);
+  assert.deepEqual(research.evidencePassages, []);
+  assert.deepEqual(research.selectedImageNoteIds, ['tokyo-note']);
+
+  const evidence = buildMemoryResearchEvidencePayload({
+    memory: archive,
+    research,
+    timeZone: 'Asia/Tokyo',
+  });
+  const publicResponse = projectPublicMemoryResearchResponse({
+    research,
+    ...evidence,
+  });
+
+  assert.equal(evidence.records[0]?.excerpt, 'A joyful synthetic afternoon beside the river.');
+  assert.equal(evidence.records[0]?.localDate, '2026-07-10');
+  assert.equal(publicResponse.status, 'supported');
+  assert.equal(publicResponse.evidence.passages.length, 0);
+  assert.deepEqual(publicResponse.evidence.records.map(record => record.id), ['tokyo-note']);
+  assert.deepEqual(publicResponse.evidence.locations.map(location => location.id), ['tokyo']);
+  assert.deepEqual(publicResponse.evidence.selectedImageNoteIds, ['tokyo-note']);
+  assert.equal(
+    z.fromJSONSchema(MEMORY_RESEARCH_OUTPUT_SCHEMA)
+      .safeParse(publicEnvelope(research.query, publicResponse)).success,
+    true,
+  );
+});
+
+test('country scope authorizes bounded records with local dates for one-call subjective comparison', () => {
+  const tokyo = star('tokyo-happy', 35.6762, 139.6503, at('2026-07-10'));
+  const kyoto = star('kyoto-happy', 35.0116, 135.7681, at('2026-07-11'));
+  const shanghai = star('shanghai-control', 31.2304, 121.4737, at('2026-07-12'));
+  const archive = memory(
+    [tokyo, kyoto, shanghai],
+    [
+      note('tokyo-happy-note', tokyo.id, at('2026-07-10'), 'A calm synthetic morning with a warm smile.'),
+      note('kyoto-happy-note', kyoto.id, at('2026-07-11'), 'The most joyful synthetic evening of the whole journey.'),
+      note('shanghai-control-note', shanghai.id, at('2026-07-12'), 'A synthetic routine after returning.'),
+    ],
+  );
+  const query = 'Look through my Japan trip memories and compare the recorded experiences to guess which local day I seemed happiest.';
+  const research = researchMemoryContext(archive, { query, place: 'Japan', limit: 100 }, 'Asia/Tokyo');
+  const evidence = buildMemoryResearchEvidencePayload({ memory: archive, research, timeZone: 'Asia/Tokyo' });
+  const response = projectPublicMemoryResearchResponse({ research, ...evidence });
+
+  assert.equal(research.searchPlan.mode, 'country');
+  assert.equal(research.searchPlan.resolvedRegion?.code, 'JP');
+  assert.equal(research.answerBoundary.status, 'supported');
+  assert.deepEqual(research.authorizedRecordNoteIds, ['kyoto-happy-note', 'tokyo-happy-note']);
+  assert.equal(research.authorizedRecordNoteIds.includes('shanghai-control-note'), false);
+  assert.deepEqual(research.answerBoundary.verifiedPlaceNames, ['Japan']);
+  assert.deepEqual(research.evidencePassages, []);
+  assert.deepEqual(evidence.records.map(record => record.localDate), ['2026-07-11', '2026-07-10']);
+  assert.equal(response.status, 'supported');
+  assert.equal(response.evidence.records.length, 2);
+  assert.equal(response.reasonCodes.includes('server-authorized-records'), true);
+  assert.equal(response.reasonCodes.includes('verified-public-place-scope'), true);
+  assert.equal(
+    z.fromJSONSchema(MEMORY_RESEARCH_OUTPUT_SCHEMA)
+      .safeParse(publicEnvelope(query, response)).success,
+    true,
+  );
+});
+
+test('evidence payload keeps authorization order while cleaning excerpts and summarizing routes', () => {
+  const location = star('payload-star', 35, 139, at('2026-02-03'));
+  const htmlNote = {
+    ...note('payload-note', location.id, at('2026-02-03'), ''),
+    content_html: '<p>Fallback <strong>synthetic text</strong></p><img data-media-key="synthetic/image.jpg">',
+  };
+  const route = track('payload-route', at('2026-02-03'), [[35, 139], [35.01, 139.01]]);
+  const archive = memory([location], [htmlNote], [route]);
+  const longPassage = `<p>${'Synthetic passage '.repeat(30)}</p>`;
+  const evidence = buildMemoryResearchEvidencePayload({
+    memory: archive,
+    research: {
+      authorizedRecordNoteIds: ['missing-note', 'payload-note', 'payload-note'],
+      authorizedLocationStarIds: ['missing-star', 'payload-star', 'payload-star'],
+      authorizedRouteTrackIds: ['missing-route', 'payload-route', 'payload-route'],
+      evidencePassages: [{ noteId: 'payload-note', text: longPassage }],
+      queryPlan: { routeIntent: true },
+    },
+    timeZone: 'Asia/Tokyo',
+  });
+
+  assert.deepEqual(evidence.records.map(record => record.id), ['payload-note']);
+  assert.equal(evidence.records[0]?.excerpt.length, 240);
+  assert.doesNotMatch(evidence.records[0]?.excerpt || '', /<[^>]+>/);
+  assert.equal(evidence.records[0]?.hasImages, true);
+  assert.equal(evidence.locations[0]?.noteCount, 1);
+  assert.deepEqual(evidence.routes.map(item => item.id), ['payload-route']);
+  assert.equal('paths' in (evidence.routes[0] || {}), false);
+
+  const fallback = buildMemoryResearchEvidencePayload({
+    memory: archive,
+    research: {
+      authorizedRecordNoteIds: ['payload-note'],
+      evidencePassages: [],
+      queryPlan: { routeIntent: false },
+      authorizedRouteTrackIds: ['payload-route'],
+    },
+    timeZone: 'Asia/Tokyo',
+  });
+  assert.equal(fallback.records[0]?.excerpt, 'Fallback synthetic text');
+  assert.deepEqual(fallback.routes, []);
 });
 
 test('repeated records over time lean daily instead of forcing a trip label', () => {
@@ -231,6 +397,10 @@ test('public place ambiguity is explicit and never falls back to unrelated archi
   assert.deepEqual(research.selectedNoteIds, []);
   assert.deepEqual(research.selectedStarIds, []);
   assert.deepEqual(research.selectedTrackIds, []);
+  assert.deepEqual(research.authorizedRecordNoteIds, []);
+  assert.deepEqual(research.authorizedLocationStarIds, []);
+  assert.deepEqual(research.authorizedRouteTrackIds, []);
+  assert.deepEqual(research.selectedImageNoteIds, []);
   assert.match(research.instruction, /ask the user to disambiguate/i);
 });
 

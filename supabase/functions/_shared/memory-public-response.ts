@@ -161,12 +161,17 @@ const confidenceBand = (value: unknown): 'high' | 'medium' | 'low' | 'none' => (
   value === 'high' || value === 'medium' || value === 'low' ? value : 'none'
 );
 
-const reasonCodes = (research: UnknownRecord) => {
+const reasonCodes = (
+  research: UnknownRecord,
+  { hasRecords = false, hasVerifiedPlaceNames = false } = {},
+) => {
   const queryPlan = asRecord(research.queryPlan);
   const personalContext = asRecord(research.personalContext);
   return [
     'authenticated-user-scope',
     ...(asRecords(research.evidencePassages).length ? ['verified-evidence-passages'] : []),
+    ...(hasRecords ? ['server-authorized-records'] : []),
+    ...(hasVerifiedPlaceNames ? ['verified-public-place-scope'] : []),
     ...(asStrings(queryPlan.anchorRelations).length ? ['personal-anchor-resolved'] : []),
     ...(asStrings(queryPlan.eventRelations).length ? ['event-target-linked'] : []),
     ...(queryPlan.routeIntent === true ? ['explicit-route-intent'] : []),
@@ -195,13 +200,24 @@ export const projectPublicMemoryResearchResponse = ({
     const classification = asRecord(research.classification);
     const includeClassification = queryPlan.answerIntent === 'classify';
     const passages = asRecords(research.evidencePassages).map(safeEvidencePassage);
-    const evidenceNoteIds = new Set(passages.map(passage => String(passage.noteId || '')).filter(Boolean));
-    const safeRecords = records.filter(record => evidenceNoteIds.has(String(record.id || '')));
+    const passageNoteIds = new Set(passages.map(passage => String(passage.noteId || '')).filter(Boolean));
+    const authorizedRecordNoteIds = new Set(asStrings(research.authorizedRecordNoteIds));
+    const allowedRecordNoteIds = new Set([...passageNoteIds, ...authorizedRecordNoteIds]);
+    const safeRecords = records.filter(record => allowedRecordNoteIds.has(String(record.id || '')));
+    const authorizedLocationStarIds = new Set(asStrings(research.authorizedLocationStarIds));
     const evidenceStarIds = new Set([
       ...passages.map(passage => String(passage.starId || '')),
       ...safeRecords.map(record => String(record.starId || '')),
     ].filter(Boolean));
-    const safeLocations = locations.filter(location => evidenceStarIds.has(String(location.id || '')));
+    const safeLocations = locations.filter(location => {
+      const locationId = String(location.id || '');
+      return authorizedLocationStarIds.has(locationId) || evidenceStarIds.has(locationId);
+    });
+    const authorizedRouteTrackIds = new Set(asStrings(research.authorizedRouteTrackIds));
+    const safeRoutes = queryPlan.routeIntent === true
+      ? routes.filter(route => authorizedRouteTrackIds.has(String(route.id || '')))
+      : [];
+    const verifiedPlaceNames = asStrings(boundary.verifiedPlaceNames);
     return {
       schemaVersion: '2',
       status: 'supported',
@@ -214,14 +230,17 @@ export const projectPublicMemoryResearchResponse = ({
         passages,
         records: safeRecords,
         locations: safeLocations,
-        routes: queryPlan.routeIntent === true ? routes : [],
-        verifiedPlaceNames: asStrings(boundary.verifiedPlaceNames),
+        routes: safeRoutes,
+        verifiedPlaceNames,
         selectedImageNoteIds: asStrings(research.selectedImageNoteIds)
-          .filter(noteId => evidenceNoteIds.has(noteId)),
+          .filter(noteId => allowedRecordNoteIds.has(noteId)),
       },
       confidenceKind: 'heuristic',
       confidenceBand: confidenceBand(research.confidenceBand),
-      reasonCodes: reasonCodes(research),
+      reasonCodes: reasonCodes(research, {
+        hasRecords: safeRecords.length > 0,
+        hasVerifiedPlaceNames: verifiedPlaceNames.length > 0,
+      }),
       ...(includeClassification ? {
         classification: {
           label: ['travel', 'daily', 'mixed'].includes(String(classification.label))

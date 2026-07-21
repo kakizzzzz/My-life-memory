@@ -9,7 +9,7 @@ import {
   type MemoryCountryRegion,
 } from './memory-country-regions.ts';
 import { isInDateRange } from './memory-date.ts';
-import { noteText, noteTitle } from './memory-presenters.ts';
+import { noteHasStoredImages, noteText, noteTitle } from './memory-presenters.ts';
 import {
   buildBoundedArchiveReview,
   findTargetEvidencePassages,
@@ -133,13 +133,6 @@ const normalizeCompact = (value: unknown) => String(value ?? '')
 
 const confidenceBandFor = (confidence: number) => (
   confidence >= 0.8 ? 'high' : confidence >= 0.65 ? 'medium' : confidence > 0 ? 'low' : 'none'
-);
-
-const noteHasImages = (note: NoteRow) => Boolean(
-  note.image_url
-  || note.image_urls?.length
-  || note.images?.length
-  || /data-media-(?:path|key)=/i.test(`${note.title_html} ${note.content_html}`)
 );
 
 const finiteCoordinate = (lat: unknown, lng: unknown): Coordinate | null => {
@@ -632,6 +625,7 @@ export const researchMemoryContext = (
   );
   const resolvedSpatialScope = resolveSpatialScope(input);
   const starById = new Map(memory.stars.map(star => [star.id, star]));
+  const noteById = new Map(memory.notes.map(note => [note.id, note]));
   const personalArchive = temporalResolutionRequired || unresolvedPublicPlace ? {
     ...memory,
     stars: [],
@@ -851,9 +845,7 @@ export const researchMemoryContext = (
   ] : uniqueAnchors).slice(0, 12);
   const evidencePassageNoteIds = new Set(evidencePassages.map(passage => passage.noteId));
   const selectedNoteIds = selectedEntries.map(entry => entry.note.id);
-  const selectedImageNoteIds = selectedEntries
-    .filter(entry => evidencePassageNoteIds.has(entry.note.id) && noteHasImages(entry.note))
-    .map(entry => entry.note.id);
+  const selectedTrackIds = matchingTracks.slice(0, MAX_RETURNED_ROUTES).map(track => track.id);
   const decisionReasons = [
     ...(temporalResolutionRequired ? ['Relative time requires an exact user-local date range before archive retrieval.'] : []),
     ...personalContext.decisionReasons,
@@ -864,17 +856,41 @@ export const researchMemoryContext = (
       ? ['Routes were included only after one nearby personal anchor resolved and route intent was explicit.']
       : []),
   ];
+  const verifiedPlaceNames = scope?.mode === 'country'
+    ? [scope.name]
+    : scope?.mode === 'place'
+      ? [scope.place.displayName || scope.place.name].filter(Boolean)
+      : [];
   const answerBoundary = buildMemoryAnswerBoundary({
     queryPlan,
     personalContext,
     temporalResolutionRequired,
     unresolvedPublicPlace,
     hasMatchingRecords,
-    verifiedPlaceNames: input.resolvedPlace
-      ? [input.resolvedPlace.displayName || input.resolvedPlace.name].filter(Boolean)
-      : [],
+    verifiedPlaceNames,
     evidenceNoteIds: evidencePassages.map(passage => passage.noteId),
   });
+  const supported = answerBoundary.status === 'supported';
+  const authorizedRecordNoteIds = supported
+    ? [...new Set(selectedNoteIds)].slice(0, MAX_RETURNED_NOTES)
+    : [];
+  const authorizedLocationStarIds = supported
+    ? [...new Set(selectedStarIds)].slice(0, MAX_RETURNED_LOCATIONS)
+    : [];
+  const authorizedRouteTrackIds = supported && queryPlan.routeIntent
+    ? [...new Set(selectedTrackIds)].slice(0, MAX_RETURNED_ROUTES)
+    : [];
+  const imageAllowedNoteIds = new Set([
+    ...authorizedRecordNoteIds,
+    ...evidencePassageNoteIds,
+  ]);
+  const selectedImageNoteIds = supported ? [...new Set([
+    ...authorizedRecordNoteIds,
+    ...evidencePassages.map(passage => passage.noteId),
+  ])].filter(noteId => {
+    const note = noteById.get(noteId);
+    return imageAllowedNoteIds.has(noteId) && Boolean(note && noteHasStoredImages(note));
+  }).slice(0, 10) : [];
 
   return {
     query,
@@ -936,7 +952,10 @@ export const researchMemoryContext = (
     selectedNoteIds,
     selectedImageNoteIds,
     selectedStarIds,
-    selectedTrackIds: matchingTracks.slice(0, MAX_RETURNED_ROUTES).map(track => track.id),
+    selectedTrackIds,
+    authorizedRecordNoteIds,
+    authorizedLocationStarIds,
+    authorizedRouteTrackIds,
     titleNoteIds: candidateReview.titleNoteIds,
     candidateNoteIds: candidateReview.candidateNoteIds,
     instruction,

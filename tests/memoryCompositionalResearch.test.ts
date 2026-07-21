@@ -245,6 +245,10 @@ test('weak home wording remains review-only and cannot authorize a location answ
   assert.equal(result.personalContext.status, 'not-found');
   assert.deepEqual(result.selectedNoteIds, []);
   assert.deepEqual(result.selectedStarIds, []);
+  assert.deepEqual(result.authorizedRecordNoteIds, []);
+  assert.deepEqual(result.authorizedLocationStarIds, []);
+  assert.deepEqual(result.authorizedRouteTrackIds, []);
+  assert.deepEqual(result.selectedImageNoteIds, []);
   assert.deepEqual(result.candidateNoteIds, ['possible-home-note']);
   assert.equal(result.answerBoundary.status, 'not-found');
   assert.equal(result.answerBoundary.mandatory, true);
@@ -454,8 +458,11 @@ test('nearby routes are returned only after a single personal anchor resolves', 
   ), { query: '我家附近走过哪些路线', radiusKm: 2 });
 
   assert.deepEqual(resolved.selectedTrackIds, ['near-route']);
+  assert.deepEqual(resolved.authorizedRouteTrackIds, ['near-route']);
   assert.deepEqual(unresolved.selectedTrackIds, []);
+  assert.deepEqual(unresolved.authorizedRouteTrackIds, []);
   assert.deepEqual(ambiguous.selectedTrackIds, []);
+  assert.deepEqual(ambiguous.authorizedRouteTrackIds, []);
 });
 
 test('work-nearby route intent spatially filters routes without using routes as identity evidence', () => {
@@ -470,6 +477,7 @@ test('work-nearby route intent spatially filters routes without using routes as 
 
   assert.equal(result.personalContext.status, 'resolved');
   assert.deepEqual(result.selectedTrackIds, ['work-run']);
+  assert.deepEqual(result.authorizedRouteTrackIds, ['work-run']);
   assert.deepEqual(result.selectedNoteIds, []);
 });
 
