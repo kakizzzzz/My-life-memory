@@ -5,6 +5,7 @@ import L from 'leaflet';
 import { Eye, Palette, Edit2, Trash2, Copy, ExternalLink } from 'lucide-react';
 import { HexColorPicker, HexColorInput } from 'react-colorful';
 import type { StarData } from './types/app';
+import { latLngToContinuousLayerPoint } from './SmoothMarker';
 
 const writeClipboardText = async (text: string) => {
   if (navigator.clipboard?.writeText) {
@@ -148,8 +149,10 @@ export function StarActionOverlay({
 }) {
   const map = useMap();
   const copy = STAR_OVERLAY_COPY[language as keyof typeof STAR_OVERLAY_COPY] || STAR_OVERLAY_COPY.en;
-  const [pos, setPos] = useState({ x: -100, y: -100 });
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const offsetRef = React.useRef(offset);
+  offsetRef.current = offset;
   
   const [activeTab, setActiveTab] = useState<'eye'|'color'|'edit'|'trash'|null>(null);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
@@ -166,13 +169,21 @@ export function StarActionOverlay({
   const selectedStar = selectedStarId ? stars.find(star => star.id === selectedStarId) : undefined;
   const selectedStarLat = selectedStar?.lat;
   const selectedStarLng = selectedStar?.lng;
+
+  const syncOverlayPosition = React.useCallback(() => {
+    if (!containerRef.current || selectedStarLat === undefined || selectedStarLng === undefined) return;
+    const point = latLngToContinuousLayerPoint(map, [selectedStarLat, selectedStarLng]);
+    const currentOffset = offsetRef.current;
+    containerRef.current.style.transform = `translate3d(${point.x + currentOffset.x}px, ${point.y + 36 + currentOffset.y}px, 0) translateX(-50%)`;
+  }, [map, selectedStarLat, selectedStarLng]);
   
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     if (selectedStarId) {
       setActiveTab(null); // Reset when a new star is selected
       setShowCustomPicker(false);
       setIsMapChooserOpen(false);
       setCopyStatus('');
+      offsetRef.current = { x: 0, y: 0 };
       setOffset({ x: 0, y: 0 });
     }
   }, [selectedStarId]);
@@ -199,22 +210,21 @@ export function StarActionOverlay({
     }
   }, []);
 
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!selectedStarId || selectedStarLat === undefined || selectedStarLng === undefined) return;
 
-    const updatePos = () => {
-      const pt = map.latLngToLayerPoint([selectedStarLat, selectedStarLng]);
-      setPos({ x: pt.x, y: pt.y });
-    };
-
-    updatePos();
-    map.on('zoom', updatePos);
-    map.on('viewreset', updatePos);
+    syncOverlayPosition();
+    map.on('zoom', syncOverlayPosition);
+    map.on('viewreset', syncOverlayPosition);
     return () => {
-      map.off('zoom', updatePos);
-      map.off('viewreset', updatePos);
+      map.off('zoom', syncOverlayPosition);
+      map.off('viewreset', syncOverlayPosition);
     };
-  }, [map, selectedStarId, selectedStarLat, selectedStarLng]);
+  }, [map, selectedStarId, selectedStarLat, selectedStarLng, syncOverlayPosition]);
+
+  React.useLayoutEffect(() => {
+    syncOverlayPosition();
+  }, [offset, syncOverlayPosition]);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -255,7 +265,6 @@ export function StarActionOverlay({
     };
   }, [map, showCustomPicker]);
 
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const isDragging = React.useRef(false);
   const dragStart = React.useRef({ x: 0, y: 0 });
 
@@ -386,9 +395,10 @@ export function StarActionOverlay({
   ];
 
   return createPortal(
-    <div 
+    <div
       ref={containerRef} 
-      style={{ position: 'absolute', top: pos.y + 36, left: pos.x, transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)`, zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', pointerEvents: 'auto' }}
+      className="star-action-overlay"
+      style={{ position: 'absolute', top: 0, left: 0, transform: 'translate3d(-100px, -100px, 0)', willChange: 'transform', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', pointerEvents: 'auto' }}
     >
       {/* Main Actions Pill */}
       <div 

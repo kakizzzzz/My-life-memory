@@ -3,6 +3,7 @@ import L, { type Map as LeafletMap, type LeafletMouseEvent } from 'leaflet';
 import { createClientId } from '../lib/generalUtils';
 import { scheduleImageDeletion, type StoredImageMetadata } from '../lib/mediaStorage';
 import { getStoredImagesFromNote, uniqueStoredImages } from '../lib/noteHtmlUtils';
+import { cancelFluidMapFlight, getStandardStarFlightOptions, startFluidMapFlight } from '../mapMotion';
 import type { StarData, TagMode } from '../types/app';
 
 type ActiveTag = { order: number; groupId: number } | null;
@@ -53,15 +54,29 @@ export const useMapStarActions = ({
   const [starDragPreview, setStarDragPreview] = React.useState<{ x: number; y: number } | null>(null);
   const mapInstanceRef = React.useRef<LeafletMap | null>(null);
   const starPlacementDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
+  const starsRef = React.useRef(stars);
+  const selectedStarIdRef = React.useRef(selectedStarId);
+  const tagModeRef = React.useRef(tagMode);
+  const currentTagGroupIdRef = React.useRef(currentTagGroupId);
+
+  starsRef.current = stars;
+  selectedStarIdRef.current = selectedStarId;
+  tagModeRef.current = tagMode;
+  currentTagGroupIdRef.current = currentTagGroupId;
+
+  const cancelMapFlight = React.useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (map) cancelFluidMapFlight(map);
+  }, []);
 
   const onMapClick = React.useCallback(() => {
-    mapInstanceRef.current?.stop();
+    cancelMapFlight();
     setFlyTarget(null);
     setSelectedStarId(null);
     setActiveTag(null);
     setSelectedTrackId(null);
     setSelectedTrackLatLng(null);
-  }, [setActiveTag, setFlyTarget, setSelectedStarId, setSelectedTrackId, setSelectedTrackLatLng]);
+  }, [cancelMapFlight, setActiveTag, setFlyTarget, setSelectedStarId, setSelectedTrackId, setSelectedTrackLatLng]);
 
   const handleLocateMe = React.useCallback(() => {
     setFlyTarget([userLocation[0], userLocation[1]]);
@@ -164,29 +179,45 @@ export const useMapStarActions = ({
     }
   }, [addStarAtLatLng]);
 
+  const flyMapTowardStar = React.useCallback((id: string) => {
+    const map = mapInstanceRef.current;
+    const star = starsRef.current.find(item => item.id === id);
+    if (!map || !star) return;
+
+    const size = map.getSize();
+    const viewportCenter = L.point(size.x / 2, size.y / 2);
+    const starPoint = map.latLngToContainerPoint([star.lat, star.lng]);
+    const delta = starPoint.subtract(viewportCenter);
+    const distance = Math.hypot(delta.x, delta.y);
+    if (distance < 18) return;
+
+    const target: [number, number] = [star.lat, star.lng];
+    startFluidMapFlight(map, target, getStandardStarFlightOptions(map, target));
+  }, []);
+
   const onStarClick = React.useCallback((id: string, event: LeafletMouseEvent) => {
     L.DomEvent.stopPropagation(event.originalEvent);
 
-    const clickedStar = stars.find(star => star.id === id);
-
-    if (tagMode === 'none' && selectedStarId === id) {
-      mapInstanceRef.current?.stop();
-      setFlyTarget(null);
-      setSelectedStarId(null);
-      setActiveTag(null);
-      return;
-    }
-
-    if (tagMode === 'add') {
+    const currentTagMode = tagModeRef.current;
+    if (currentTagMode === 'add') {
+      const groupId = currentTagGroupIdRef.current;
+      if (!starsRef.current.find(item => item.id === id)?.tagOrder) {
+        flyMapTowardStar(id);
+      }
       setStars(prev => {
         const star = prev.find(item => item.id === id);
         if (star?.tagOrder) return prev;
-        const groupStars = prev.filter(item => item.tagGroupId === currentTagGroupId);
+        const groupStars = prev.filter(item => item.tagGroupId === groupId);
         const maxTag = groupStars.reduce((max, item) => Math.max(max, item.tagOrder || 0), 0);
-        return prev.map(item => item.id === id ? { ...item, tagOrder: maxTag + 1, tagGroupId: currentTagGroupId } : item);
+        return prev.map(item => item.id === id ? { ...item, tagOrder: maxTag + 1, tagGroupId: groupId } : item);
       });
-      setSelectedStarId(id);
-    } else if (tagMode === 'remove') {
+      return;
+    }
+
+    if (currentTagMode === 'remove') {
+      if (starsRef.current.find(item => item.id === id)?.tagOrder) {
+        flyMapTowardStar(id);
+      }
       setStars(prev => {
         const star = prev.find(item => item.id === id);
         if (!star?.tagOrder) return prev;
@@ -198,19 +229,29 @@ export const useMapStarActions = ({
           return item;
         });
       });
-    } else if (clickedStar) {
-      setSelectedStarId(id);
-      if (clickedStar.tagOrder && clickedStar.tagGroupId !== undefined) {
-        setActiveTag({ order: clickedStar.tagOrder, groupId: clickedStar.tagGroupId });
-      } else {
-        setActiveTag(null);
-      }
+      return;
     }
 
-    if (clickedStar) {
-      setFlyTarget([clickedStar.lat, clickedStar.lng]);
+    const clickedStar = starsRef.current.find(star => star.id === id);
+    if (!clickedStar) return;
+
+    if (selectedStarIdRef.current === id) {
+      cancelMapFlight();
+      setFlyTarget(null);
+      setSelectedStarId(null);
+      setActiveTag(null);
+      return;
     }
-  }, [currentTagGroupId, selectedStarId, setActiveTag, setFlyTarget, setSelectedStarId, setStars, stars, tagMode]);
+
+    setSelectedStarId(id);
+    if (clickedStar.tagOrder && clickedStar.tagGroupId !== undefined) {
+      setActiveTag({ order: clickedStar.tagOrder, groupId: clickedStar.tagGroupId });
+    } else {
+      setActiveTag(null);
+    }
+
+    setFlyTarget([clickedStar.lat, clickedStar.lng]);
+  }, [cancelMapFlight, flyMapTowardStar, setActiveTag, setFlyTarget, setSelectedStarId, setStars]);
 
   const onUpdateStar = React.useCallback((id: string, updates: Partial<StarData>) => {
     setStars(prev => prev.map(star => star.id === id ? { ...star, ...updates } : star));
@@ -241,15 +282,19 @@ export const useMapStarActions = ({
   }, [selectedStarId, setSelectedStarId, setStars, stars]);
 
   const toggleTagMenu = React.useCallback(() => {
+    cancelMapFlight();
     if (tagMenuOpen) {
       setTagMenuOpen(false);
       setTagMode('none');
     } else {
+      setFlyTarget(null);
+      setSelectedStarId(null);
+      setActiveTag(null);
       setTagMenuOpen(true);
       setTagMode('add');
       setCurrentTagGroupId(Date.now());
     }
-  }, [setCurrentTagGroupId, setTagMenuOpen, setTagMode, tagMenuOpen]);
+  }, [cancelMapFlight, setActiveTag, setCurrentTagGroupId, setFlyTarget, setSelectedStarId, setTagMenuOpen, setTagMode, tagMenuOpen]);
 
   const handlePrevTag = React.useCallback(() => {
     if (!activeTag) return;
@@ -279,6 +324,7 @@ export const useMapStarActions = ({
 
   return {
     starDragPreview,
+    cancelMapFlight,
     onMapClick,
     handleLocateMe,
     handleMapReady,

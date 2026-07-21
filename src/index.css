@@ -161,8 +161,11 @@ select {
 }
 
 .app-star-div-icon {
-  width: 44px !important;
-  height: 44px !important;
+  width: 52px !important;
+  height: 52px !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
 .app-location-marker,
@@ -173,6 +176,15 @@ select {
 
 .app-star-marker {
   transition: transform 100ms ease-out;
+}
+
+.app-star-outline {
+  transition: fill 120ms ease-out, stroke 120ms ease-out;
+}
+
+.app-star-div-icon.is-selected .app-star-outline {
+  fill: #000;
+  stroke: #000;
 }
 
 .app-star-div-icon:active .app-star-marker {

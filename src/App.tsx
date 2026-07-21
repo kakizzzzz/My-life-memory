@@ -264,6 +264,7 @@ export default function App() {
 
   const {
     starDragPreview,
+    cancelMapFlight,
     onMapClick,
     handleLocateMe,
     handleMapReady,
@@ -300,6 +301,26 @@ export default function App() {
     setCurrentTagGroupId,
     setMapZoom,
   });
+
+  const handleMapPointerDownCapture = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (activeView !== 'map') return;
+    if (!event.isPrimary) {
+      cancelMapFlight();
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof Element && target.closest('.app-star-div-icon, .star-navigation-overlay')) return;
+    cancelMapFlight();
+  }, [activeView, cancelMapFlight]);
+
+  const handleMapWheelCapture = React.useCallback(() => {
+    if (activeView === 'map') cancelMapFlight();
+  }, [activeView, cancelMapFlight]);
+
+  useEffect(() => {
+    if (activeView !== 'map') cancelMapFlight();
+  }, [activeView, cancelMapFlight]);
 
   const openRecordsCalendarPanel = () => {
     setRecordsCalendarDate(dateFromCalendarDateKey(selectedRecordsDateKey) || new Date());
@@ -788,7 +809,12 @@ export default function App() {
   const showRouteDetailDots = mapZoom >= ROUTE_DETAIL_DOT_MIN_ZOOM;
 
   return (
-    <div className="relative w-[100dvw] h-[100dvh] overflow-hidden bg-[#e5e5e5] font-sans" style={appThemeVars}>
+    <div
+      className="relative w-[100dvw] h-[100dvh] overflow-hidden bg-[#e5e5e5] font-sans"
+      style={appThemeVars}
+      onPointerDownCapture={handleMapPointerDownCapture}
+      onWheelCapture={handleMapWheelCapture}
+    >
       <input
         ref={photoLocationInputRef}
         type="file"
@@ -818,6 +844,7 @@ export default function App() {
         activeTag={activeTag}
         stars={stars}
         selectedStarId={selectedStarId}
+        isTagging={tagMode !== 'none'}
         savedTracks={savedTracks}
         selectedTrackId={selectedTrackId}
         selectedTrackLatLng={selectedTrackLatLng}
@@ -840,6 +867,7 @@ export default function App() {
         onDeleteTrack={onDeleteTrack}
         onSelectTrack={selectTrackOnMap}
         onSelectStar={onStarClick}
+        onStarDragStart={cancelMapFlight}
         onMoveStar={onMoveStar}
       />
       </motion.div>

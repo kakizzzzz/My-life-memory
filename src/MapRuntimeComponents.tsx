@@ -3,44 +3,18 @@ import { createPortal } from 'react-dom';
 import { useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { StarData } from './types/app';
+import { latLngToContinuousLayerPoint } from './SmoothMarker';
+import { cancelFluidMapFlight, getStandardStarFlightOptions, startFluidMapFlight } from './mapMotion';
 
 export function FlyToTarget({ target }: { target: [number, number] | null }) {
   const map = useMap();
 
   useEffect(() => {
-    if (target) {
-      map.stop();
-      map.invalidateSize({ pan: false, debounceMoveend: true });
-      const currentCenter = map.getCenter();
-      const targetLatLng = L.latLng(target);
-      const distance = currentCenter.distanceTo(targetLatLng);
-      const currentZoom = map.getZoom();
-      const viewportSize = map.getSize();
-      const viewportDiagonal = Math.max(1, Math.hypot(viewportSize.x, viewportSize.y));
-      const screenDistance = map.project(currentCenter, currentZoom).distanceTo(map.project(targetLatLng, currentZoom));
-      const travelRatio = Math.min(screenDistance / viewportDiagonal, 1);
-
-      if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        map.setView(target, 16, { animate: false });
-        return;
-      }
-
-      // Reserve direct panning for genuinely tiny moves; longer hops need the fly arc to retain spatial depth.
-      if (distance < 200 && currentZoom === 16) {
-        map.panTo(target, {
-          animate: true,
-          duration: 0.62 + (travelRatio * 0.18),
-          easeLinearity: 0.18,
-        });
-      } else {
-        map.flyTo(target, 16, {
-          animate: true,
-          duration: 1.25 + (travelRatio * 0.3),
-          easeLinearity: 0.2,
-        });
-      }
-    }
+    if (!target) return;
+    startFluidMapFlight(map, target, getStandardStarFlightOptions(map, target));
   }, [target, map]);
+
+  useEffect(() => () => cancelFluidMapFlight(map), [map]);
 
   return null;
 }
@@ -139,7 +113,6 @@ export function StarNavigationOverlay({
   onNext: () => void;
 }) {
   const map = useMap();
-  const [pos, setPos] = useState({ x: -100, y: -100 });
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -149,14 +122,16 @@ export function StarNavigationOverlay({
     }
   }, [activeTag]);
 
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!activeTag) return;
     const star = stars.find(s => s.tagOrder === activeTag.order && s.tagGroupId === activeTag.groupId);
     if (!star) return;
 
     const updatePos = () => {
-      const pt = map.latLngToLayerPoint([star.lat, star.lng]);
-      setPos({ x: pt.x, y: pt.y });
+      const pt = latLngToContinuousLayerPoint(map, [star.lat, star.lng]);
+      if (containerRef.current) {
+        containerRef.current.style.transform = `translate3d(${pt.x}px, ${pt.y - 45}px, 0) translate(-50%, -50%)`;
+      }
     };
 
     updatePos();
@@ -171,7 +146,7 @@ export function StarNavigationOverlay({
   if (!activeTag || !stars.find(s => s.tagOrder === activeTag.order && s.tagGroupId === activeTag.groupId)) return null;
 
   return createPortal(
-    <div ref={containerRef} style={{ position: 'absolute', top: pos.y - 45, left: pos.x, transform: 'translate(-50%, -50%)', zIndex: 1000, display: 'flex', gap: '8px', pointerEvents: 'auto' }}>
+    <div className="star-navigation-overlay" ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, transform: 'translate3d(-100px, -100px, 0)', willChange: 'transform', zIndex: 1000, display: 'flex', gap: '8px', pointerEvents: 'auto' }}>
       <button
         onClick={(e) => { e.stopPropagation(); onPrev(); }}
         className="w-10 h-10 rounded-full bg-[var(--app-active-surface)] border-2 border-[var(--app-icon)] flex items-center justify-center text-black hover:brightness-95 shadow-md transition-transform active:scale-95"
@@ -218,6 +193,7 @@ export function MapEventHandlers({
 
   useEffect(() => {
     const container = map.getContainer();
+    const interactiveSelector = 'button, [role="button"], .app-star-div-icon, .star-action-overlay, .leaflet-control';
 
     const handleDragOver = (e: DragEvent) => {
       e.preventDefault(); // allow drop
@@ -231,15 +207,18 @@ export function MapEventHandlers({
     container.addEventListener('dragover', handleDragOver);
     container.addEventListener('drop', handleDrop);
 
-    const handleClick = () => {
-      if (clickRef.current) clickRef.current();
+    const handleBackgroundPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest(interactiveSelector)) return;
+      clickRef.current?.();
     };
-    map.on('click', handleClick);
+    container.addEventListener('pointerdown', handleBackgroundPointerDown, true);
 
     return () => {
       container.removeEventListener('dragover', handleDragOver);
       container.removeEventListener('drop', handleDrop);
-      map.off('click', handleClick);
+      container.removeEventListener('pointerdown', handleBackgroundPointerDown, true);
     };
   }, [map, onDrop]);
   return null;

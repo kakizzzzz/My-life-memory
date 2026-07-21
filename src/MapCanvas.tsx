@@ -25,6 +25,7 @@ type MapCanvasProps = {
   activeTag: { order: number; groupId: number } | null;
   stars: StarData[];
   selectedStarId: string | null;
+  isTagging: boolean;
   savedTracks: TrackData[];
   selectedTrackId: string | null;
   selectedTrackLatLng: [number, number] | null;
@@ -47,6 +48,7 @@ type MapCanvasProps = {
   onDeleteTrack: (id: string) => void;
   onSelectTrack: (trackId: string, latLng: [number, number] | null) => void;
   onSelectStar: (id: string, event: LeafletMouseEvent) => void;
+  onStarDragStart: () => void;
   onMoveStar: (id: string, lat: number, lng: number) => void;
 };
 
@@ -60,6 +62,7 @@ export const MapCanvas = memo(function MapCanvas({
   activeTag,
   stars,
   selectedStarId,
+  isTagging,
   savedTracks,
   selectedTrackId,
   selectedTrackLatLng,
@@ -82,6 +85,7 @@ export const MapCanvas = memo(function MapCanvas({
   onDeleteTrack,
   onSelectTrack,
   onSelectStar,
+  onStarDragStart,
   onMoveStar,
 }: MapCanvasProps) {
   const tileConfig = mapTiles[mapStyle];
@@ -155,10 +159,12 @@ export const MapCanvas = memo(function MapCanvas({
           showRouteDetailDots={showRouteDetailDots}
           stars={stars}
           selectedStarId={selectedStarId}
+          isTagging={isTagging}
           mapStyle={mapStyle}
           badgeColor={badgeColor}
           onSelectTrack={onSelectTrack}
           onSelectStar={onSelectStar}
+          onStarDragStart={onStarDragStart}
           onMoveStar={onMoveStar}
         />
       </MapContainer>

@@ -19,10 +19,12 @@ type MapDataLayersProps = {
   showRouteDetailDots: boolean;
   stars: StarData[];
   selectedStarId: string | null;
+  isTagging: boolean;
   mapStyle: MapStyle;
   badgeColor: string;
   onSelectTrack: (trackId: string, latLng: [number, number] | null) => void;
   onSelectStar: (id: string, event: L.LeafletMouseEvent) => void;
+  onStarDragStart: () => void;
   onMoveStar: (id: string, lat: number, lng: number) => void;
 };
 
@@ -34,10 +36,12 @@ export function MapDataLayers({
   showRouteDetailDots,
   stars,
   selectedStarId,
+  isTagging,
   mapStyle,
   badgeColor,
   onSelectTrack,
   onSelectStar,
+  onStarDragStart,
   onMoveStar,
 }: MapDataLayersProps) {
   return (
@@ -47,6 +51,7 @@ export function MapDataLayers({
           key={`tagline-${line.groupId}`}
           positions={line.positions}
           pathOptions={{ color: line.color, dashArray: '1, 10', weight: 2.5, lineCap: 'round', lineJoin: 'round' }}
+          interactive={false}
         />
       ))}
 
@@ -124,9 +129,11 @@ export function MapDataLayers({
           <DraggableStarMarker
             star={star}
             isSelected={selectedStarId === star.id}
+            isTagging={isTagging}
             mapStyle={mapStyle}
             badgeColor={badgeColor}
             onSelect={onSelectStar}
+            onDragStart={onStarDragStart}
             onMove={onMoveStar}
           />
         </Fragment>
