@@ -1,0 +1,86 @@
+name: Fix ranking initial state once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fix-ranking-initial-state-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fix ranking initial alignment and overflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/TripStatisticsView.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''            <div
+              ref={rankingScrollRef}
+              onScroll={updateRankingScrollState}
+              className={`flex h-full min-h-0 w-[226px] items-end gap-2 overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${rankingScrollState.hasOverflow ? 'justify-start' : 'justify-center'}`}
+            >
+              {textRankings.map((item, index) => (
+                <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
+                  <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
+                  <span
+                    className="w-[20px] rounded-t-[3px]"
+                    style={{
+                      height: `${Math.max(12, (item.value / maxChartValue) * 132)}px`,
+                      backgroundColor: item.fill || chartPalette[index % chartPalette.length],
+                    }}
+                  />
+                </div>
+              ))}
+            </div>'''
+
+          new = '''            <div
+              ref={rankingScrollRef}
+              onScroll={updateRankingScrollState}
+              className="h-full min-h-0 w-[226px] overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              <div className="flex h-full min-w-full w-max items-end justify-center gap-2">
+                {textRankings.map((item, index) => (
+                  <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
+                    <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
+                    <span
+                      className="w-[20px] rounded-t-[3px]"
+                      style={{
+                        height: `${Math.max(12, (item.value / maxChartValue) * 132)}px`,
+                        backgroundColor: item.fill || chartPalette[index % chartPalette.length],
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>'''
+
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one ranking block, found {count}')
+
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Commit repair and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-ranking-initial-state-once.yml
+          git add src/TripStatisticsView.tsx
+          git commit -m "Fix ranking initial scroll state"
+          git push origin HEAD:main
