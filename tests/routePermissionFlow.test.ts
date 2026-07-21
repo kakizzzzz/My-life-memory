@@ -91,6 +91,56 @@ test('initial prompt stays open on GPS failure and closes only after GPS is read
   assert.doesNotMatch(appPermissionRequest, /headingReady \|\| locationReady/);
 });
 
+test('settings location waits for explicit app consent', () => {
+  const settingsOpen = sourceBetween(
+    locationController,
+    'const handleOpenPermissions',
+    'const closeInitialPermissionPrompt'
+  );
+  const appPermissionRequest = sourceBetween(
+    locationController,
+    'const requestAppPermissions',
+    'const handleOpenPermissions'
+  );
+
+  assert.match(settingsOpen, /setIsInitialPermissionPromptOpen\(true\)/);
+  assert.doesNotMatch(settingsOpen, /requestAppPermissions/);
+  assert.match(appPermissionRequest, /await requestLocationPermissionOnce\(\)/);
+  assert.doesNotMatch(appPermissionRequest, /startHeadingWatch/);
+});
+
+test('declining passive location cancels work and restores the centered fallback marker', () => {
+  const clearPassiveLocation = sourceBetween(
+    locationController,
+    'const clearPassiveLocation',
+    'const startHeadingWatch'
+  );
+  const closePrompt = sourceBetween(
+    locationController,
+    'const closeInitialPermissionPrompt',
+    'const handleInitialPermissionRequest'
+  );
+
+  assert.match(closePrompt, /clearPassiveLocation\(\)/);
+  assert.match(clearPassiveLocation, /cancelPendingLocationRequest\(\)/);
+  assert.match(clearPassiveLocation, /stopGpsWatch\(\)/);
+  assert.match(clearPassiveLocation, /stopHeadingWatch\(\)/);
+  assert.match(clearPassiveLocation, /setUserLocation\(\[\.\.\.DEFAULT_USER_LOCATION\]\)/);
+  assert.match(clearPassiveLocation, /setFlyTarget\(\[\.\.\.DEFAULT_USER_LOCATION\]\)/);
+});
+
+test('entering the map can open consent UI but cannot call browser geolocation', () => {
+  const entryEffect = sourceBetween(
+    locationController,
+    "if (!isSignedIn || activeView !== 'map' || hasRequestedEntryLocationRef.current) return;",
+    "React.useEffect(() => {\n    if (typeof document === 'undefined') return;"
+  );
+
+  assert.match(entryEffect, /setIsInitialPermissionPromptOpen\(true\)/);
+  assert.doesNotMatch(entryEffect, /requestLocationPermissionOnce/);
+  assert.doesNotMatch(entryEffect, /navigator\.geolocation/);
+});
+
 test('location failures distinguish insecure preview, denial, timeout, and unavailable position', () => {
   assert.match(sensorUtils, /!window\.isSecureContext/);
   assert.match(sensorUtils, /return 'insecure'/);
