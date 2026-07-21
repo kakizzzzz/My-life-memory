@@ -31,24 +31,21 @@ jobs:
           path = Path('src/TripStatisticsView.tsx')
           text = path.read_text(encoding='utf-8')
 
-          old = '''            <div
+          start_marker = '''            <div
               ref={rankingScrollRef}
-              onScroll={updateRankingScrollState}
-              className={`flex h-full min-h-0 w-[226px] items-end gap-2 overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${rankingScrollState.hasOverflow ? 'justify-start' : 'justify-center'}`}
-            >
-              {textRankings.map((item, index) => (
-                <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
-                  <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
-                  <span
-                    className="w-[20px] rounded-t-[3px]"
-                    style={{
-                      height: `${Math.max(12, (item.value / maxChartValue) * 132)}px`,
-                      backgroundColor: item.fill || chartPalette[index % chartPalette.length],
-                    }}
-                  />
-                </div>
-              ))}
-            </div>'''
+'''
+          end_marker = '''
+
+            <button
+              onClick={() => scrollRanking(1)}'''
+
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('ranking scroll container start not found')
+
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('ranking scroll container end not found')
 
           new = '''            <div
               ref={rankingScrollRef}
@@ -71,11 +68,7 @@ jobs:
               </div>
             </div>'''
 
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected exactly one ranking block, found {count}')
-
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          path.write_text(text[:start] + new + text[end:], encoding='utf-8')
           PY
 
       - name: Commit repair and remove temporary files
