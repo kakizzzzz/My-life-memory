@@ -268,7 +268,6 @@ export default function App() {
     starDragPreview,
     cancelMapFlight,
     onMapClick,
-    handleLocateMe,
     handleMapReady,
     addStarAtLatLng,
     addStarAtUserLocation,
@@ -915,7 +914,7 @@ export default function App() {
             setMapStyle(style);
             setIsMapStyleMenuOpen(false);
           }}
-          onLocateMe={handleLocateMe}
+          onLocateMe={handleOpenPermissions}
           onToggleTagMenu={toggleTagMenu}
           onSetTagMode={setTagMode}
           onStartRoute={openRoutePermissionPrompt}

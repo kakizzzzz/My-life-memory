@@ -6,6 +6,7 @@ const app = readFileSync('src/App.tsx', 'utf8');
 const appChrome = readFileSync('src/AppChrome.tsx', 'utf8');
 const homeCopy = readFileSync('src/copy/homeCopy.ts', 'utf8');
 const locationController = readFileSync('src/hooks/useLocationController.ts', 'utf8');
+const mapStarActions = readFileSync('src/hooks/useMapStarActions.ts', 'utf8');
 const sensorUtils = readFileSync('src/lib/sensorUtils.ts', 'utf8');
 const trackRecording = readFileSync('src/hooks/useTrackRecording.ts', 'utf8');
 
@@ -32,6 +33,14 @@ test('route control reuses successful location consent and prompts only before a
   assert.match(routeOpen, /setIsRoutePermissionPromptOpen\(true\)/);
   assert.match(appChrome, /role="dialog"/);
   assert.match(appChrome, /routePermissionDecline/);
+});
+
+test('map origin, settings, and route all share the same live location consent gate', () => {
+  assert.match(app, /onLocateMe=\{handleOpenPermissions\}/);
+  assert.match(app, /onOpenPermissions=\{handleOpenPermissions\}/);
+  assert.match(app, /if \(hasGrantedLocationAccess\)[^]*void beginRouteRecording\(true\)/);
+  assert.doesNotMatch(mapStarActions, /const handleLocateMe/);
+  assert.doesNotMatch(mapStarActions, /setFlyTarget\(\[userLocation\[0\], userLocation\[1\]\]\)/);
 });
 
 test('a direct route start reveals the retry prompt only when the fresh fix fails', () => {
@@ -135,10 +144,20 @@ test('settings location reuses successful access and prompts only before the fir
   assert.doesNotMatch(appPermissionRequest, /startHeadingWatch/);
 });
 
-test('successful GPS fixes are reusable while browser denial revokes the shortcut', () => {
-  assert.match(locationController, /setHasGrantedLocationAccess\(true\)/);
+test('starting an approved request grants the shared shortcut while browser denial revokes it', () => {
+  const currentPositionRequest = sourceBetween(
+    locationController,
+    'const requestCurrentPosition',
+    'const stopGpsWatch'
+  );
+  const grantIndex = currentPositionRequest.indexOf('setHasGrantedLocationAccess(true)');
+  const browserRequestIndex = currentPositionRequest.indexOf('navigator.geolocation.getCurrentPosition');
+
+  assert.ok(grantIndex >= 0);
+  assert.ok(browserRequestIndex > grantIndex);
   assert.match(locationController, /if \(reason === 'denied'\) setHasGrantedLocationAccess\(false\)/);
   assert.match(locationController, /setHasGrantedLocationAccess\(false\);[^]*setIsWatchingUserLocation\(false\)/);
+  assert.match(locationController, /if \(nextState === 'denied'\) setIsInitialPermissionPromptOpen\(true\)/);
 });
 
 test('declining passive location cancels work and restores the centered fallback marker', () => {

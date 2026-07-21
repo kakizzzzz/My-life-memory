@@ -78,10 +78,6 @@ export const useMapStarActions = ({
     setSelectedTrackLatLng(null);
   }, [cancelMapFlight, setActiveTag, setFlyTarget, setSelectedStarId, setSelectedTrackId, setSelectedTrackLatLng]);
 
-  const handleLocateMe = React.useCallback(() => {
-    setFlyTarget([userLocation[0], userLocation[1]]);
-  }, [setFlyTarget, userLocation]);
-
   const handleMapReady = React.useCallback((map: LeafletMap | null) => {
     mapInstanceRef.current = map;
     if (map) setMapZoom(map.getZoom());
@@ -326,7 +322,6 @@ export const useMapStarActions = ({
     starDragPreview,
     cancelMapFlight,
     onMapClick,
-    handleLocateMe,
     handleMapReady,
     addStarAtLatLng,
     addStarAtUserLocation,

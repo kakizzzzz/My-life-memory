@@ -159,6 +159,10 @@ export const useLocationController = ({
     if (isLocating.current) return;
 
     isLocating.current = true;
+    // Every call reaches this point only after the shared app consent gate.
+    // Keep consent through transient GPS failures; an explicit browser denial
+    // below is what revokes it.
+    setHasGrantedLocationAccess(true);
     const requestEpoch = locationRequestEpochRef.current;
     navigator.geolocation.getCurrentPosition(
       position => {
@@ -166,7 +170,6 @@ export const useLocationController = ({
         const shouldFly = pendingLocationShouldFlyRef.current;
         isLocating.current = false;
         pendingLocationShouldFlyRef.current = false;
-        setHasGrantedLocationAccess(true);
         applyGpsPosition(position, shouldFly);
         const waiters = locationRequestWaitersRef.current.splice(0);
         waiters.forEach(waiter => waiter({ ready: true, reason: null }));
@@ -202,7 +205,7 @@ export const useLocationController = ({
   const clearPassiveLocation = React.useCallback(() => {
     setIsWatchingUserLocation(false);
 
-    // Route recording has its own explicit consent and location lifecycle.
+    // Route recording reuses shared location consent but owns its sensor lifecycle.
     // Do not interrupt an active or paused route from the map-location prompt.
     if (trackingStateRef.current.isTracking) return;
 
@@ -299,7 +302,9 @@ export const useLocationController = ({
     if (hasGrantedLocationAccess) {
       if (permissionRequestState === 'requesting') return;
       pendingLocationShouldFlyRef.current = true;
-      void requestAppPermissions();
+      void requestAppPermissions().then(nextState => {
+        if (nextState === 'denied') setIsInitialPermissionPromptOpen(true);
+      });
       return;
     }
     setPermissionRequestState('idle');
@@ -310,7 +315,6 @@ export const useLocationController = ({
     setHasSeenInitialPermissionPrompt(true);
     setIsInitialPermissionPromptOpen(false);
     setPermissionRequestState('idle');
-    setHasGrantedLocationAccess(false);
     clearPassiveLocation();
   }, [clearPassiveLocation]);
 
