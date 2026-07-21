@@ -1,22 +1,25 @@
 name: Fix ranking initial state once
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-    paths:
-      - .github/workflows/fix-ranking-initial-state-once.yml
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.head_ref == 'fix-ranking-final'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: fix-ranking-final
           fetch-depth: 0
 
       - name: Fix ranking initial alignment and overflow
@@ -75,12 +78,13 @@ jobs:
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
 
-      - name: Commit repair and remove temporary workflow
+      - name: Commit repair and remove temporary files
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/fix-ranking-initial-state-once.yml
+          git rm .ranking-fix-trigger
           git add src/TripStatisticsView.tsx
           git commit -m "Fix ranking initial scroll state"
-          git push origin HEAD:main
+          git push origin HEAD:fix-ranking-final
