@@ -115,10 +115,10 @@ export function MapControlsOverlay({
   onPhotoGpsClick,
 }: MapControlsOverlayProps) {
   return (
-    <div className="absolute top-[var(--app-chrome-top)] right-4 z-[1000] flex flex-col items-end gap-3">
+    <div className="pointer-events-none absolute top-[var(--app-chrome-top)] right-4 z-[1000] flex flex-col items-end gap-3">
       <button
         onClick={onToggleMenu}
-        className={btnClass}
+        className={`${btnClass} pointer-events-auto`}
       >
         {isMenuOpen ? <ChevronDown size={28} strokeWidth={mapToolIconStroke} /> : <Menu size={24} strokeWidth={mapToolIconStroke} />}
       </button>
@@ -129,7 +129,7 @@ export function MapControlsOverlay({
             initial={{ opacity: 0, y: -20, scale: 0.8 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.8 }}
-            className="flex flex-col items-end gap-3"
+            className="pointer-events-none flex flex-col items-end gap-3"
             style={{ transformOrigin: 'top right' }}
           >
             <div className="pointer-events-none relative h-[48px] w-[136px]">
@@ -179,7 +179,7 @@ export function MapControlsOverlay({
               </AnimatePresence>
             </div>
 
-            <button className={btnClass} onClick={onLocateMe}>
+            <button className={`${btnClass} pointer-events-auto`} onClick={onLocateMe}>
               <MapPin size={24} strokeWidth={mapToolIconStroke} />
             </button>
 
@@ -231,12 +231,12 @@ export function MapControlsOverlay({
               </AnimatePresence>
             </div>
 
-            <button className={btnClass} onClick={onStartRoute}>
+            <button className={`${btnClass} pointer-events-auto`} onClick={onStartRoute}>
               <Route size={24} strokeWidth={mapToolIconStroke} />
             </button>
 
             <button
-              className={starPlacementButtonClass}
+              className={`${starPlacementButtonClass} pointer-events-auto`}
               aria-label={homeCopy.addStar}
               onPointerDown={onStarPointerDown}
               onPointerMove={onStarPointerMove}
@@ -249,7 +249,7 @@ export function MapControlsOverlay({
 
             <button
               type="button"
-              className={`${btnClass} ${isReadingPhotoLocation ? 'opacity-60' : ''}`}
+              className={`${btnClass} pointer-events-auto ${isReadingPhotoLocation ? 'opacity-60' : ''}`}
               onClick={onPhotoGpsClick}
               disabled={isReadingPhotoLocation}
               aria-label={homeCopy.uploadPhotoLocation}
