@@ -148,7 +148,7 @@ export function InitialPermissionPrompt({
                 type="button"
                 onClick={onClose}
                 disabled={isRequesting}
-                className="h-11 rounded-full bg-[var(--app-soft-card)] px-3 text-[14px] font-semibold text-black transition-transform active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-55"
+                className="h-11 rounded-full bg-[var(--app-soft-card)] px-3 text-[14px] font-semibold text-black transition-[transform,filter] duration-150 active:scale-[0.98] focus:outline-none focus-visible:brightness-90 disabled:opacity-55"
               >
                 {copy.notNow}
               </button>
@@ -156,8 +156,7 @@ export function InitialPermissionPrompt({
                 type="button"
                 onClick={onRequest}
                 disabled={isRequesting}
-                autoFocus
-                className="h-11 rounded-full bg-[var(--app-dark)] px-3 text-[14px] font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+                className="h-11 rounded-full bg-[var(--app-dark)] px-3 text-[14px] font-semibold text-white transition-[transform,filter] duration-150 active:scale-[0.98] focus:outline-none focus-visible:brightness-90 disabled:opacity-60"
               >
                 {isRequesting ? copy.permissionRequesting : errorText ? copy.permissionRetry : copy.allowLocation}
               </button>
@@ -234,7 +233,7 @@ export function RouteTrackingPermissionPrompt({
                 type="button"
                 onClick={onClose}
                 disabled={isRequesting}
-                className="min-h-11 rounded-full bg-[var(--app-soft-card)] px-3 text-[14px] font-semibold text-black transition-transform active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-55"
+                className="min-h-11 rounded-full bg-[var(--app-soft-card)] px-3 text-[14px] font-semibold text-black transition-[transform,filter] duration-150 active:scale-[0.98] focus:outline-none focus-visible:brightness-90 disabled:opacity-55"
               >
                 {copy.routePermissionDecline}
               </button>
@@ -242,8 +241,7 @@ export function RouteTrackingPermissionPrompt({
                 type="button"
                 onClick={onRequest}
                 disabled={isRequesting}
-                autoFocus
-                className="min-h-11 rounded-full bg-[var(--app-dark)] px-3 text-[14px] font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+                className="min-h-11 rounded-full bg-[var(--app-dark)] px-3 text-[14px] font-semibold text-white transition-[transform,filter] duration-150 active:scale-[0.98] focus:outline-none focus-visible:brightness-90 disabled:opacity-60"
               >
                 {isRequesting
                   ? copy.routePermissionRequesting
@@ -620,7 +618,7 @@ export function BottomNavigation({
           aria-label={copy.bottomMap}
           aria-current={activeView === 'map' ? 'page' : undefined}
         >
-          <span className="flex transition-transform duration-100 ease-out group-active:scale-95">
+          <span className="flex">
             <MapIcon size={24} strokeWidth={iconStrokeWidth} />
           </span>
         </button>
@@ -631,7 +629,7 @@ export function BottomNavigation({
           aria-label={copy.bottomStats}
           aria-current={activeView === 'stats' ? 'page' : undefined}
         >
-          <span className="flex transition-transform duration-100 ease-out group-active:scale-95">
+          <span className="flex">
             <PieChart size={24} strokeWidth={iconStrokeWidth} />
           </span>
         </button>
@@ -642,7 +640,7 @@ export function BottomNavigation({
           aria-label={copy.bottomNotes}
           aria-current={activeView === 'records' ? 'page' : undefined}
         >
-          <span className="flex transition-transform duration-100 ease-out group-active:scale-95">
+          <span className="flex">
             <BookOpen size={24} strokeWidth={iconStrokeWidth} />
           </span>
         </button>
@@ -653,7 +651,7 @@ export function BottomNavigation({
           aria-label={copy.bottomHome}
           aria-current={activeView === 'home' ? 'page' : undefined}
         >
-          <span className="flex transition-transform duration-100 ease-out group-active:scale-95">
+          <span className="flex">
             <Home size={24} strokeWidth={iconStrokeWidth} />
           </span>
         </button>

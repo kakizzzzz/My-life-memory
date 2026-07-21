@@ -50,6 +50,31 @@ select,
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Give every button icon immediate tactile feedback without adding a focus ring.
+   Buttons that already scale themselves keep their component-specific motion. */
+button:not(:disabled):not([class*="active:scale"]):active svg {
+  transform: scale(0.92);
+  transform-origin: center;
+  transition: transform 90ms ease-out;
+}
+
+/* Theme-gray icon surfaces deepen slightly under the finger. */
+button:not(:disabled):active:is(
+  [class*="bg-[var(--app-icon)]"],
+  [class*="bg-[var(--app-card)]"],
+  [class*="bg-[var(--app-soft-card)]"],
+  [class*="bg-[var(--app-soft-surface)]"]
+) {
+  filter: brightness(0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):not([class*="active:scale"]):active svg {
+    opacity: 0.72;
+    transform: none;
+  }
+}
+
 input,
 textarea,
 select {
