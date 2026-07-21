@@ -849,7 +849,7 @@ export default function App() {
         />
       )}
 
-      {isTracking && (
+      {activeView === 'map' && isTracking && (
         <TrackingControlsOverlay
           btnClass={btnClass}
           isPaused={isPaused}
