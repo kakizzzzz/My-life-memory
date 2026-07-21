@@ -14,6 +14,8 @@ type StarPlacementDragState = {
   startY: number;
   grabOffsetX: number;
   grabOffsetY: number;
+  previewX: number;
+  previewY: number;
   dragging: boolean;
 };
 
@@ -121,7 +123,14 @@ export const useMapStarActions = ({
 
     if (!isInsideMap) return null;
 
-    const latlng = map.containerPointToLatLng(L.point(clientX - rect.left, clientY - rect.top));
+    const mapSize = map.getSize();
+    const scaleX = rect.width > 0 ? mapSize.x / rect.width : 1;
+    const scaleY = rect.height > 0 ? mapSize.y / rect.height : 1;
+    const containerPoint = L.point(
+      (clientX - rect.left) * scaleX,
+      (clientY - rect.top) * scaleY,
+    );
+    const latlng = map.containerPointToLatLng(containerPoint);
     return addStarAtLatLng(latlng.lat, latlng.lng);
   }, [addStarAtLatLng, addStarAtUserLocation]);
 
@@ -154,12 +163,16 @@ export const useMapStarActions = ({
     pendingPlacementStarIdRef.current = null;
     setStarDragPreview(null);
     const rect = event.currentTarget.getBoundingClientRect();
+    const buttonCenterX = rect.left + rect.width / 2;
+    const buttonCenterY = rect.top + rect.height / 2;
     starPlacementDragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      grabOffsetX: event.clientX - (rect.left + rect.width / 2),
-      grabOffsetY: event.clientY - (rect.top + rect.height / 2),
+      grabOffsetX: event.clientX - buttonCenterX,
+      grabOffsetY: event.clientY - buttonCenterY,
+      previewX: buttonCenterX,
+      previewY: buttonCenterY,
       dragging: false,
     };
   }, [cancelPreviewCleanup]);
@@ -170,9 +183,11 @@ export const useMapStarActions = ({
     const distance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
     if (distance > 6) {
       dragState.dragging = true;
+      dragState.previewX = event.clientX - dragState.grabOffsetX;
+      dragState.previewY = event.clientY - dragState.grabOffsetY;
       setStarDragPreview({
-        x: event.clientX - dragState.grabOffsetX,
-        y: event.clientY - dragState.grabOffsetY,
+        x: dragState.previewX,
+        y: dragState.previewY,
       });
       event.preventDefault();
     }
@@ -189,10 +204,10 @@ export const useMapStarActions = ({
     }
 
     if (dragState.dragging) {
-      const previewX = event.clientX - dragState.grabOffsetX;
-      const previewY = event.clientY - dragState.grabOffsetY;
-      setStarDragPreview({ x: previewX, y: previewY });
-      const placedStarId = placeStarAtClientPoint(previewX, previewY);
+      // Commit the exact presentation position from the final rendered drag frame.
+      // Desktop pointer capture can report a coalesced/stale pointerup coordinate;
+      // recomputing here would split the preview and the Leaflet marker.
+      const placedStarId = placeStarAtClientPoint(dragState.previewX, dragState.previewY);
       if (placedStarId) {
         pendingPlacementStarIdRef.current = placedStarId;
         if (typeof window !== 'undefined') {

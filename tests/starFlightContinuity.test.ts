@@ -66,11 +66,12 @@ test('normal selection changes the existing star DOM instead of replacing its Le
 test('star markers retain subpixel positions during map zoom frames', () => {
   assert.match(draggableStarMarker, /<SmoothMarker/);
   assert.match(smoothMarker, /latLngToContinuousLayerPoint/);
-  assert.match(smoothMarker, /center \?\? smoothMap\._lastCenter \?\? map\.getCenter\(\)/);
+  assert.match(smoothMarker, /projectedPoint\.subtract\(map\.getPixelOrigin\(\)\)/);
+  assert.match(smoothMarker, /center \?\? map\.getCenter\(\)/);
   assert.match(smoothMarker, /subtract\(map\.project\(preciseCenter, zoom\)\)/);
   assert.match(smoothMarker, /add\(map\.getSize\(\)\.divideBy\(2\)\)/);
   assert.match(smoothMarker, /subtract\(smoothMap\._getMapPanePos\(\)\)/);
-  assert.doesNotMatch(smoothMarker, /getPixelOrigin\(\)/);
+  assert.doesNotMatch(smoothMarker, /_lastCenter/);
   assert.doesNotMatch(smoothMarker, /latLngToLayerPoint\(marker\._latlng\)/);
   assert.doesNotMatch(smoothMarker, /\.round\(\)/);
 });

@@ -14,7 +14,6 @@ export interface SmoothMarkerProps extends MarkerOptions, EventedProps {
 
 type SmoothMapInternals = L.Map & {
   _getMapPanePos: () => L.Point;
-  _lastCenter?: L.LatLng;
 };
 
 type SmoothMarkerInternals = L.Marker & {
@@ -31,8 +30,18 @@ export const latLngToContinuousLayerPoint = (
   center?: L.LatLng,
 ) => {
   const smoothMap = map as SmoothMapInternals;
-  const preciseCenter = center ?? smoothMap._lastCenter ?? map.getCenter();
-  return map.project(L.latLng(latlng), zoom)
+  const projectedPoint = map.project(L.latLng(latlng), zoom);
+
+  // Normal marker placement must share Leaflet's current pixel origin so a
+  // container point round-trips to the exact same screen position. Reading
+  // Leaflet's private cached center can diverge after a desktop pan/HMR and
+  // send a newly mounted marker far away from its drag preview.
+  if (!center && zoom === map.getZoom()) {
+    return projectedPoint.subtract(map.getPixelOrigin());
+  }
+
+  const preciseCenter = center ?? map.getCenter();
+  return projectedPoint
     .subtract(map.project(preciseCenter, zoom))
     .add(map.getSize().divideBy(2))
     .subtract(smoothMap._getMapPanePos());

@@ -34,12 +34,20 @@ test('touch commits on pointer up and suppresses only the following synthetic cl
 });
 
 test('new-star placement preserves the original grab point through preview and drop', () => {
-  assert.match(mapStarActions, /grabOffsetX: event\.clientX - \(rect\.left \+ rect\.width \/ 2\)/);
-  assert.match(mapStarActions, /grabOffsetY: event\.clientY - \(rect\.top \+ rect\.height \/ 2\)/);
-  assert.match(mapStarActions, /x: event\.clientX - dragState\.grabOffsetX/);
-  assert.match(mapStarActions, /y: event\.clientY - dragState\.grabOffsetY/);
-  assert.match(mapStarActions, /placeStarAtClientPoint\(previewX, previewY\)/);
+  assert.match(mapStarActions, /grabOffsetX: event\.clientX - buttonCenterX/);
+  assert.match(mapStarActions, /grabOffsetY: event\.clientY - buttonCenterY/);
+  assert.match(mapStarActions, /dragState\.previewX = event\.clientX - dragState\.grabOffsetX/);
+  assert.match(mapStarActions, /dragState\.previewY = event\.clientY - dragState\.grabOffsetY/);
+  assert.match(mapStarActions, /placeStarAtClientPoint\(dragState\.previewX, dragState\.previewY\)/);
+  assert.doesNotMatch(mapStarActions, /const previewX = event\.clientX - dragState\.grabOffsetX/);
   assert.match(mapControlsOverlay, /style=\{\{ touchAction: 'none' \}\}/);
+});
+
+test('new-star placement maps viewport pixels through the rendered map scale', () => {
+  assert.match(mapStarActions, /const scaleX = rect\.width > 0 \? mapSize\.x \/ rect\.width : 1/);
+  assert.match(mapStarActions, /const scaleY = rect\.height > 0 \? mapSize\.y \/ rect\.height : 1/);
+  assert.match(mapStarActions, /\(clientX - rect\.left\) \* scaleX/);
+  assert.match(mapStarActions, /\(clientY - rect\.top\) \* scaleY/);
 });
 
 test('new-star preview hands off only after the matching Leaflet marker is ready', () => {
