@@ -36,52 +36,13 @@ jobs:
 
           path = Path('src/TripStatisticsView.tsx')
           text = path.read_text(encoding='utf-8')
+          old = 'className="flex h-full min-w-full w-max items-end justify-center gap-2"'
+          new = 'className="flex h-full min-w-full w-max items-end justify-start gap-2"'
 
-          old_alignment = 'className="flex h-full min-w-full w-max items-end justify-center gap-2"'
-          new_alignment = 'className="flex h-full min-w-full w-max items-end justify-start gap-2"'
-          if text.count(old_alignment) != 1:
-              raise SystemExit(f'expected one ranking alignment, found {text.count(old_alignment)}')
-          text = text.replace(old_alignment, new_alignment, 1)
-
-          old_effect = '''  React.useLayoutEffect(() => {
-            const el = rankingScrollRef.current;
-            if (!el || !isActive) return;
-
-            el.scrollLeft = 0;
-            const frame = requestAnimationFrame(() => {
-              requestAnimationFrame(updateRankingScrollState);
-            });
-
-            return () => cancelAnimationFrame(frame);
-          }, [isActive, textRankings, updateRankingScrollState]);'''
-
-          new_effect = '''  React.useLayoutEffect(() => {
-            const el = rankingScrollRef.current;
-            if (!el || !isActive) return;
-
-            const sync = () => {
-              el.scrollLeft = 0;
-              updateRankingScrollState();
-            };
-
-            sync();
-            const firstFrame = requestAnimationFrame(() => {
-              sync();
-              requestAnimationFrame(sync);
-            });
-            const resizeObserver = new ResizeObserver(sync);
-            resizeObserver.observe(el);
-            if (el.firstElementChild) resizeObserver.observe(el.firstElementChild);
-
-            return () => {
-              cancelAnimationFrame(firstFrame);
-              resizeObserver.disconnect();
-            };
-          }, [isActive, textRankings.length, updateRankingScrollState]);'''
-
-          if text.count(old_effect) != 1:
-              raise SystemExit(f'expected one ranking effect, found {text.count(old_effect)}')
-          text = text.replace(old_effect, new_effect, 1)
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('ranking alignment container not found')
 
           path.write_text(text, encoding='utf-8')
           PY
