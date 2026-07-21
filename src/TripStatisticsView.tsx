@@ -662,22 +662,12 @@ const formatChartValue = (value: number) => {
   return String(value);
 };
 
-const RANKING_CLICK_SCROLL_PX = 32;
-const RANKING_HOLD_SCROLL_PX = 18;
-const RANKING_HOLD_DELAY_MS = 260;
-const RANKING_HOLD_INTERVAL_MS = 90;
-
 export function TripStatisticsView({ activityPoints = [], activityCount = 0, textRankings = [], language = 'en', isActive = true }: TripStatisticsViewProps) {
   const [rankingScrollState, setRankingScrollState] = React.useState({ canLeft: false, canRight: false, hasOverflow: false });
   const [expandedMapKey, setExpandedMapKey] = React.useState(0);
   const [isExpandedMapOpen, setIsExpandedMapOpen] = React.useState(false);
   const rankingScrollRef = React.useRef<HTMLDivElement>(null);
   const mosaicMapRef = React.useRef<HTMLIFrameElement>(null);
-  const rankingHoldRef = React.useRef<{ delayId: number | null; intervalId: number | null; didRepeat: boolean }>({
-    delayId: null,
-    intervalId: null,
-    didRepeat: false,
-  });
   const fullscreenMapRef = React.useRef<HTMLDivElement>(null);
   const mapSessionKey = React.useMemo(() => String(Date.now()), []);
   const [isMosaicMapReady, setIsMosaicMapReady] = React.useState(false);
@@ -692,17 +682,6 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
   );
   const markedCount = Math.max(0, Math.round(activityCount));
   const maxChartValue = Math.max(1, ...textRankings.map(item => item.value));
-
-  const clearRankingHold = React.useCallback(() => {
-    if (rankingHoldRef.current.delayId !== null) {
-      window.clearTimeout(rankingHoldRef.current.delayId);
-    }
-    if (rankingHoldRef.current.intervalId !== null) {
-      window.clearInterval(rankingHoldRef.current.intervalId);
-    }
-    rankingHoldRef.current.delayId = null;
-    rankingHoldRef.current.intervalId = null;
-  }, []);
 
   const updateRankingScrollState = React.useCallback(() => {
     const el = rankingScrollRef.current;
@@ -732,8 +711,6 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     return () => window.removeEventListener('resize', update);
   }, [updateRankingScrollState]);
 
-  React.useEffect(() => clearRankingHold, [clearRankingHold]);
-
   React.useEffect(() => {
     setIsMosaicMapReady(false);
 
@@ -748,44 +725,16 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
     return () => window.removeEventListener('message', handleMapReady);
   }, [mapSessionKey, mosaicHtml]);
 
-  const scrollRanking = React.useCallback((
-    direction: -1 | 1,
-    distance = RANKING_CLICK_SCROLL_PX,
-    behavior: ScrollBehavior = 'smooth'
-  ) => {
+  const scrollRanking = React.useCallback((direction: -1 | 1) => {
     const el = rankingScrollRef.current;
     if (!el) return;
 
     el.scrollBy({
-      left: direction * distance,
-      behavior,
+      left: direction * Math.max(72, el.clientWidth * 0.62),
+      behavior: 'smooth',
     });
-    window.setTimeout(updateRankingScrollState, behavior === 'smooth' ? 220 : 40);
+    window.setTimeout(updateRankingScrollState, 360);
   }, [updateRankingScrollState]);
-
-  const startRankingHold = React.useCallback((direction: -1 | 1) => {
-    clearRankingHold();
-    rankingHoldRef.current.didRepeat = false;
-    rankingHoldRef.current.delayId = window.setTimeout(() => {
-      rankingHoldRef.current.didRepeat = true;
-      scrollRanking(direction, RANKING_HOLD_SCROLL_PX, 'auto');
-      rankingHoldRef.current.intervalId = window.setInterval(() => {
-        scrollRanking(direction, RANKING_HOLD_SCROLL_PX, 'auto');
-      }, RANKING_HOLD_INTERVAL_MS);
-    }, RANKING_HOLD_DELAY_MS);
-  }, [clearRankingHold, scrollRanking]);
-
-  const stopRankingHold = React.useCallback(() => {
-    clearRankingHold();
-  }, [clearRankingHold]);
-
-  const clickRankingButton = React.useCallback((direction: -1 | 1) => {
-    if (rankingHoldRef.current.didRepeat) {
-      rankingHoldRef.current.didRepeat = false;
-      return;
-    }
-    scrollRanking(direction);
-  }, [scrollRanking]);
 
   const openExpandedMap = React.useCallback(() => {
     setExpandedMapKey(key => key + 1);
@@ -800,10 +749,9 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
 
   React.useLayoutEffect(() => {
     if (isActive) return;
-    clearRankingHold();
     fullscreenMapRef.current?.hidePopover?.();
     setIsExpandedMapOpen(false);
-  }, [clearRankingHold, isActive]);
+  }, [isActive]);
 
   return (
     <div
@@ -870,11 +818,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
 
           <div className="-mx-5 mt-1 grid min-h-0 flex-1 -translate-y-1 grid-cols-[28px_226px_28px] items-end justify-center gap-x-[13px]">
             <button
-              onClick={() => clickRankingButton(-1)}
-              onPointerDown={() => startRankingHold(-1)}
-              onPointerLeave={stopRankingHold}
-              onPointerUp={stopRankingHold}
-              onPointerCancel={stopRankingHold}
+              onClick={() => scrollRanking(-1)}
               className={`flex h-10 w-7 self-center items-center justify-center transition-colors ${rankingScrollState.canLeft ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.previousRanking}
             >
@@ -884,13 +828,13 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             <div
               ref={rankingScrollRef}
               onScroll={updateRankingScrollState}
-              className={`flex h-full min-h-0 w-[226px] items-end gap-1.5 overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${rankingScrollState.hasOverflow ? 'justify-start' : 'justify-center'}`}
+              className={`flex h-full min-h-0 w-[226px] items-end gap-2 overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${rankingScrollState.hasOverflow ? 'justify-start' : 'justify-center'}`}
             >
               {textRankings.map((item, index) => (
-                <div key={item.name} className="flex h-full w-[15px] shrink-0 flex-col items-center justify-end">
-                  <span className="mb-1 text-[10px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
+                <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
+                  <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
                   <span
-                    className="w-[15px] rounded-t-[2px]"
+                    className="w-[20px] rounded-t-[3px]"
                     style={{
                       height: `${Math.max(12, (item.value / maxChartValue) * 132)}px`,
                       backgroundColor: item.fill || chartPalette[index % chartPalette.length],
@@ -901,11 +845,7 @@ export function TripStatisticsView({ activityPoints = [], activityCount = 0, tex
             </div>
 
             <button
-              onClick={() => clickRankingButton(1)}
-              onPointerDown={() => startRankingHold(1)}
-              onPointerLeave={stopRankingHold}
-              onPointerUp={stopRankingHold}
-              onPointerCancel={stopRankingHold}
+              onClick={() => scrollRanking(1)}
               className={`flex h-10 w-7 self-center items-center justify-center transition-colors ${rankingScrollState.canRight ? 'text-black hover:text-black/70' : 'pointer-events-none text-gray-300'}`}
               aria-label={copy.nextRanking}
             >
