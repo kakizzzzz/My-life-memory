@@ -102,3 +102,5 @@ jobs:
           git add -A
           git commit -m "Fix ranking initial state"
           git push origin HEAD:main
+
+# trigger final repair
