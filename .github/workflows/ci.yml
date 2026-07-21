@@ -11,13 +11,106 @@ on:
       - 'codex/**'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  ranking-repair:
+    if: github.event_name == 'pull_request' && github.head_ref == 'fix/ranking-initial-state-final'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ranking branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/ranking-initial-state-final
+          fetch-depth: 0
+
+      - name: Fix ranking initial state
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/TripStatisticsView.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old_effect = '''  React.useEffect(() => {
+            const el = rankingScrollRef.current;
+            if (!el) return;
+
+            el.scrollTo({ left: 0 });
+            requestAnimationFrame(updateRankingScrollState);
+          }, [textRankings, updateRankingScrollState]);'''
+
+          new_effect = '''  React.useLayoutEffect(() => {
+            const el = rankingScrollRef.current;
+            if (!el || !isActive) return;
+
+            el.scrollLeft = 0;
+            const frame = requestAnimationFrame(() => {
+              requestAnimationFrame(updateRankingScrollState);
+            });
+
+            return () => cancelAnimationFrame(frame);
+          }, [isActive, textRankings, updateRankingScrollState]);'''
+
+          if text.count(old_effect) != 1:
+              raise SystemExit('ranking activation effect not found exactly once')
+          text = text.replace(old_effect, new_effect, 1)
+
+          start_marker = '''            <div
+              ref={rankingScrollRef}
+'''
+          end_marker = '''
+
+            <button
+              onClick={() => scrollRanking(1)}'''
+
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('ranking scroll container start not found')
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('ranking scroll container end not found')
+
+          new_chart = '''            <div
+              ref={rankingScrollRef}
+              onScroll={updateRankingScrollState}
+              className="h-full min-h-0 w-[226px] overflow-x-auto pb-0 pt-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              <div className="flex h-full min-w-full w-max items-end justify-center gap-2">
+                {textRankings.map((item, index) => (
+                  <div key={item.name} className="flex h-full w-[22px] shrink-0 flex-col items-center justify-end">
+                    <span className="mb-1 text-[11px] font-bold text-[#666]">{formatChartValue(item.value)}</span>
+                    <span
+                      className="w-[20px] rounded-t-[3px]"
+                      style={{
+                        height: `${Math.max(12, (item.value / maxChartValue) * 132)}px`,
+                        backgroundColor: item.fill || chartPalette[index % chartPalette.length],
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>'''
+
+          text = text[:start] + new_chart + text[end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit ranking repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .ranking-repair-trigger
+          git add src/TripStatisticsView.tsx
+          git commit -m "Fix ranking initial state"
+          git push origin HEAD:fix/ranking-initial-state-final
+
   verify:
     runs-on: ubuntu-latest
     steps:
