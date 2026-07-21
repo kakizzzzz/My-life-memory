@@ -185,6 +185,7 @@ export default function App() {
   const [isRoutePermissionPromptOpen, setIsRoutePermissionPromptOpen] = useState(false);
   const [isRoutePermissionRequesting, setIsRoutePermissionRequesting] = useState(false);
   const [routePermissionFailure, setRoutePermissionFailure] = useState<LocationFailureReason | null>(null);
+  const routePermissionRequestRef = React.useRef(false);
 
   const {
     userLocation,
@@ -194,6 +195,7 @@ export default function App() {
     stars,
     setStars,
     permissionRequestState,
+    hasGrantedLocationAccess,
     isInitialPermissionPromptOpen,
     appendTrackPointRef,
     requestTrackingLocation,
@@ -378,20 +380,15 @@ export default function App() {
     unavailable: homeCopy.permissionUnavailable,
     timeout: homeCopy.permissionTimeout,
   };
-  const openRoutePermissionPrompt = useCallback(() => {
-    if (isTracking || isRoutePermissionRequesting) return;
-    setRoutePermissionFailure(null);
-    setIsRoutePermissionPromptOpen(true);
-  }, [isRoutePermissionRequesting, isTracking]);
-
   const closeRoutePermissionPrompt = useCallback(() => {
     if (isRoutePermissionRequesting) return;
     setRoutePermissionFailure(null);
     setIsRoutePermissionPromptOpen(false);
   }, [isRoutePermissionRequesting]);
 
-  const confirmRoutePermission = useCallback(async () => {
-    if (isRoutePermissionRequesting || isTracking) return;
+  const beginRouteRecording = useCallback(async (openPromptOnFailure: boolean) => {
+    if (routePermissionRequestRef.current || isTracking) return;
+    routePermissionRequestRef.current = true;
     setIsRoutePermissionRequesting(true);
     setRoutePermissionFailure(null);
     try {
@@ -400,11 +397,27 @@ export default function App() {
         setIsRoutePermissionPromptOpen(false);
       } else {
         setRoutePermissionFailure(result.reason);
+        if (openPromptOnFailure) setIsRoutePermissionPromptOpen(true);
       }
     } finally {
+      routePermissionRequestRef.current = false;
       setIsRoutePermissionRequesting(false);
     }
-  }, [isRoutePermissionRequesting, isTracking, startTrackingRoute]);
+  }, [isTracking, startTrackingRoute]);
+
+  const openRoutePermissionPrompt = useCallback(() => {
+    if (isTracking || routePermissionRequestRef.current) return;
+    if (hasGrantedLocationAccess) {
+      void beginRouteRecording(true);
+      return;
+    }
+    setRoutePermissionFailure(null);
+    setIsRoutePermissionPromptOpen(true);
+  }, [beginRouteRecording, hasGrantedLocationAccess, isTracking]);
+
+  const confirmRoutePermission = useCallback(async () => {
+    await beginRouteRecording(false);
+  }, [beginRouteRecording]);
 
   useEffect(() => {
     if (isSignedIn && activeView === 'map' && !isTracking) return;

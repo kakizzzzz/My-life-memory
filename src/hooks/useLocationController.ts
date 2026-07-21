@@ -61,6 +61,7 @@ export const useLocationController = ({
     normalizeInitialStars(initialStars) || [createDefaultRecordStar()]
   ));
   const [permissionRequestState, setPermissionRequestState] = React.useState<PermissionRequestState>('idle');
+  const [hasGrantedLocationAccess, setHasGrantedLocationAccess] = React.useState(false);
   const [isInitialPermissionPromptOpen, setIsInitialPermissionPromptOpen] = React.useState(false);
   const [hasSeenInitialPermissionPrompt, setHasSeenInitialPermissionPrompt] = React.useState(false);
   const [trackingActive, setTrackingActive] = React.useState(false);
@@ -165,6 +166,7 @@ export const useLocationController = ({
         const shouldFly = pendingLocationShouldFlyRef.current;
         isLocating.current = false;
         pendingLocationShouldFlyRef.current = false;
+        setHasGrantedLocationAccess(true);
         applyGpsPosition(position, shouldFly);
         const waiters = locationRequestWaitersRef.current.splice(0);
         waiters.forEach(waiter => waiter({ ready: true, reason: null }));
@@ -177,6 +179,7 @@ export const useLocationController = ({
           setIsWatchingUserLocation(false);
         }
         const reason = getGeolocationFailureReason(error);
+        if (reason === 'denied') setHasGrantedLocationAccess(false);
         const waiters = locationRequestWaitersRef.current.splice(0);
         waiters.forEach(waiter => waiter({ ready: false, reason }));
       },
@@ -277,6 +280,7 @@ export const useLocationController = ({
   const requestAppPermissions = React.useCallback(async (): Promise<PermissionRequestState> => {
     const capabilityFailure = getBrowserGeolocationFailure();
     if (capabilityFailure) {
+      setHasGrantedLocationAccess(false);
       clearPassiveLocation();
       setPermissionRequestState(capabilityFailure);
       return capabilityFailure;
@@ -292,14 +296,21 @@ export const useLocationController = ({
 
   const handleOpenPermissions = React.useCallback(() => {
     if (typeof window === 'undefined') return;
+    if (hasGrantedLocationAccess) {
+      if (permissionRequestState === 'requesting') return;
+      pendingLocationShouldFlyRef.current = true;
+      void requestAppPermissions();
+      return;
+    }
     setPermissionRequestState('idle');
     setIsInitialPermissionPromptOpen(true);
-  }, []);
+  }, [hasGrantedLocationAccess, permissionRequestState, requestAppPermissions]);
 
   const closeInitialPermissionPrompt = React.useCallback(() => {
     setHasSeenInitialPermissionPrompt(true);
     setIsInitialPermissionPromptOpen(false);
     setPermissionRequestState('idle');
+    setHasGrantedLocationAccess(false);
     clearPassiveLocation();
   }, [clearPassiveLocation]);
 
@@ -376,6 +387,7 @@ export const useLocationController = ({
       error => {
         if (error.code !== error.PERMISSION_DENIED) return;
         stopGpsWatch();
+        setHasGrantedLocationAccess(false);
         if (!trackingStateRef.current.isTracking) {
           setIsWatchingUserLocation(false);
         }
@@ -406,6 +418,7 @@ export const useLocationController = ({
     setHasSeenInitialPermissionPrompt(false);
     setIsInitialPermissionPromptOpen(false);
     setPermissionRequestState('idle');
+    setHasGrantedLocationAccess(false);
     setIsWatchingUserLocation(false);
     lastGpsLocationRef.current = null;
     lastCompassHeadingAtRef.current = 0;
@@ -436,6 +449,7 @@ export const useLocationController = ({
     stars,
     setStars,
     permissionRequestState,
+    hasGrantedLocationAccess,
     isInitialPermissionPromptOpen,
     appendTrackPointRef,
     requestTrackingLocation,

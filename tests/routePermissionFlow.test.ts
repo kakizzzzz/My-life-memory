@@ -17,12 +17,34 @@ const sourceBetween = (source: string, start: string, end: string) => {
   return source.slice(startIndex, endIndex);
 };
 
-test('route control opens an app consent prompt instead of starting immediately', () => {
+test('route control reuses successful location consent and prompts only before access exists', () => {
+  const routeOpen = sourceBetween(
+    app,
+    'const openRoutePermissionPrompt',
+    'const confirmRoutePermission'
+  );
+
   assert.match(app, /onStartRoute=\{openRoutePermissionPrompt\}/);
   assert.match(app, /<RouteTrackingPermissionPrompt/);
   assert.doesNotMatch(app, /onStartRoute=\{startTrackingRoute\}/);
+  assert.match(routeOpen, /if \(hasGrantedLocationAccess\)/);
+  assert.match(routeOpen, /void beginRouteRecording\(true\)/);
+  assert.match(routeOpen, /setIsRoutePermissionPromptOpen\(true\)/);
   assert.match(appChrome, /role="dialog"/);
   assert.match(appChrome, /routePermissionDecline/);
+});
+
+test('a direct route start reveals the retry prompt only when the fresh fix fails', () => {
+  const beginRoute = sourceBetween(
+    app,
+    'const beginRouteRecording',
+    'const openRoutePermissionPrompt'
+  );
+
+  assert.match(beginRoute, /routePermissionRequestRef\.current/);
+  assert.match(beginRoute, /const result = await startTrackingRoute\(\)/);
+  assert.match(beginRoute, /if \(openPromptOnFailure\) setIsRoutePermissionPromptOpen\(true\)/);
+  assert.match(beginRoute, /routePermissionRequestRef\.current = false/);
 });
 
 test('route state and clock begin only after a successful fresh GPS fix', () => {
@@ -68,6 +90,9 @@ test('denial, retry, loading, and all supported languages have explicit copy', (
   assert.equal((homeCopy.match(/routePermissionRetry:/g) || []).length, 3);
   assert.equal((homeCopy.match(/permissionInsecure:/g) || []).length, 3);
   assert.equal((homeCopy.match(/permissionTimeout:/g) || []).length, 3);
+  assert.match(homeCopy, /initialPermissionsBody: 'Used for map location and route recording\.'/);
+  assert.match(homeCopy, /initialPermissionsBody: '用于地图定位和路线记录。'/);
+  assert.match(homeCopy, /initialPermissionsBody: '지도 위치와 경로 기록에 사용합니다\.'/);
 });
 
 test('initial prompt stays open on GPS failure and closes only after GPS is ready', () => {
@@ -91,7 +116,7 @@ test('initial prompt stays open on GPS failure and closes only after GPS is read
   assert.doesNotMatch(appPermissionRequest, /headingReady \|\| locationReady/);
 });
 
-test('settings location waits for explicit app consent', () => {
+test('settings location reuses successful access and prompts only before the first grant', () => {
   const settingsOpen = sourceBetween(
     locationController,
     'const handleOpenPermissions',
@@ -103,10 +128,17 @@ test('settings location waits for explicit app consent', () => {
     'const handleOpenPermissions'
   );
 
+  assert.match(settingsOpen, /if \(hasGrantedLocationAccess\)/);
+  assert.match(settingsOpen, /void requestAppPermissions\(\)/);
   assert.match(settingsOpen, /setIsInitialPermissionPromptOpen\(true\)/);
-  assert.doesNotMatch(settingsOpen, /requestAppPermissions/);
   assert.match(appPermissionRequest, /await requestLocationPermissionOnce\(\)/);
   assert.doesNotMatch(appPermissionRequest, /startHeadingWatch/);
+});
+
+test('successful GPS fixes are reusable while browser denial revokes the shortcut', () => {
+  assert.match(locationController, /setHasGrantedLocationAccess\(true\)/);
+  assert.match(locationController, /if \(reason === 'denied'\) setHasGrantedLocationAccess\(false\)/);
+  assert.match(locationController, /setHasGrantedLocationAccess\(false\);[^]*setIsWatchingUserLocation\(false\)/);
 });
 
 test('declining passive location cancels work and restores the centered fallback marker', () => {
