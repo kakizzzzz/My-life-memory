@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f7f4ed" />
+  <title>Kaki / Enamellantern — Character & Sticker Designer</title>
+  <meta name="description" content="Kaki / Enamellantern — 角色、表情包、插画与产品视觉作品。" />
+  <style>
+    :root{--bg:#f7f4ed;--paper:#fffdf8;--ink:#162038;--muted:#6d7280;--line:#d9d4c8;--yellow:#f3c948;--blue:#8fd3ff;--green:#95d788;--shadow:0 18px 50px rgba(22,32,56,.08);--radius:28px}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}
+    body{margin:0;background:radial-gradient(circle at 5% 8%,rgba(143,211,255,.35),transparent 26rem),radial-gradient(circle at 90% 22%,rgba(243,201,72,.28),transparent 30rem),var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;line-height:1.6}
+    a{color:inherit}.wrap{width:min(1160px,calc(100% - 40px));margin:auto}
+    header{min-height:92vh;display:flex;align-items:center;padding:64px 0 36px;position:relative;overflow:hidden}
+    .topline{position:absolute;top:28px;left:0;right:0;display:flex;justify-content:space-between;align-items:center;width:min(1160px,calc(100% - 40px));margin:auto;font-size:14px;letter-spacing:.08em;text-transform:uppercase}
+    .topline .mark{font-weight:800}.topline a{text-decoration:none;opacity:.72}
+    .hero{display:grid;grid-template-columns:1.25fr .75fr;gap:56px;align-items:end}.eyebrow{font-size:14px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;margin-bottom:20px}
+    h1{margin:0;font-size:clamp(56px,9vw,118px);letter-spacing:-.065em;line-height:.9;max-width:900px}
+    .hero-copy{margin:34px 0 0;font-size:clamp(20px,2.2vw,30px);line-height:1.35;max-width:760px}.hero-copy strong{background:linear-gradient(transparent 58%,rgba(243,201,72,.7) 0);font-weight:800}
+    .hero-side{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:28px;box-shadow:var(--shadow);transform:rotate(1.5deg)}
+    .hero-side .label{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}.hero-side p{font-size:17px;margin:10px 0 0}
+    .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}.tag{border:1px solid var(--ink);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:700;background:#fff}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:52px}.stat{border-top:2px solid var(--ink);padding-top:13px}.stat b{font-size:clamp(28px,4vw,48px);letter-spacing:-.04em;display:block}.stat span{font-size:13px;color:var(--muted)}
+    section{padding:110px 0}.section-head{display:grid;grid-template-columns:180px 1fr;gap:28px;align-items:start;margin-bottom:40px}.section-no{font-weight:900;font-size:13px;letter-spacing:.12em}
+    h2{font-size:clamp(38px,6vw,76px);line-height:.95;letter-spacing:-.055em;margin:0}.lead{font-size:18px;max-width:760px;color:var(--muted);margin:20px 0 0}
+    .sticker-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.work-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);overflow:hidden}
+    .work-card img{width:100%;display:block;border-radius:20px;background:#eee}.work-card .meta{padding:18px 8px 8px}.work-card h3{margin:0;font-size:24px;letter-spacing:-.025em}.work-card p{margin:7px 0 0;color:var(--muted)}
+    .pill{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 11px;font-size:12px;font-weight:800;margin-top:14px}
+    .evidence{margin-top:24px;display:grid;grid-template-columns:.92fr 1.08fr;gap:24px;align-items:center;border:1px solid var(--line);background:#162038;color:white;border-radius:var(--radius);padding:28px;overflow:hidden}
+    .evidence img{width:100%;border-radius:18px;display:block}.big-number{font-size:clamp(56px,8vw,110px);font-weight:900;line-height:.9;letter-spacing:-.065em}.evidence p{font-size:18px;color:rgba(255,255,255,.72);max-width:430px}
+    .product-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}.product-card{position:relative;overflow:hidden;min-height:420px;border-radius:var(--radius);border:1px solid var(--line);background:#fff}
+    .product-card img{width:100%;height:100%;object-fit:cover;display:block}.product-card .caption{position:absolute;left:14px;right:14px;bottom:14px;background:rgba(255,253,248,.94);backdrop-filter:blur(14px);border:1px solid rgba(22,32,56,.12);border-radius:18px;padding:14px 16px}
+    .product-card h3{margin:0;font-size:18px}.product-card p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .experience{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.exp-card{min-height:270px;border-radius:26px;padding:26px;border:1px solid var(--ink);display:flex;flex-direction:column;justify-content:space-between}
+    .exp-card:nth-child(1){background:var(--blue)}.exp-card:nth-child(2){background:var(--yellow)}.exp-card:nth-child(3){background:var(--green)}
+    .exp-card .kicker{font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}.exp-card h3{font-size:28px;line-height:1.03;letter-spacing:-.035em;margin:20px 0 0}.exp-card p{font-size:14px;margin:18px 0 0}
+    .about{display:grid;grid-template-columns:.8fr 1.2fr;gap:56px;align-items:start;border-top:2px solid var(--ink);padding-top:36px}.about .name{font-size:46px;font-weight:900;letter-spacing:-.04em}.about p{font-size:clamp(20px,2vw,28px);line-height:1.45;margin:0}
+    footer{padding:40px 0 70px}.footer-row{display:flex;justify-content:space-between;gap:20px;align-items:center;border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font-size:14px}.footer-row a{font-weight:800;color:var(--ink);text-decoration:none}
+    .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}.reveal.in{opacity:1;transform:none}
+    @media(max-width:820px){header{min-height:auto;padding:120px 0 70px}.hero{grid-template-columns:1fr;gap:30px}.hero-side{transform:none}.stats{grid-template-columns:1fr 1fr 1fr}section{padding:78px 0}.section-head{grid-template-columns:1fr;gap:12px}.sticker-grid,.experience,.about,.evidence{grid-template-columns:1fr}.product-grid{grid-template-columns:1fr 1fr}.product-card{min-height:340px}.evidence{padding:18px}.about{gap:22px}.footer-row{align-items:flex-start;flex-direction:column}}
+    @media(max-width:520px){.wrap,.topline{width:min(100% - 24px,1160px)}h1{font-size:56px}.hero-copy{font-size:21px}.stats{gap:8px}.stat b{font-size:28px}.stat span{font-size:11px}.work-card{padding:10px}.section-head{margin-bottom:28px}.product-grid{grid-template-columns:1fr}.product-card{min-height:380px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.reveal{opacity:1;transform:none;transition:none}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topline"><div class="mark">KAKI / ENAMELLANTERN</div><a href="https://github.com/kakizzzzz" target="_blank" rel="noreferrer">GITHUB ↗</a></div>
+    <div class="wrap"><div class="hero">
+      <div>
+        <div class="eyebrow">Character · Sticker · Illustration · Product</div>
+        <h1>让角色<br>真的活起来。</h1>
+        <p class="hero-copy">我喜欢把角色做成<strong>会被人使用的东西</strong>：表情包、场景插画、角色延展，以及可以进入产品的视觉角色。</p>
+        <div class="stats">
+          <div class="stat"><b>2</b><span>微信表情专辑上线</span></div>
+          <div class="stat"><b>38,080</b><span>累计发送次数</span></div>
+          <div class="stat"><b>1,231</b><span>累计下载次数</span></div>
+        </div>
+      </div>
+      <div class="hero-side"><div class="label">About this page</div><p>为角色 / 表情包项目整理的轻量作品集。重点不是“画过什么”，而是角色如何产生动作、情境、梗和实际使用。</p>
+        <div class="tags"><span class="tag">角色设计</span><span class="tag">表情包</span><span class="tag">场景插画</span><span class="tag">产品视觉</span><span class="tag">AI × UX</span></div>
+      </div>
+    </div></div>
+  </header>
+  <main>
+    <section><div class="wrap">
+      <div class="section-head reveal"><div class="section-no">01 / STICKERS</div><div><h2>有梗，比“可爱”更重要。</h2><p class="lead">两套原创柴犬表情均已正式上线微信表情开放平台。第二套更强调动作、荒诞感和角色演技；第一套则建立了更稳定的角色识别与日常使用场景。</p></div></div>
+      <div class="sticker-grid">
+        <article class="work-card reveal"><img src="./assets/sticker-pack-02.webp" alt="微信表情包《一只肥柴的日常2》" loading="lazy"><div class="meta"><h3>一只肥柴的日常 2</h3><p>更松弛、更怪一点：通过姿势、道具与表情制造聊天语境里的反差梗。</p><span class="pill">320 下载 · 3,248 发送</span></div></article>
+        <article class="work-card reveal"><img src="./assets/sticker-pack-01.webp" alt="微信表情包《一只肥柴的日常》" loading="lazy"><div class="meta"><h3>一只肥柴的日常</h3><p>从角色基础动作到生活情境，建立一套可以反复进入对话的日常表达。</p><span class="pill">911 下载 · 34,832 发送</span></div></article>
+      </div>
+      <div class="evidence reveal"><img src="./assets/sticker-stats.webp" alt="微信表情开放平台后台数据截图" loading="lazy"><div><div class="section-no" style="color:#9db8ff">REAL USAGE / 实际使用</div><div class="big-number">38K+</div><h3 style="font-size:28px;margin:16px 0 0">不是只做完，而是真的被发出去。</h3><p>两套表情累计 38,080 次发送。对我来说，角色设计最有意思的部分，是它最终能进入人的真实交流。</p></div></div>
+    </div></section>
+    <section><div class="wrap">
+      <div class="section-head reveal"><div class="section-no">02 / CHARACTER → PRODUCT</div><div><h2>把角色放进产品场景。</h2><p class="lead">除了微信红包封面等场景化延展，我也会继续做角色三视图、物件应用与周边视觉。重点是让角色离开单张插画以后，仍然保持性格和识别。</p></div></div>
+      <div class="product-grid">
+        <article class="product-card reveal"><img src="./assets/facai-sheet.jpeg" alt="角色三视图" loading="lazy"><div class="caption"><h3>Character Sheet</h3><p>正 / 侧 / 背三视图，稳定角色结构与比例。</p></div></article>
+        <article class="product-card reveal"><img src="./assets/facai-object.jpeg" alt="角色手机壳与周边应用" loading="lazy"><div class="caption"><h3>Object Extension</h3><p>把角色放入真实物件，测试识别与构图适配。</p></div></article>
+        <article class="product-card reveal"><img src="./assets/facai-merch.jpeg" alt="角色帆布袋应用" loading="lazy"><div class="caption"><h3>Merchandise</h3><p>角色视觉延展到周边与生活产品。</p></div></article>
+      </div>
+    </div></section>
+    <section><div class="wrap">
+      <div class="section-head reveal"><div class="section-no">03 / MORE THAN ILLUSTRATION</div><div><h2>我也做产品。</h2><p class="lead">我的实践从视觉设计延伸到 UI/UX、交互原型、前端与 AI 产品。这让我在做 IP 时，会自然考虑角色进入 App、工具与长期用户体验之后会发生什么。</p></div></div>
+      <div class="experience">
+        <article class="exp-card reveal"><div><div class="kicker">Spatial memory · AI-readable</div><h3>My Life Memory</h3></div><p>个人空间记忆地图：地点、路线、照片、统计与回访，并把生活数据组织成可供 AI 读取的 Memory API / MCP。</p></article>
+        <article class="exp-card reveal"><div><div class="kicker">Resident AI · Personal workspace</div><h3>Kicori</h3></div><p>个人 AI 工作台，围绕 Chat / Read、文件、上下文边界、多模型与长期使用体验持续迭代。</p></article>
+        <article class="exp-card reveal"><div><div class="kicker">Map · Emotion · Follow-up</div><h3>My Emotion Map</h3></div><p>地图 + 日历 + 回访 + AI 检索的情绪记录产品实验，关注个人数据、信息边界与可持续的回看体验。</p></article>
+      </div>
+    </div></section>
+    <section><div class="wrap"><div class="about reveal">
+      <div><div class="section-no">04 / ABOUT</div><div class="name">Kaki</div><div style="color:var(--muted);margin-top:6px">Designer · Illustrator · Product maker</div></div>
+      <p>我从视觉与插画出发，后来一路把实践范围扩展到 UI/UX、交互和 AI 产品。做角色时，我更关心的不是单张图有多“精致”，而是它<strong>怎么说话、怎么反应、怎么形成梗、怎么被放进产品里继续活下去</strong>。</p>
+    </div></div></section>
+  </main>
+  <footer><div class="wrap footer-row"><div>© 2026 Kaki / Enamellantern</div><div><a href="../">My Life Memory</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kakizzzzz" target="_blank" rel="noreferrer">GitHub</a></div></div></footer>
+  <script>
+    const els=document.querySelectorAll('.reveal');
+    if('IntersectionObserver'in window){const io=new IntersectionObserver((entries)=>{entries.forEach((entry)=>{if(entry.isIntersecting){entry.target.classList.add('in');io.unobserve(entry.target)}})},{threshold:.1});els.forEach((el)=>io.observe(el))}else{els.forEach((el)=>el.classList.add('in'))}
+  </script>
+</body>
+</html>
