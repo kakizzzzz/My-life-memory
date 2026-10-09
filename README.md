@@ -64,14 +64,6 @@ My Life Memory extends a private archive to compatible AI clients through a user
 
 Research combines spatial, temporal, note, and route evidence, including supported user-relative places such as home, work, or study. Unsupported questions return no unrelated records, while genuine ambiguity asks the user to confirm a privacy-screened clue or neutral fallback. No model, embedding service, or vector database runs in the backend. See [Memory API And MCP Reference](#memory-api-and-mcp-reference) for the interface and connection steps.
 
-## OpenAI Build Week
-
-My Life Memory existed before OpenAI Build Week, with its core map, place stars, memory notes, route recording, foundational interface, normalized user-scoped storage, synchronization foundation, account lifecycle, and core privacy controls already in place.
-
-During the official Submission Period, I continued to lead the product direction, feature decisions, testing, and acceptance. All visual design, UI/UX, and interaction design were created independently by me. Under my direction, the project was extended with server-owned media retention, date-range export, local-time-zone handling, rich-text and media reliability improvements, and an evidence-grounded read-only MCP research layer with strict ambiguity and privacy boundaries.
-
-Codex handled implementation, refactoring, debugging, testing, documentation, and deployment verification. GPT-5.6 supported product and architecture review, privacy and interaction analysis, test planning, and competition-demo preparation. Dated implementation decisions and validation results are recorded in [`docs/codex-progress.md`](docs/codex-progress.md). GPT-5.6 is not built into the web application; compatible AI clients can instead connect through the project's user-controlled, read-only MCP.
-
 ## Tech Stack
 
 - React 19 + TypeScript
